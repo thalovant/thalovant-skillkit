@@ -297,8 +297,14 @@ def cmd_check(args: argparse.Namespace) -> int:
         from .fleet import check_fleet, render
 
         model_dir = Path(args.model) if args.model else None
-        findings, notes = check_fleet(root, Path(args.fleet), near=not args.no_near,
-                                      threshold=args.threshold, model_dir=model_dir)
+        try:
+            findings, notes = check_fleet(root, Path(args.fleet), near=not args.no_near,
+                                          threshold=args.threshold, model_dir=model_dir)
+        except (ValueError, OSError) as failure:
+            # No package, no locale tree, no corpus: the contract checks above
+            # already said which; this is the same problem, not a traceback.
+            print(f"fleet check did not run: {failure}")
+            return 1
         for note in notes:
             print(f"note: {note}")
         for finding in sorted(findings, key=lambda f: (not f.fails, f.mine.file, f.mine.line)):

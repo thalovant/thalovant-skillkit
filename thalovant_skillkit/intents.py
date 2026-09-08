@@ -28,6 +28,10 @@ CORPUS_VERSION = 1
 # them; the cap only guards against a pathological file.
 EXPANSIONS_PER_LINE = 4096
 _SLOT = re.compile(r"\{[^{}]+\}")
+# A language tag as the locale tree names it: `en-US`, `zh-Hant-TW`, `pt`.
+# Tags come from `supported.json`, and they become file names, so anything
+# else is dropped rather than turned into a path.
+_LANG_TAG = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{2,8})*$")
 # What a slot becomes. The classifier sees a wildcard; a generic noun is the
 # closest thing a sentence can carry, and two skills' `{city}` and `{place}`
 # rightly become the same sentence.
@@ -131,19 +135,26 @@ def intent_lines(skill_root: Path, locale_dir: Path, lang: str, skill: str) -> l
     return out
 
 
+def valid_lang(tag: object) -> bool:
+    return isinstance(tag, str) and bool(_LANG_TAG.match(tag))
+
+
 def locale_langs(locale_dir: Path) -> list[str]:
     """The languages a locale tree carries: `supported.json` when present,
-    otherwise the directories that exist."""
+    otherwise the directories that exist. Only well-formed tags; a locale
+    tree with no directory at all carries no languages."""
+    if not locale_dir.is_dir():
+        return []
     supported = locale_dir / "supported.json"
     if supported.is_file():
         try:
             data = json.loads(supported.read_text(encoding="utf-8"))
             langs = data.get("locales") if isinstance(data, dict) else data
             if isinstance(langs, list):
-                return [str(lang) for lang in langs]
+                return [lang for lang in langs if valid_lang(lang)]
         except (OSError, ValueError):
             pass
-    return sorted(p.name for p in locale_dir.iterdir() if p.is_dir() and "-" in p.name)
+    return sorted(p.name for p in locale_dir.iterdir() if p.is_dir() and valid_lang(p.name))
 
 
 # -- the corpus ---------------------------------------------------------------
@@ -178,6 +189,8 @@ def build_corpus(skills: list[tuple[str, Path, Path, dict]], lang: str) -> dict:
 
 
 def write_corpus(directory: Path, corpus: dict) -> Path:
+    if not valid_lang(corpus.get("lang")):
+        raise ValueError(f"not a language tag: {corpus.get('lang')!r}")
     directory.mkdir(parents=True, exist_ok=True)
     path = directory / f"{corpus['lang']}.json"
     path.write_text(json.dumps(corpus, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")

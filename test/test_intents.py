@@ -190,3 +190,29 @@ def test_predicted_reports_only_confident_other_skill_labels(monkeypatch, tmp_pa
     ]
     assert all(f.kind == "predicted" and not f.fails for f in found)
     assert "joke's fact" in found[1].describe()
+
+
+def test_locale_langs_drops_bad_tags_and_missing_trees(tmp_path: Path):
+    assert intents.locale_langs(tmp_path / "nowhere") == []
+    locale = tmp_path / "locale"
+    locale.mkdir()
+    (locale / "supported.json").write_text(json.dumps(
+        {"locales": ["en-US", "zh-Hant-TW", "../../etc", "", 7, "fr-FR/../x"]}))
+    assert intents.locale_langs(locale) == ["en-US", "zh-Hant-TW"]
+    (locale / "supported.json").unlink()
+    for name in ("en-US", "pt", "not a tag", "dialog"):
+        (locale / name).mkdir()
+    assert intents.locale_langs(locale) == ["en-US", "pt"]
+
+
+def test_write_corpus_refuses_a_tag_that_is_a_path(tmp_path: Path):
+    with pytest.raises(ValueError, match="language tag"):
+        intents.write_corpus(tmp_path, {"lang": "../escape", "lines": [], "skills": {},
+                                        "version": intents.CORPUS_VERSION, "built": ""})
+
+
+def test_check_fleet_on_a_skill_without_locale_reports_nothing(tmp_path: Path):
+    root = _skill(tmp_path, "bare", {})
+    import shutil
+    shutil.rmtree(root / "thalovant_skill_bare" / "locale")
+    assert fleet.check_fleet(root, tmp_path / "corpus", near=False) == ([], [])

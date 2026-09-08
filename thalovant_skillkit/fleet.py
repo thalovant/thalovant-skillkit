@@ -165,6 +165,14 @@ def near_check_available() -> bool:
     return True
 
 
+def model_check_available() -> bool:
+    try:
+        from model2vec.inference import StaticModelPipeline  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
 def check_fleet(skill_root: Path, corpus_dir: Path, *, near: bool = True,
                 threshold: float = NEAR_THRESHOLD,
                 model_dir: Path | None = None) -> tuple[list[Collision], list[str]]:
@@ -181,7 +189,7 @@ def check_fleet(skill_root: Path, corpus_dir: Path, *, near: bool = True,
     run_near = near and near_check_available()
     if near and not run_near:
         notes.append("near-duplicate check skipped: install thalovant-skillkit[fleet]")
-    run_model = model_dir is not None and near_check_available()
+    run_model = model_dir is not None and model_check_available()
     if model_dir is not None and not run_model:
         notes.append("classifier check skipped: install thalovant-skillkit[fleet]")
     for lang in locale_langs(locale_dir):

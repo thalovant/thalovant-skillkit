@@ -64,8 +64,12 @@ def training_rows(corpus_dir: Path) -> tuple[list[Row], dict]:
 
 def split(rows: list[Row], test_size: float = 0.2, seed: int = SEED) -> tuple[list[Row], list[Row]]:
     """A held-out share per label, so every intent is judged on sentences it
-    was not trained on. Labels with a single sentence stay in training: there
-    is nothing to hold out."""
+    was not trained on. Every label keeps at least one training sentence, so
+    the model knows every label `labels.json` will advertise; every label
+    with two or more sentences gives up at least one, so every label is
+    judged. A label with a single sentence stays in training."""
+    if not 0 <= test_size < 1:
+        raise ValueError(f"test_size must be in [0, 1), got {test_size}")
     by_label: dict[str, list[Row]] = defaultdict(list)
     for row in rows:
         by_label[row.label].append(row)
@@ -75,7 +79,9 @@ def split(rows: list[Row], test_size: float = 0.2, seed: int = SEED) -> tuple[li
     for label in sorted(by_label):
         group = list(by_label[label])
         rng.shuffle(group)
-        held = int(round(len(group) * test_size)) if len(group) >= 2 else 0
+        held = 0
+        if test_size > 0 and len(group) >= 2:
+            held = min(max(1, int(round(len(group) * test_size))), len(group) - 1)
         test.extend(group[:held])
         train.extend(group[held:])
     return train, test

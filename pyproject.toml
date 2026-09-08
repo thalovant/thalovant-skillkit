@@ -37,7 +37,7 @@ dependencies = [
 skill = ["ovos-workshop>=8.0.0"]
 # `check --fleet` near-duplicate detection: the model2vec model the OVOS
 # intent pipeline uses. Exact duplicates need nothing beyond the kit.
-fleet = ["model2vec>=0.3", "numpy>=1.24"]
+fleet = ["model2vec>=0.9", "numpy>=1.24"]
 # `model`: train the Thalovant intent classifier (torch, CPU is enough).
 model = ["model2vec[train]>=0.9", "numpy>=1.24"]
 

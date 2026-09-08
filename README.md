@@ -52,7 +52,7 @@ band. The same check runs in the CI the scaffold writes for you.
 
 ```bash
 gh repo clone thalovant/intent-corpus
-thalovant-skillkit check --fleet ../intent-corpus/corpus
+thalovant-skillkit check --fleet intent-corpus/corpus
 ```
 
 Every skill's intents are trained into one classifier on the hub, so a
