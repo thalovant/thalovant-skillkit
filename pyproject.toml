@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.4.2"
+version = "0.4.3"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.10"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Thalovant" }]
@@ -16,6 +16,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
@@ -25,6 +26,8 @@ classifiers = [
 dependencies = [
     "requests>=2.31",
     "ovos-utils>=0.8.5",
+    # tomllib arrived in 3.11; tomli is the same parser for the one version before.
+    "tomli>=2.0; python_version < '3.11'",
 ]
 
 # thalovant_skillkit.skill needs the skill framework; the rest of the library
