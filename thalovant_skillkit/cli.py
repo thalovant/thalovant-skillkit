@@ -182,6 +182,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: {CHECKOUT}
+        with:
+          # This job reads the checkout and then runs code installed from
+          # PyPI; it never pushes. Leaving GITHUB_TOKEN in the workspace's
+          # git config would hand that code a credential it has no use for.
+          persist-credentials: false
       - uses: {SETUP_PYTHON}
         with:
           python-version: "3.12"
