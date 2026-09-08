@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.6.0"
+version = "0.7.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,8 +39,6 @@ dependencies = [
 # Kept as empty names so older pins (`thalovant-skillkit[skill]`) still resolve.
 skill = []
 fleet = []
-# `model`: train the Thalovant intent classifier (torch; CPU is enough).
-model = ["model2vec[train]>=0.9"]
 
 [project.scripts]
 thalovant-skillkit = "thalovant_skillkit.cli:main"

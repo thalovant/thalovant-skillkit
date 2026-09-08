@@ -59,6 +59,31 @@ version = "0.0.1"
     return root
 
 
+def _corpus(directory: Path, lang: str, skills: list[tuple[str, Path, Path]]) -> Path:
+    """Write a corpus file the way thalovant/intent-corpus does, from the same
+    readers, so the tests exercise the format the kit reads."""
+    lines = []
+    for skill_id, root, locale_dir in skills:
+        lines.extend(intents.intent_lines(root, locale_dir, lang, skill_id))
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / f"{lang}.json"
+    path.write_text(json.dumps({
+        "version": intents.CORPUS_VERSION, "lang": lang, "built": "2026-01-01T00:00:00Z",
+        "skills": {skill_id: {"repo": skill_id, "sha": "abc"} for skill_id, _, _ in skills},
+        "lines": [{"skill": line.skill, "intent": line.intent, "file": line.file,
+                   "line": line.line, "raw": line.raw, "text": line.text} for line in lines],
+    }))
+    return path
+
+
+def _index(rows: list[tuple[str, str, str]]) -> dict:
+    """(text, label, lang) -> the index the fleet's model ships."""
+    labels: dict[str, list[str]] = {}
+    for text, label, lang in rows:
+        labels.setdefault(intents.sentence_key(lang, text), []).append(label)
+    return {"version": 1, "labels": labels}
+
+
 @pytest.fixture
 def fleet_dir(tmp_path: Path) -> Path:
     weather = _skill(tmp_path, "weather", {
@@ -83,17 +108,16 @@ def test_intent_lines_read_both_layouts_with_line_numbers(fleet_dir: Path):
     assert [line.text for line in fr] == ["va-t-il pleuvoir"]
 
 
-def test_corpus_round_trip(fleet_dir: Path, tmp_path: Path):
+def test_corpus_reads_back_what_the_builder_writes(fleet_dir: Path, tmp_path: Path):
     skills = []
     for name in ("weather", "time"):
         root = fleet_dir / f"thalovant-skill-{name}"
         skill_id, locale_dir = fleet.skill_identity(root)
-        skills.append((skill_id, root, locale_dir, {"repo": name, "sha": "abc"}))
-    corpus = intents.build_corpus(skills, "en-US")
-    path = intents.write_corpus(tmp_path / "corpus", corpus)
+        skills.append((skill_id, root, locale_dir))
+    path = _corpus(tmp_path / "corpus", "en-US", skills)
     loaded = intents.load_corpus(path)
     assert loaded["version"] == intents.CORPUS_VERSION
-    assert loaded["skills"]["thalovant-skill-time.thalovant"] == {"repo": "time", "sha": "abc"}
+    assert loaded["skills"]["thalovant-skill-time.thalovant"]["sha"] == "abc"
     texts = {(line.skill, line.text) for line in intents.corpus_lines(loaded)}
     assert ("thalovant-skill-time.thalovant", "what time is it") in texts
     assert ("thalovant-skill-weather.thalovant", "will it pour") in texts
@@ -117,8 +141,8 @@ def test_fleet_check_reports_duplicates_and_self_duplicates(fleet_dir: Path, tmp
     for name in ("weather", "time"):
         root = fleet_dir / f"thalovant-skill-{name}"
         skill_id, locale_dir = fleet.skill_identity(root)
-        skills.append((skill_id, root, locale_dir, {}))
-    intents.write_corpus(tmp_path / "corpus", intents.build_corpus(skills, "en-US"))
+        skills.append((skill_id, root, locale_dir))
+    _corpus(tmp_path / "corpus", "en-US", skills)
 
     findings, notes = fleet.check_fleet(new, tmp_path / "corpus", near=False)
     kinds = sorted((f.kind, f.mine.text, f.theirs.skill) for f in findings)
@@ -138,8 +162,7 @@ def test_fleet_check_skips_its_own_corpus_entries(fleet_dir: Path, tmp_path: Pat
     every one of its sentences as a duplicate of itself."""
     root = fleet_dir / "thalovant-skill-weather"
     skill_id, locale_dir = fleet.skill_identity(root)
-    intents.write_corpus(tmp_path / "corpus",
-                         intents.build_corpus([(skill_id, root, locale_dir, {})], "en-US"))
+    _corpus(tmp_path / "corpus", "en-US", [(skill_id, root, locale_dir)])
     findings, notes = fleet.check_fleet(root, tmp_path / "corpus", near=False)
     assert findings == []
     assert notes == ["fr-FR: no fleet corpus, only this skill's own files compared"]
@@ -205,12 +228,6 @@ def test_locale_langs_drops_bad_tags_and_missing_trees(tmp_path: Path):
     assert intents.locale_langs(locale) == ["en-US", "pt"]
 
 
-def test_write_corpus_refuses_a_tag_that_is_a_path(tmp_path: Path):
-    with pytest.raises(ValueError, match="language tag"):
-        intents.write_corpus(tmp_path, {"lang": "../escape", "lines": [], "skills": {},
-                                        "version": intents.CORPUS_VERSION, "built": ""})
-
-
 def test_check_fleet_on_a_skill_without_locale_reports_nothing(tmp_path: Path):
     root = _skill(tmp_path, "bare", {})
     import shutil
@@ -221,14 +238,10 @@ def test_check_fleet_on_a_skill_without_locale_reports_nothing(tmp_path: Path):
 def test_indexed_duplicates_name_the_other_owner_only(tmp_path: Path):
     """The model's index: digests to labels. A digest that includes my own
     label is my own sentence; another skill's label is a duplicate."""
-    from thalovant_skillkit.model import Row, sentence_index
-
-    rows = [Row("will it rain", "weather:rain", "en-US"),
-            Row("will it rain", "pulse:pulse", "en-US"),
-            Row("water the garden", "pulse:pulse", "en-US"),
-            Row("va-t-il pleuvoir", "weather:rain", "fr-FR")]
-    index = sentence_index(rows)
-    assert index["version"] == 1
+    index = _index([("will it rain", "weather:rain", "en-US"),
+                    ("will it rain", "pulse:pulse", "en-US"),
+                    ("water the garden", "pulse:pulse", "en-US"),
+                    ("va-t-il pleuvoir", "weather:rain", "fr-FR")])
     assert len(index["labels"]) == 3
     def line(lang, number, text):
         return intents.IntentLine("pulse", "pulse", lang, "p.intent", number, text, text)
@@ -249,12 +262,10 @@ def test_resolve_model_takes_a_directory_first(tmp_path: Path):
 
 def test_check_with_a_model_directory_uses_its_index(tmp_path: Path, monkeypatch):
     pytest.importorskip("model2vec.inference")
-    from thalovant_skillkit.model import Row, sentence_index
-
     model_dir = tmp_path / "model"
     model_dir.mkdir()
-    (model_dir / "index.json").write_text(json.dumps(sentence_index(
-        [Row("will it rain", "thalovant-skill-weather.thalovant:rain", "en-US")])))
+    (model_dir / "index.json").write_text(json.dumps(_index(
+        [("will it rain", "thalovant-skill-weather.thalovant:rain", "en-US")])))
     # no classifier: keep the predicted check out of this test
     monkeypatch.setattr(fleet, "find_predicted", lambda *a, **k: [])
     new = _skill(tmp_path / "new", "pulse", {"en-US/pulse.intent": "will it rain\nwater it\n"})

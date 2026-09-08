@@ -6,10 +6,11 @@ This module compares a skill with the rest of the fleet and says, per line of
 the skill's own files, what it found.
 
 Two sources, one public and one not. The fleet's model on the Hugging Face
-Hub (`thalovant/thalovant-m2v-intents`, see `model.py`) ships an index of
-every sentence's digest and the classifier itself, so a skill's CI needs
-nothing private: `check --model`. The fleet corpus (see `intents.py`) has the
-sentences and their lines, for a fleet checkout: `check --fleet`.
+Hub (`thalovant/thalovant-m2v-intents`, built by `thalovant/intent-corpus`)
+ships an index of every sentence's digest and the classifier itself, so a
+skill's CI needs nothing private: `check`. The fleet corpus (see
+`intents.py`) has the sentences and their lines, for a fleet checkout:
+`check --fleet`.
 
 Four kinds of finding, with different weight:
 
@@ -45,6 +46,9 @@ from thalovant_skillkit.intents import (
     sentence_key,
 )
 
+#: The fleet's model on the Hugging Face Hub: what a skill compares itself with.
+MODEL_ID = "thalovant/thalovant-m2v-intents"
+#: The embedding model behind the paraphrase check (corpus checkouts only).
 MODEL = "Jarbas/ovos-model2vec-intents-distiluse-base-multilingual-cased-v2"
 NEAR_THRESHOLD = 0.85
 PREDICTED_THRESHOLD = 0.9
