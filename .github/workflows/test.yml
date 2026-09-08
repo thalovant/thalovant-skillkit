@@ -11,11 +11,17 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The oldest a skill may run on, what the node runs, and the newest.
+        python: ["3.10", "3.12", "3.14"]
+    name: test (py${{ matrix.python }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
       # The 'skill' extra, so the base-class tests run rather than skip:
       # a suite that quietly skips the half needing ovos-workshop is not a gate.
       - run: python -m pip install -e ".[skill]" pytest ruff
