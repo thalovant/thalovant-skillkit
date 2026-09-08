@@ -38,8 +38,8 @@ def _skill_package(tmp_path: Path, name: str) -> Path:
         "class DemoSkill(ThalovantFallbackSkill):\n"
         "    FALLBACK_PRIORITY = 95\n\n"
         "    def can_answer(self, message):\n"
-        "        return self.voc_match('NewsKeyword', self.utterance(message),\n"
-        "                              self.lang_of(message))\n\n"
+        "        return self.mentions(self.utterance(message), 'NewsKeyword',\n"
+        "                             self.lang_of(message))\n\n"
         "    def handle_fallback(self, message):\n"
         "        return True\n",
         encoding="utf-8")
@@ -70,7 +70,7 @@ def test_the_locale_tree_is_found_without_the_skill_saying_where(demo):
     skill = demo()
 
     assert skill.locale_dir().name == "locale"
-    assert skill.resources.available_langs() == ("en-US", "fr-FR")
+    assert skill.locale_resources.available_langs() == ("en-US", "fr-FR")
 
 
 def test_the_language_is_read_from_wherever_the_message_puts_it(demo):
@@ -96,9 +96,9 @@ def test_vocabulary_matching_does_not_claim_a_word_that_spells_a_term(demo):
     """The bug that had five skills answering for each other."""
     skill = demo()
 
-    assert skill.voc_match("NewsKeyword", "what is the news", "en-US")
-    assert skill.voc_match("NewsKeyword", "quelles sont les nouvelles", "fr-FR")
-    assert not skill.voc_match("NewsKeyword", "renews the subscription", "en-US")
+    assert skill.mentions("what is the news", "NewsKeyword", "en-US")
+    assert skill.mentions("quelles sont les nouvelles", "NewsKeyword", "fr-FR")
+    assert not skill.mentions("renews the subscription", "NewsKeyword", "en-US")
 
 
 def test_dialog_renders_falls_back_and_never_raises(demo):
@@ -179,7 +179,7 @@ def test_settings_are_readable_before_the_skill_is_bound(demo):
 
 
 def test_the_plain_skill_class_carries_the_same_helpers():
-    assert hasattr(ThalovantSkill, "voc_match")
+    assert hasattr(ThalovantSkill, "mentions")
     assert hasattr(ThalovantSkill, "dialog")
     assert hasattr(ThalovantSkill, "utterance")
 
@@ -202,3 +202,34 @@ def test_a_broken_translation_is_spoken_rather_than_raised(demo, tmp_path, templ
     broken.write_text(template + "\n", encoding="utf-8")
 
     assert skill.dialog("broken", "en-US") == expected
+
+
+def test_nothing_here_shadows_the_framework():
+    """The base classes must not take a name OVOSSkill already uses.
+
+    `voc_match` and `resources` were both taken at first. `voc_match` is the
+    worse of the two: OVOS's signature is `(utt, voc_filename, ...)` and the
+    replacement's was `(voc_name, utterance, ...)`, so any call the framework
+    made would have had its arguments silently swapped. `resources` is the
+    framework's own per-language resource object, and several OVOSSkill methods
+    go through it.
+    """
+    from ovos_workshop.skills import OVOSSkill
+
+    from thalovant_skillkit import skill as module
+
+    ours = {
+        name
+        for cls in (module._SkillPlumbing, module.ThalovantFallbackSkill)
+        for name in vars(cls)
+        if not name.startswith("_")
+    }
+    # What a fallback skill is *supposed* to define: the framework declares
+    # these and expects a skill to fill them in.
+    expected = {"initialize", "can_answer", "handle_fallback", "runtime_requirements"}
+
+    collisions = {name for name in ours - expected if hasattr(OVOSSkill, name)}
+
+    assert collisions == set(), (
+        f"these shadow OVOSSkill and will confuse or break it: {sorted(collisions)}"
+    )

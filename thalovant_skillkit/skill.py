@@ -18,8 +18,8 @@ A skill built on these classes writes its own behaviour and nothing else:
         FALLBACK_PRIORITY = 95
 
         def can_answer(self, message) -> bool:
-            return self.voc_match("WeatherKeyword", self.utterance(message),
-                                  self.lang_of(message))
+            return self.mentions(self.utterance(message), "WeatherKeyword",
+                                 self.lang_of(message))
 
         def handle_fallback(self, message) -> bool:
             self.speak(self.dialog("forecast", self.lang_of(message)))
@@ -88,8 +88,14 @@ class _SkillPlumbing:
         )
 
     @property
-    def resources(self) -> SkillResources:
-        """This skill's `locale/` tree, bound once."""
+    def locale_resources(self) -> SkillResources:
+        """This skill's `locale/` tree, bound once.
+
+        Deliberately not called `resources`: `OVOSSkill.resources` is the
+        framework's own per-language resource object and several of its methods
+        go through it. Shadowing it with a different class would break them
+        quietly.
+        """
         if self._resources is None:
             self._resources = SkillResources(self.locale_dir())
         return self._resources
@@ -136,17 +142,27 @@ class _SkillPlumbing:
         """Casefolded and accent-free, for comparing against a vocabulary."""
         return fold(text)
 
-    def voc_match(self, voc_name: str, utterance: str, lang: str | None = None) -> bool:
-        """Whether the utterance contains a term from this vocabulary.
+    def mentions(self, utterance: str, voc_name: str, lang: str | None = None) -> bool:
+        """Whether the utterance mentions a term from this vocabulary.
 
-        Word-start matching, so `log` does not claim "technology" -- the bug
-        that had five skills answering for each other.
+        Not `voc_match`: that name belongs to `OVOSSkill`, and taking it with a
+        different argument order would silently swap the arguments of any call
+        the framework makes.
+
+        The difference from `self.voc_match` is inflection. OVOS matches whole
+        words -- `re.match(r'.*\b' + term + r'\b.*')` -- so a `logs.voc`
+        listing `log` does not match "logs", which is why skills wrote their own
+        containment version and inherited the bug where `log` claimed
+        "technology". This matches a term at the start of a word plus a short
+        ending, so "logs" counts and "technology" does not.
+
+        Reach for `self.voc_match(utt, voc)` when whole words are what you mean.
         """
-        return self.resources.voc_match(voc_name, utterance, lang or self._own_lang())
+        return self.locale_resources.voc_match(voc_name, utterance, lang or self._own_lang())
 
-    def voc_term(self, voc_name: str, utterance: str, lang: str | None = None) -> str:
-        """The matching vocabulary term itself, longest first, or ""."""
-        return self.resources.voc_term(voc_name, utterance, lang or self._own_lang())
+    def mentioned_term(self, utterance: str, voc_name: str, lang: str | None = None) -> str:
+        """The vocabulary term the utterance mentioned, longest first, or ""."""
+        return self.locale_resources.voc_term(voc_name, utterance, lang or self._own_lang())
 
     def dialog(self, name: str, lang: str | None = None, data: dict | None = None) -> str:
         """One rendered line from `locale/<lang>/dialog/<name>.dialog`.
@@ -156,7 +172,7 @@ class _SkillPlumbing:
         and to the name itself if nothing is found -- a missing translation
         should sound wrong rather than raise mid-answer.
         """
-        lines = self.resources.dialog_lines(name, lang or self._own_lang())
+        lines = self.locale_resources.dialog_lines(name, lang or self._own_lang())
         if not lines:
             return name
         template = random.choice(lines)  # noqa: S311 - variety, not secrecy
