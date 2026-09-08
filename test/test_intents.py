@@ -235,25 +235,45 @@ def test_check_fleet_on_a_skill_without_locale_reports_nothing(tmp_path: Path):
     assert fleet.check_fleet(root, tmp_path / "corpus", near=False) == ([], [])
 
 
-def test_indexed_duplicates_name_the_other_owner_only(tmp_path: Path):
-    """The model's index: digests to labels. A digest that includes my own
-    label is my own sentence; another skill's label is a duplicate."""
+def test_indexed_duplicates_name_the_other_owner_only():
+    """The model's index: digests to labels. A sentence only another skill
+    publishes is this change's doing, and fails; my own label beside theirs
+    means the fleet already carried it, and that only warns."""
     index = _index([("will it rain", "weather:rain", "en-US"),
-                    ("will it rain", "pulse:pulse", "en-US"),
+                    ("what is on tonight", "guide:guide", "en-US"),
+                    ("what is on tonight", "pulse:pulse", "en-US"),
                     ("water the garden", "pulse:pulse", "en-US"),
                     ("va-t-il pleuvoir", "weather:rain", "fr-FR")])
-    assert len(index["labels"]) == 3
+
     def line(lang, number, text):
         return intents.IntentLine("pulse", "pulse", lang, "p.intent", number, text, text)
 
-    mine = [line("en-US", 1, "will it rain"), line("en-US", 2, "water the garden"),
-            line("fr-FR", 1, "will it rain")]
+    mine = [line("en-US", 1, "will it rain"), line("en-US", 2, "what is on tonight"),
+            line("en-US", 3, "water the garden"), line("fr-FR", 1, "will it rain")]
     found = fleet.find_indexed_duplicates(mine, index, "pulse")
-    assert [(f.mine.line, f.theirs.skill, f.theirs.intent) for f in found] == [
-        (1, "weather", "rain")]
-    assert found[0].fails and "fleet index" in found[0].describe()
-    # the same text in another language is another sentence
-    assert fleet.find_indexed_duplicates(mine[2:], index, "pulse") == []
+    assert [(f.kind, f.mine.line, f.theirs.skill) for f in found] == [
+        ("duplicate", 1, "weather"), ("known", 2, "guide")]
+    assert found[0].fails and not found[1].fails
+    assert "fleet index" in found[0].describe()
+    assert "did not cause it" in found[1].describe()
+
+
+def test_a_sentence_recorded_only_for_me_is_not_a_collision():
+    index = _index([("water the garden", "pulse:pulse", "en-US")])
+    mine = [intents.IntentLine("pulse", "other", "en-US", "p.intent", 1,
+                               "water the garden", "water the garden")]
+    assert fleet.find_indexed_duplicates(mine, index, "pulse") == []
+
+
+def test_corpus_duplicates_use_the_same_ratchet():
+    def line(skill, text):
+        return intents.IntentLine(skill, "i", "en-US", f"{skill}.intent", 1, text, text)
+
+    mine = [line("pulse", "will it rain"), line("pulse", "what is on tonight")]
+    others = [line("weather", "will it rain"), line("guide", "what is on tonight")]
+    fresh = fleet.find_duplicates(mine, others, already={"what is on tonight"})
+    assert [(f.kind, f.mine.text) for f in fresh] == [
+        ("duplicate", "will it rain"), ("known", "what is on tonight")]
 
 
 def test_resolve_model_takes_a_directory_first(tmp_path: Path):

@@ -262,17 +262,20 @@ def _has_intents(root: Path) -> bool:
 
 def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.directory or ".").resolve()
-    problems = check_all(root)
+    problems = [] if args.fleet_only else check_all(root)
     if problems:
         print(f"{len(problems)} problem(s) in {root.name}:")
         for problem in problems:
             print(f"  - {problem}")
-    else:
+    elif not args.fleet_only:
         print(f"ok: {root.name} keeps its contracts")
     failed = bool(problems)
 
     # A skill with intents is compared with the fleet unless told not to. The
     # corpus is opt-in; the model on the Hub is the default.
+    if args.no_fleet and args.fleet_only:
+        print("--no-fleet and --fleet-only ask for opposite things", file=sys.stderr)
+        return 2
     model = None if args.no_fleet else (args.model or MODEL_ID)
     if args.fleet is None and (args.no_fleet or not _has_intents(root)):
         return 1 if failed else 0
@@ -302,10 +305,13 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(render(finding))
     blocking = sum(1 for f in findings if f.fails)
     if blocking:
-        print(f"{blocking} sentence(s) already belong to another skill")
+        print(f"{blocking} sentence(s) this change claims already belong to another skill")
         failed = True
     elif findings:
-        print(f"ok: nothing another skill owns; {len(findings)} thing(s) worth a look above")
+        known = sum(1 for f in findings if f.kind == "known")
+        older = f", {known} the fleet already carried" if known else ""
+        print(f"ok: this change claims nothing another skill owns; "
+              f"{len(findings)} thing(s) worth a look above{older}")
     else:
         print("ok: nothing another skill owns")
     return 1 if failed else 0
@@ -329,6 +335,8 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("directory", nargs="?", help="the skill (default: here)")
     check.add_argument("--no-fleet", action="store_true",
                        help="only the skill's own contracts; do not fetch the fleet's model")
+    check.add_argument("--fleet-only", action="store_true",
+                       help="only the fleet comparison; skip the skill's own contracts")
     check.add_argument("--model", metavar="ID|DIR",
                        help=f"the fleet's model to compare with (default {MODEL_ID})")
     check.add_argument("--fleet", metavar="DIR",
