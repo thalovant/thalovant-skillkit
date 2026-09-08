@@ -92,3 +92,25 @@ def test_a_file_read_does_not_fall_back_but_a_vocabulary_match_does(resources):
 
 def test_dialog_falls_back_so_a_missing_translation_is_not_silence(resources):
     assert resources.dialog("news", "de-DE", {"what": "quiet"}) == "The news is quiet."
+
+
+def test_a_resources_object_does_not_outlive_its_last_reference(tmp_path):
+    """`lru_cache` over a bound method keeps the instance alive through the
+    cache, so it is only ever freed by the cyclic collector. The caches here
+    are plain dicts for that reason."""
+    import gc
+    import weakref
+
+    (tmp_path / "en-US" / "vocab").mkdir(parents=True)
+    (tmp_path / "en-US" / "vocab" / "K.voc").write_text("news", encoding="utf-8")
+
+    resources = SkillResources(tmp_path)
+    resources.voc_match("K", "what is the news", "en-US")   # fill both caches
+    ref = weakref.ref(resources)
+
+    gc.disable()
+    try:
+        del resources
+        assert ref() is None, "the resources object survived its last reference"
+    finally:
+        gc.enable()

@@ -39,14 +39,20 @@ from .message import (
 )
 from .service import post_json, request_headers
 from .text import fold, fold_spaces, fold_tight, fold_words, strip_accents
-from .vocab import WORDLESS_SCRIPTS, contains_term, first_match, matches_any, term_pattern
 from .version import __version__
+from .vocab import (
+    WORDLESS_SCRIPTS,
+    contains_term,
+    first_match,
+    matches_any,
+    term_pattern,
+)
 
 __all__ = [
     "DEFAULT_LANG",
     "LOW_BAND",
-    "SkillResources",
     "WORDLESS_SCRIPTS",
+    "SkillResources",
     "__version__",
     "contains_term",
     "context_of",

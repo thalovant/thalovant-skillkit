@@ -14,20 +14,40 @@ from __future__ import annotations
 
 from typing import Any
 
+
 # ovos_utils.lang.standardize_lang_tag is deprecated in favour of
 # ovos_spec_tools.standardize_lang, and six skills still call the old name and
 # print a deprecation warning on every utterance. Importing it in one place
 # means the next rename is one edit rather than nineteen.
-def _plain_standardize(lang: str) -> str:
-    """Enough of BCP-47 for a locale directory name: "fr_fr" -> "fr-FR".
+def _canonical(lang: str) -> str:
+    """The shape a locale directory is named in: "fr_fr" -> "fr-FR", "fr" -> "fr".
 
-    Only used when the OVOS stack is not importable -- which is how the tests
-    run, so that checking this library does not mean installing ovos-core.
+    Applied to whatever the OVOS normaliser returns, because what it returns
+    depends on which version is installed. ovos-utils 0.8.5 -- the floor the
+    skills themselves declare -- strips the region ("en-us" -> "en",
+    "FR-fr" -> "fr") and leaves an underscore alone ("fr_fr" -> "fr_fr"), while
+    0.14 returns "en-US" and "fr-FR". A skill resolving "fr_fr" against the
+    older one found no `fr_fr` directory, split on "-" to get a primary of
+    "fr_fr", matched nothing, and served French in English.
+
+    Canonicalising here makes the answer the same on every version.
     """
-    parts = str(lang).replace("_", "-").split("-")
-    if len(parts) == 1:
-        return parts[0].lower()
-    return f"{parts[0].lower()}-{parts[1].upper()}"
+    parts = [part for part in str(lang).replace("_", "-").split("-") if part]
+    if not parts:
+        return ""
+    # A tag is language-[script]-[region]-[variant...], and each part has its
+    # own casing: "zh-Hant-TW". Upper-casing the second part regardless turned
+    # that into "zh-HANT" and dropped the region entirely, which the
+    # source-scout locale test caught.
+    canonical = [parts[0].lower()]
+    for part in parts[1:]:
+        if len(part) == 4 and part.isalpha():
+            canonical.append(part.title())          # script: Hant
+        elif (len(part) == 2 and part.isalpha()) or (len(part) == 3 and part.isdigit()):
+            canonical.append(part.upper())          # region: TW, 419
+        else:
+            canonical.append(part.lower())          # variant
+    return "-".join(canonical)
 
 
 try:  # pragma: no cover - which import wins depends on the installed stack
@@ -39,7 +59,7 @@ except ImportError:  # pragma: no cover
         try:
             from ovos_utils.lang import standardize_lang_tag as _standardize
         except ImportError:
-            _standardize = _plain_standardize
+            _standardize = _canonical
 
 # The keys a message may carry its text under. `utterance` is what the intent
 # pipeline sends; the others arrive from OCP search, converse and the showroom
@@ -48,9 +68,29 @@ except ImportError:  # pragma: no cover
 _TEXT_KEYS = ("utterance", "phrase", "text", "query")
 
 
+def _has_region(tag: str) -> bool:
+    """Whether the tag already names a region, which is the part that gets lost."""
+    return any((len(part) == 2 and part.isalpha()) or (len(part) == 3 and part.isdigit())
+               for part in tag.split("-")[1:])
+
+
 def standardize(lang: str | None) -> str:
-    """A BCP-47 tag, normalised, without the deprecated spelling."""
-    return _standardize(lang or "en-US")
+    """A BCP-47 tag in the shape a locale directory uses.
+
+    The region comes from the tag as given, never from the OVOS normaliser,
+    because older versions throw it away: ovos-utils 0.8.5 -- the floor the
+    skills themselves declare -- turns "en-us" into "en" and "FR-fr" into "fr".
+    Nothing downstream can recover a region that has already been discarded, so
+    a caller asking for "FR-fr" has to be answered from its own text.
+
+    The normaliser is still consulted for a bare language, where there is no
+    region to lose and its language knowledge is worth having.
+    """
+    raw = lang or "en-US"
+    canonical = _canonical(raw)
+    if _has_region(canonical):
+        return canonical
+    return _canonical(_standardize(raw)) or canonical
 
 
 def data_of(message: Any) -> dict:

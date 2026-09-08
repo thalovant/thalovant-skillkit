@@ -12,9 +12,8 @@ argument, never in this module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import uuid
+from dataclasses import dataclass
 
 import requests
 
@@ -40,7 +39,8 @@ def normalize_ai_augmentation(value) -> str:
     text = str(value or "").strip().casefold()
     if text in ("on", "true", "yes", "enabled", "enable", "force", "forced", "always"):
         return "on"
-    if text in ("off", "false", "no", "disabled", "disable", "source", "sources", "source-only", "source_only", "none"):
+    if text in ("off", "false", "no", "disabled", "disable", "source", "sources",
+                "source-only", "source_only", "none"):
         return "off"
     return AI_AUGMENTATION_DEFAULT
 
@@ -55,10 +55,10 @@ def parse_age_policy(configured) -> dict | None:
     if configured is None:
         return None
     if not isinstance(configured, dict):
-        raise ValueError("age_policy must be an object")
+        raise ValueError("age_policy must be an object")  # noqa: TRY004 - a protected hub must fail closed
     enabled = configured.get("enabled", False)
     if not isinstance(enabled, bool):
-        raise ValueError("age_policy.enabled must be a boolean")
+        raise ValueError("age_policy.enabled must be a boolean")  # noqa: TRY004
     if not enabled:
         return None
     audience_under_age = configured.get("audience_under_age", 13)
@@ -68,7 +68,7 @@ def parse_age_policy(configured) -> dict | None:
     ):
         audience_under_age = int(audience_under_age)
     if not isinstance(audience_under_age, int) or isinstance(audience_under_age, bool):
-        raise ValueError("age_policy.audience_under_age must be 13, 16, 18, or 21")
+        raise ValueError("age_policy.audience_under_age must be 13, 16, 18, or 21")  # noqa: TRY004
     if audience_under_age not in SUPPORTED_AUDIENCE_AGE_BOUNDARIES:
         raise ValueError("age_policy.audience_under_age must be 13, 16, 18, or 21")
     return {

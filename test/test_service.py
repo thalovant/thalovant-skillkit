@@ -58,3 +58,32 @@ def test_a_failed_call_is_retried_then_gives_up_quietly():
     dead = Client(ConnectionError("down"), ConnectionError("still down"))
     assert post_json("http://x/v1", {}, client=dead, attempts=2) is None
     assert dead.calls == 2
+
+
+class Status:
+    """A response that answers with an HTTP status rather than raising."""
+
+    def __init__(self, status_code, payload=None):
+        self.status_code, self._payload = status_code, payload
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise RuntimeError(f"HTTP {self.status_code}")
+
+    def json(self):
+        return self._payload
+
+
+def test_a_client_error_is_not_retried():
+    """A 4xx is the service saying the request itself is wrong. Asking again
+    with the same body gets the same answer, while someone waits for a spoken
+    reply, so it costs a whole extra timeout for nothing."""
+    client = Client(Status(400), Status(400))
+    assert post_json("http://x/v1", {}, client=client, attempts=3) is None
+    assert client.calls == 1
+
+
+def test_a_server_error_is_retried():
+    client = Client(Status(503), Status(200, {"answer": "recovered"}))
+    assert post_json("http://x/v1", {}, client=client, attempts=2) == {"answer": "recovered"}
+    assert client.calls == 2

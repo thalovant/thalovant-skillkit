@@ -17,7 +17,6 @@ that every skill was reimplementing.
 """
 from __future__ import annotations
 
-from functools import lru_cache
 from pathlib import Path
 
 from .message import standardize
@@ -33,11 +32,15 @@ class SkillResources:
     def __init__(self, locale_dir: Path | str, default_lang: str = DEFAULT_LANG):
         self.root = Path(locale_dir)
         self.default_lang = default_lang
-        # Bound per instance: two skills have different locale trees, and a
-        # cache keyed only on the language would hand one skill the other's
-        # answer.
-        self._lang = lru_cache(maxsize=128)(self._resolve_lang)
-        self._lines = lru_cache(maxsize=4096)(self._read_lines)
+        # Cached per instance, because two skills have different locale trees
+        # and a cache keyed only on the language would hand one skill the
+        # other's answer. Plain dicts rather than lru_cache over a bound
+        # method: that holds a reference to the instance through the cache, so
+        # the instance outlives every reference to it. The keys here are a
+        # handful of language tags and resource filenames, so the caches are
+        # small and do not need eviction.
+        self._lang_cache: dict[str | None, str] = {}
+        self._lines_cache: dict[tuple[str, str, str], tuple[str, ...]] = {}
 
     # -- which language this skill can actually serve -------------------------
 
@@ -58,7 +61,9 @@ class SkillResources:
         return self.default_lang
 
     def lang(self, lang: str | None) -> str:
-        return self._lang(lang)
+        if lang not in self._lang_cache:
+            self._lang_cache[lang] = self._resolve_lang(lang)
+        return self._lang_cache[lang]
 
     def candidate_langs(self, lang: str | None) -> tuple[str, ...]:
         """The languages to try in order: the requested one, then English.
@@ -70,6 +75,12 @@ class SkillResources:
         return tuple(dict.fromkeys((self.lang(lang), self.default_lang)))
 
     # -- what it says ---------------------------------------------------------
+
+    def _lines(self, lang: str, folder: str, filename: str) -> tuple[str, ...]:
+        key = (lang, folder, filename)
+        if key not in self._lines_cache:
+            self._lines_cache[key] = self._read_lines(lang, folder, filename)
+        return self._lines_cache[key]
 
     def _read_lines(self, lang: str, folder: str, filename: str) -> tuple[str, ...]:
         path = self.root / lang / folder / filename

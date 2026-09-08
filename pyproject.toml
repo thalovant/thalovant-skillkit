@@ -4,14 +4,14 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.1.1"
+version = "0.1.2"
 description = "Shared plumbing for the Thalovant OVOS skills"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
 dependencies = [
     "requests>=2.31",
-    "ovos-utils>=0.3.0",
+    "ovos-utils>=0.8.5",
 ]
 
 [project.urls]
@@ -22,3 +22,12 @@ include = ["thalovant_skillkit*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.lint]
+# Correctness and import hygiene. Not S/TRY/RUF: they flag the vendored
+# knowledge client's deliberate fail-closed ValueError, and the typographic
+# apostrophe in text.py that exists precisely to be normalised away.
+select = ["E", "F", "I", "UP", "B"]

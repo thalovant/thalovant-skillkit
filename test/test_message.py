@@ -86,3 +86,58 @@ def test_context_value_prefers_context_then_data_and_skips_empties():
     message = Msg(data={"site_id": "kitchen"}, context={"site_id": ""})
     assert context_value(message, "site_id") == "kitchen"
     assert context_value(message, "nothing", default="fallback") == "fallback"
+
+
+@pytest.mark.parametrize(
+    "tag, expected",
+    [
+        ("fr_fr", "fr-FR"),
+        ("fr-FR", "fr-FR"),
+        ("FR-fr", "fr-FR"),
+        ("en_US", "en-US"),
+        ("en-us", "en-US"),
+        ("fr", "fr"),
+    ],
+)
+def test_the_tag_shape_does_not_depend_on_which_ovos_version_is_installed(tag, expected):
+    """ovos-utils 0.8.5 -- the floor the skills themselves declare -- strips the
+    region ("en-us" -> "en", "FR-fr" -> "fr") and leaves an underscore alone
+    ("fr_fr" -> "fr_fr"). 0.14 returns "en-US" and "fr-FR". Resolving "fr_fr"
+    against the older one found no `fr_fr` locale directory, split on "-" to get
+    a primary of "fr_fr", matched nothing, and served French in English.
+
+    This ran green for a while because the test environment has no ovos-utils
+    at all and fell back to the local canonicaliser, so the assertion only ever
+    exercised the fallback. It now pins the result of whichever normaliser is
+    actually installed.
+    """
+    assert standardize(tag) == expected
+
+
+def test_a_skill_resolves_its_french_locale_from_any_spelling(tmp_path):
+    """The failure this prevents, at the level where it was visible."""
+    from thalovant_skillkit import SkillResources
+
+    for lang in ("en-US", "fr-FR"):
+        (tmp_path / lang / "vocab").mkdir(parents=True)
+    resources = SkillResources(tmp_path)
+
+    for spelling in ("fr-FR", "fr_fr", "FR-fr", "fr"):
+        assert resources.lang(spelling) == "fr-FR", spelling
+
+
+@pytest.mark.parametrize(
+    "tag, expected",
+    [
+        ("zh-Hant-TW", "zh-Hant-TW"),   # language-script-region
+        ("zh_hant_tw", "zh-Hant-TW"),
+        ("es-419", "es-419"),           # a numeric region
+        ("pt-BR", "pt-BR"),
+    ],
+)
+def test_a_script_subtag_is_not_mistaken_for_a_region(tag, expected):
+    """Upper-casing the second part regardless turned "zh-Hant-TW" into
+    "zh-HANT" and dropped the region -- caught by source-scout's locale test,
+    which drives every bundled language through the knowledge service and
+    checks the tag it sends."""
+    assert standardize(tag) == expected
