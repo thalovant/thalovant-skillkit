@@ -73,6 +73,77 @@ Each function is the **union** of what the skills already did — the behaviour 
 the most careful copy — so adopting it makes a thin skill more correct rather
 than differently wrong.
 
+## Writing a skill
+
+Inherit and write the skill. The base class carries the plumbing:
+
+```python
+from thalovant_skillkit.skill import ThalovantFallbackSkill
+
+
+class NewsSkill(ThalovantFallbackSkill):
+    FALLBACK_PRIORITY = 96
+
+    def can_answer(self, message) -> bool:
+        return self.voc_match("NewsKeyword", self.utterance(message),
+                              self.lang_of(message))
+
+    def handle_fallback(self, message) -> bool:
+        self.speak(self.dialog("headlines", self.lang_of(message)))
+        return True
+```
+
+That is the whole skill. No `LOCALE_DIR`, no `_utterance`, no `_message_lang`,
+no `_resource_lang`, no `_fold`, no `_dialog`, no thirteen-line
+`runtime_requirements`, and no fallback registration to get right — the locale
+tree is found from the module the class lives in, the fallback is registered
+once at a priority an operator can override in settings, and every helper is a
+method.
+
+An audit of the fleet found **194 such functions across 22 skills, about 1,600
+lines**, that no skill needs to write again. The smallest skill was 369 lines
+and 23% of it was this.
+
+### What you get
+
+| on the skill | what it does |
+|---|---|
+| `self.utterance(message)` | the text, from whichever key the message carries it under |
+| `self.lang_of(message)` | the language, from data, context or session |
+| `self.location_of(message)` | the house's location, or `None` |
+| `self.voc_match(name, text, lang)` | vocabulary match that does not claim words merely spelling a term |
+| `self.voc_term(name, text, lang)` | the matching term itself, longest first |
+| `self.dialog(name, lang, data)` | a rendered line, picked at random, falling back to English |
+| `self.setting(key, default)` | one setting, readable before the skill is bound |
+| `self.resources` | the `SkillResources` for this skill's `locale/` |
+| `REQUIRES_NETWORK/INTERNET/GUI` | three attributes instead of a `RuntimeRequirements` block |
+
+`ThalovantSkill` is the same without the fallback machinery, for a skill that
+only answers its own intents.
+
+## Testing a skill
+
+Thirteen skills hand-roll a fake message, and no two agree — some set a
+language, some do not. A skill tested only against language-less messages is
+tested against something the satellite never sends.
+
+```python
+from thalovant_skillkit.testing import FakeBus, MONTREAL, message
+
+def test_it_answers_in_french():
+    skill = NewsSkill()
+    assert skill.can_answer(message("quelles sont les nouvelles", lang="fr-FR"))
+
+def test_it_knows_where_it_is():
+    skill = NewsSkill()
+    reply = skill.handle_fallback(message("what time is it", location=MONTREAL))
+```
+
+`message()` builds what the satellite actually sends — a real
+`ovos_bus_client.Message` when that is installed, a faithful stand-in when it is
+not. `FakeBus` records what a skill said (`bus.spoken()`) and what it
+registered.
+
 ## Use
 
 ```python
