@@ -231,7 +231,12 @@ def test_nothing_here_shadows_the_framework():
     # these and expects a skill to fill them in.
     expected = {"initialize", "can_answer", "handle_fallback", "runtime_requirements"}
 
-    collisions = {name for name in ours - expected if hasattr(OVOSSkill, name)}
+    from thalovant_skillkit.skill import _ConversationalBase
+
+    collisions = {
+        name for name in ours - expected
+        if hasattr(OVOSSkill, name) or hasattr(_ConversationalBase, name)
+    }
 
     assert collisions == set(), (
         f"these shadow OVOSSkill and will confuse or break it: {sorted(collisions)}"
@@ -297,3 +302,30 @@ def test_a_skill_that_writes_neither_reply_nor_handle_fallback_says_so():
 def test_preview_reply_is_exposed_over_the_skill_api():
     """The preview bridge finds it through OVOS's skill-API decorator."""
     assert getattr(ThalovantFallbackSkill.preview_reply, "api_method", False) is True
+
+
+def test_a_conversational_skill_carries_the_same_plumbing_and_converse():
+    from thalovant_skillkit.skill import ThalovantConversationalSkill
+
+    assert hasattr(ThalovantConversationalSkill, "mentions")
+    assert hasattr(ThalovantConversationalSkill, "reply")
+    assert hasattr(ThalovantConversationalSkill, "converse")
+
+
+def test_a_subclass_defined_elsewhere_still_finds_the_skills_locale(demo, tmp_path):
+    """A test harness subclasses the skill inside test/, which has no locale
+    tree. Reading only the leaf class looked for test/locale/ and the skill
+    answered with dialog names instead of dialog. The first real skill moved
+    onto the kit found this within a minute."""
+    harness_module = tmp_path / "elsewhere" / "harness.py"
+    harness_module.parent.mkdir()
+    harness_module.write_text(
+        "from demo_skill_pkg import DemoSkill\n\nclass Harness(DemoSkill):\n    pass\n",
+        encoding="utf-8")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("harness_mod", harness_module)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.Harness.locale_dir() == demo.locale_dir()
+    assert module.Harness.locale_dir().is_dir()
