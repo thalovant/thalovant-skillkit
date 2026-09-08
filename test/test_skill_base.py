@@ -182,3 +182,23 @@ def test_the_plain_skill_class_carries_the_same_helpers():
     assert hasattr(ThalovantSkill, "voc_match")
     assert hasattr(ThalovantSkill, "dialog")
     assert hasattr(ThalovantSkill, "utterance")
+
+
+@pytest.mark.parametrize(
+    "template, expected",
+    [
+        ("Hello {who}.", "Hello {who}."),        # a placeholder nobody supplied
+        ("Hello {", "Hello {"),                  # an unmatched brace: ValueError
+        ("Hello {0} {1}", "Hello {0} {1}"),      # positional: IndexError
+    ],
+)
+def test_a_broken_translation_is_spoken_rather_than_raised(demo, tmp_path, template, expected):
+    """`str.format` raises ValueError for a malformed template, not just
+    KeyError for a missing placeholder. A translation with an unmatched brace
+    should sound wrong, which is audible and fixable, rather than crash the
+    reply."""
+    skill = demo()
+    broken = skill.locale_dir() / "en-US" / "dialog" / "broken.dialog"
+    broken.write_text(template + "\n", encoding="utf-8")
+
+    assert skill.dialog("broken", "en-US") == expected

@@ -144,28 +144,31 @@ def test_it_knows_where_it_is():
 not. `FakeBus` records what a skill said (`bus.spoken()`) and what it
 registered.
 
-## Use
+## Using the pieces directly
+
+The base classes are the short path. The primitives underneath stay public, for
+code that is not a skill and for a skill that cannot change what it inherits:
 
 ```python
 from pathlib import Path
-from thalovant_skillkit import SkillResources, message_lang, utterance, resolve_priority
+
+from thalovant_skillkit import SkillResources, message_lang, utterance
 
 RESOURCES = SkillResources(Path(__file__).parent / "locale")
-FALLBACK_PRIORITY = 98
 
 
-class MySkill(FallbackSkill):
-    def can_answer(self, message) -> bool:
-        lang = message_lang(message, self.lang)
-        return RESOURCES.voc_match("MyKeyword", utterance(message), lang)
-
-    def _fallback_priority(self) -> int:
-        return resolve_priority(self._skill_settings(), FALLBACK_PRIORITY)
+def wants_the_news(message) -> bool:
+    lang = message_lang(message, "en-US")
+    return RESOURCES.voc_match("NewsKeyword", utterance(message), lang)
 ```
 
 `SkillResources` is bound to one skill's locale directory, which is what kept
 these functions from being lifted out before — each skill read its own
 `LOCALE_DIR` module constant.
+
+Prefer `ThalovantFallbackSkill` for anything that is a skill: it wires the
+locale tree, the fallback registration and the priority override for you, and
+those are the three things that were most often subtly wrong.
 
 ## The one behaviour change
 

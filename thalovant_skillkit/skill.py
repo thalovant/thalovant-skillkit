@@ -162,7 +162,13 @@ class _SkillPlumbing:
         template = random.choice(lines)  # noqa: S311 - variety, not secrecy
         try:
             return template.format(**(data or {})).replace("\\n", "\n")
-        except (KeyError, IndexError):
+        except (KeyError, IndexError, ValueError):
+            # KeyError and IndexError are a placeholder the caller did not
+            # supply; ValueError is a malformed template, which `str.format`
+            # raises for something as small as an unmatched brace. All three
+            # are a translation that needs fixing, and none of them is worth
+            # crashing a spoken reply over -- the skill says the raw line and
+            # the mistake is audible.
             return template.replace("\\n", "\n")
 
     # -- settings -------------------------------------------------------------
