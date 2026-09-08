@@ -310,3 +310,22 @@ def test_a_conversational_skill_carries_the_same_plumbing_and_converse():
     assert hasattr(ThalovantConversationalSkill, "mentions")
     assert hasattr(ThalovantConversationalSkill, "reply")
     assert hasattr(ThalovantConversationalSkill, "converse")
+
+
+def test_a_subclass_defined_elsewhere_still_finds_the_skills_locale(demo, tmp_path):
+    """A test harness subclasses the skill inside test/, which has no locale
+    tree. Reading only the leaf class looked for test/locale/ and the skill
+    answered with dialog names instead of dialog. The first real skill moved
+    onto the kit found this within a minute."""
+    harness_module = tmp_path / "elsewhere" / "harness.py"
+    harness_module.parent.mkdir()
+    harness_module.write_text(
+        "from demo_skill_pkg import DemoSkill\n\nclass Harness(DemoSkill):\n    pass\n",
+        encoding="utf-8")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("harness_mod", harness_module)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    assert module.Harness.locale_dir() == demo.locale_dir()
+    assert module.Harness.locale_dir().is_dir()

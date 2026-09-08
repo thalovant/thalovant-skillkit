@@ -110,10 +110,31 @@ class _SkillPlumbing:
 
     @classmethod
     def locale_dir(cls) -> Path:
-        """`locale/` beside the module this skill is defined in."""
+        """`locale/` beside the module the skill is defined in.
+
+        Walks the class hierarchy from the most derived class up and takes the
+        first one that actually has a `locale/` beside it. Reading only the
+        leaf class broke the moment anything subclassed a skill -- a test
+        harness in `test/`, or one skill extending another -- because the
+        subclass's module has no locale tree and the skill answered with dialog
+        names instead of dialog.
+        """
         if cls.LOCALE_DIR is not None:
             return Path(cls.LOCALE_DIR)
-        return Path(inspect.getfile(cls)).resolve().parent / "locale"
+        fallback: Path | None = None
+        for klass in cls.__mro__:
+            if klass.__module__.startswith("thalovant_skillkit") or klass is object:
+                continue
+            try:
+                candidate = Path(inspect.getfile(klass)).resolve().parent / "locale"
+            except (TypeError, OSError):
+                continue
+            fallback = fallback or candidate
+            if candidate.is_dir():
+                return candidate
+        # Nothing has one: name the leaf class's location, so the error points
+        # at the skill rather than at the library.
+        return fallback or Path(inspect.getfile(cls)).resolve().parent / "locale"
 
     # -- reading a message ----------------------------------------------------
 
