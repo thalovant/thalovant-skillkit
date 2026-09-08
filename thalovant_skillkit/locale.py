@@ -41,6 +41,10 @@ class SkillResources:
         # small and do not need eviction.
         self._lang_cache: dict[str | None, str] = {}
         self._lines_cache: dict[tuple[str, str, str], tuple[str, ...]] = {}
+        # Vocabulary folded once per language and file rather than on every
+        # match. A skill asks `mentions()` on the utterance path, so this runs
+        # for every word someone says.
+        self._folded_cache: dict[tuple[str, str], tuple[str, ...]] = {}
 
     # -- which language this skill can actually serve -------------------------
 
@@ -112,6 +116,19 @@ class SkillResources:
     def vocab(self, voc_name: str, lang: str | None) -> tuple[str, ...]:
         return self.lines(lang, "vocab", f"{voc_name}.voc")
 
+    def _folded_vocab(self, lang: str, voc_name: str) -> tuple[str, ...]:
+        """This vocabulary, folded once and kept."""
+        key = (lang, voc_name)
+        cached = self._folded_cache.get(key)
+        if cached is None:
+            cached = tuple(
+                folded
+                for folded in (fold(term) for term in self._lines(lang, "vocab", f"{voc_name}.voc"))
+                if folded
+            )
+            self._folded_cache[key] = cached
+        return cached
+
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
         """Falls back to English: a translation that has not landed yet should
         sound wrong rather than leave the skill silent mid-answer."""
@@ -144,8 +161,8 @@ class SkillResources:
             return False
         resolved = self.lang(lang)
         for candidate in self.candidate_langs(lang):
-            terms = self._lines(candidate, "vocab", f"{voc_name}.voc")
-            if any(contains_term(text, fold(term), resolved) for term in terms):
+            if any(contains_term(text, term, resolved)
+                   for term in self._folded_vocab(candidate, voc_name)):
                 return True
         return False
 
@@ -156,8 +173,7 @@ class SkillResources:
             return ""
         resolved = self.lang(lang)
         for candidate in self.candidate_langs(lang):
-            terms = [fold(t) for t in self._lines(candidate, "vocab", f"{voc_name}.voc")]
-            found = first_match(text, terms, resolved)
+            found = first_match(text, self._folded_vocab(candidate, voc_name), resolved)
             if found:
                 return found
         return ""
@@ -170,7 +186,7 @@ class SkillResources:
             return ""
         resolved = self.lang(lang)
         for candidate in self.candidate_langs(lang):
-            terms = self._lines(candidate, "vocab", f"{voc_name}.voc")
-            if any(contains_term(text, fold(term), resolved) for term in terms):
+            if any(contains_term(text, term, resolved)
+                   for term in self._folded_vocab(candidate, voc_name)):
                 return candidate
         return ""
