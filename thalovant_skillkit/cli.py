@@ -278,6 +278,10 @@ def cmd_check(args: argparse.Namespace) -> int:
         return 2
     model = None if args.no_fleet else (args.model or MODEL_ID)
     if args.fleet is None and (args.no_fleet or not _has_intents(root)):
+        if args.fleet_only:
+            # The only thing this run was asked to do, and there was nothing
+            # to do it to. Silence would read as a broken step in CI.
+            print(f"ok: {root.name} publishes no intent files; nothing to compare")
         return 1 if failed else 0
 
     from .fleet import ModelUnavailable, check_fleet, render

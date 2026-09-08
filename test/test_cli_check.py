@@ -39,6 +39,9 @@ def test_a_skill_without_intents_never_fetches_the_model(tmp_path: Path, monkeyp
     monkeypatch.setattr(fleet, "resolve_model", lambda model: (_ for _ in ()).throw(AssertionError))
     assert cli.main(["check", str(root)]) == 0
     assert "keeps its contracts" in capsys.readouterr().out
+    # ... and says as much when that is all it was asked to do
+    assert cli.main(["check", "--fleet-only", str(root)]) == 0
+    assert "publishes no intent files" in capsys.readouterr().out
 
 
 def test_offline_is_a_skip_on_a_laptop_and_a_failure_in_ci(tmp_path: Path, monkeypatch, capsys):
