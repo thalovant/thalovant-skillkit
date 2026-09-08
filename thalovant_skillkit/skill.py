@@ -44,6 +44,14 @@ from ovos_workshop.decorators import skill_api_method
 from ovos_workshop.skills import OVOSSkill
 from ovos_workshop.skills.fallback import FallbackSkill
 
+try:
+    # ovos-workshop 9 factored converse out of OVOSSkill. A skill that keeps a
+    # conversation going -- a game, a multi-turn question -- needs this base,
+    # and every such skill was carrying this same try/except itself.
+    from ovos_workshop.skills.converse import ConversationalSkill as _ConversationalBase
+except ImportError:  # pragma: no cover - ovos-workshop 8 has converse built in
+    _ConversationalBase = OVOSSkill
+
 from .fallback import register_once, resolve_priority
 from .locale import SkillResources
 from .message import context_of, message_lang, utterance
@@ -232,6 +240,15 @@ class _SkillPlumbing:
 
 class ThalovantSkill(_SkillPlumbing, OVOSSkill):
     """A skill that answers its own intents."""
+
+
+class ThalovantConversationalSkill(_SkillPlumbing, _ConversationalBase):
+    """A skill that keeps a conversation going after its first answer.
+
+    `converse()` receives the next thing the person says while the skill is
+    active, which is how a game asks its next question or a skill takes a
+    follow-up. On ovos-workshop 8 this is the same as `ThalovantSkill`.
+    """
 
 
 class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):

@@ -231,7 +231,12 @@ def test_nothing_here_shadows_the_framework():
     # these and expects a skill to fill them in.
     expected = {"initialize", "can_answer", "handle_fallback", "runtime_requirements"}
 
-    collisions = {name for name in ours - expected if hasattr(OVOSSkill, name)}
+    from thalovant_skillkit.skill import _ConversationalBase
+
+    collisions = {
+        name for name in ours - expected
+        if hasattr(OVOSSkill, name) or hasattr(_ConversationalBase, name)
+    }
 
     assert collisions == set(), (
         f"these shadow OVOSSkill and will confuse or break it: {sorted(collisions)}"
@@ -297,3 +302,11 @@ def test_a_skill_that_writes_neither_reply_nor_handle_fallback_says_so():
 def test_preview_reply_is_exposed_over_the_skill_api():
     """The preview bridge finds it through OVOS's skill-API decorator."""
     assert getattr(ThalovantFallbackSkill.preview_reply, "api_method", False) is True
+
+
+def test_a_conversational_skill_carries_the_same_plumbing_and_converse():
+    from thalovant_skillkit.skill import ThalovantConversationalSkill
+
+    assert hasattr(ThalovantConversationalSkill, "mentions")
+    assert hasattr(ThalovantConversationalSkill, "reply")
+    assert hasattr(ThalovantConversationalSkill, "converse")
