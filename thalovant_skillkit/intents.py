@@ -3,9 +3,9 @@
 Padatious trains one classifier per language on every skill's `.intent` files
 together, so a sentence two skills both publish has one owner the authors never
 chose. This module turns a skill's intent files into the plain sentences the
-classifier sees -- alternations expanded, slots neutralised -- and reads or
-writes the fleet corpus that lets a skill compare itself with every other one
-without cloning them.
+classifier sees -- alternations expanded, slots neutralised -- and reads the
+fleet corpus. The corpus itself is built by `thalovant/intent-corpus`, which
+imports these same functions, so the two cannot drift.
 
 The corpus is one JSON file per language::
 
@@ -19,8 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from dataclasses import dataclass
 from pathlib import Path
 
 CORPUS_VERSION = 1
@@ -166,44 +165,6 @@ def sentence_key(lang: str, text: str) -> str:
 
 
 # -- the corpus ---------------------------------------------------------------
-
-def _now() -> str:
-    stamp = datetime.now(timezone.utc).replace(microsecond=0)
-    return stamp.isoformat().replace("+00:00", "Z")
-
-
-def build_corpus(skills: list[tuple[str, Path, Path, dict]], lang: str) -> dict:
-    """One language of the fleet corpus.
-
-    `skills` holds `(skill_id, skill_root, locale_dir, metadata)`; metadata is
-    whatever the builder knows (`repo`, `sha`) and is carried verbatim so a
-    reader can say which commit a sentence came from.
-    """
-    lines: list[IntentLine] = []
-    meta: dict[str, dict] = {}
-    for skill_id, root, locale_dir, metadata in skills:
-        found = intent_lines(root, locale_dir, lang, skill_id)
-        if not found:
-            continue
-        lines.extend(found)
-        meta[skill_id] = dict(metadata)
-    return {
-        "version": CORPUS_VERSION,
-        "lang": lang,
-        "built": _now(),
-        "skills": meta,
-        "lines": [{k: v for k, v in asdict(line).items() if k != "lang"} for line in lines],
-    }
-
-
-def write_corpus(directory: Path, corpus: dict) -> Path:
-    if not valid_lang(corpus.get("lang")):
-        raise ValueError(f"not a language tag: {corpus.get('lang')!r}")
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"{corpus['lang']}.json"
-    path.write_text(json.dumps(corpus, ensure_ascii=False, indent=0) + "\n", encoding="utf-8")
-    return path
-
 
 def load_corpus(path: Path) -> dict:
     data = json.loads(Path(path).read_text(encoding="utf-8"))

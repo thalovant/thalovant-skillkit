@@ -60,13 +60,14 @@ def test_no_fleet_asks_nothing_of_the_network(tmp_path: Path, monkeypatch, capsy
 
 
 def test_a_model_directory_with_an_index_fails_a_duplicate(tmp_path: Path, monkeypatch, capsys):
-    from thalovant_skillkit.model import Row, sentence_index
+    from thalovant_skillkit.intents import sentence_key
 
     root = _skill(tmp_path / "skill", intents=True)
     model_dir = tmp_path / "model"
     model_dir.mkdir()
-    (model_dir / "index.json").write_text(json.dumps(sentence_index(
-        [Row("water the garden", "thalovant-skill-garden.thalovant:water", "en-US")])))
+    key = sentence_key("en-US", "water the garden")
+    (model_dir / "index.json").write_text(json.dumps(
+        {"version": 1, "labels": {key: ["thalovant-skill-garden.thalovant:water"]}}))
     monkeypatch.setattr(fleet, "find_predicted", lambda *a, **k: [])
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
     assert cli.main(["check", "--model", str(model_dir), str(root)]) == 1
