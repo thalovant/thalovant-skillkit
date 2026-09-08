@@ -50,6 +50,18 @@ thalovant-skillkit check
 Every locale complete, placeholders matching, packaging sound, priority in
 band. The same check runs in the CI the scaffold writes for you.
 
+```bash
+thalovant-skillkit check --model
+```
+
+Every skill's intents are trained into one classifier on the hub, so a
+sentence you publish must not already be another skill's. `--model` compares
+your `.intent` files with the fleet's model on the Hugging Face Hub
+(`thalovant/thalovant-m2v-intents`, public): a sentence another skill
+already publishes fails, on the line, naming the owner; a sentence the
+classifier reads as another skill's warns, with its confidence. The
+scaffold's CI does this on every push and tells you which line to change.
+
 ## What you get
 
 | | |
