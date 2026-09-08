@@ -329,3 +329,25 @@ def test_a_subclass_defined_elsewhere_still_finds_the_skills_locale(demo, tmp_pa
 
     assert module.Harness.locale_dir() == demo.locale_dir()
     assert module.Harness.locale_dir().is_dir()
+
+
+def test_common_play_base_carries_the_plumbing_without_touching_ocp():
+    """The fleet's news skill answers OCP searches, so it cannot use
+    ThalovantSkill; it should not have to reach for the private mixin."""
+    pytest.importorskip("ovos_workshop.skills.common_play")
+    from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill
+
+    from thalovant_skillkit.skill import ThalovantCommonPlaySkill, _SkillPlumbing
+
+    assert ThalovantCommonPlaySkill is not None
+    assert issubclass(ThalovantCommonPlaySkill, OVOSCommonPlaybackSkill)
+    assert issubclass(ThalovantCommonPlaySkill, _SkillPlumbing)
+    # The plumbing comes first, and adds nothing that shadows the OCP base
+    # beyond runtime_requirements, which a skill overrides anyway.
+    mro = ThalovantCommonPlaySkill.__mro__
+    assert mro.index(_SkillPlumbing) < mro.index(OVOSCommonPlaybackSkill)
+    shared = {n for n in vars(_SkillPlumbing) if not n.startswith("__")} & set(
+        dir(OVOSCommonPlaybackSkill))
+    assert shared == {"runtime_requirements"}, shared
+    for helper in ("utterance", "lang_of", "dialog", "mentions", "locale_resources"):
+        assert hasattr(ThalovantCommonPlaySkill, helper)

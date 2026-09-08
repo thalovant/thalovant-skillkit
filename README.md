@@ -70,6 +70,11 @@ and checks the rest.
 | `self.setting("key", default)` | one skill setting |
 | `self.reply(utterance, lang, ctx)` | your answer; spoken and previewed from one place |
 
+There are four bases: `ThalovantSkill` for a skill with its own intents,
+`ThalovantFallbackSkill` for one that answers what no intent claimed,
+`ThalovantConversationalSkill` for one that keeps a conversation going, and
+`ThalovantCommonPlaySkill` for one that answers OCP searches.
+
 Everything on `OVOSSkill` still works — `self.speak`, `self.speak_dialog`,
 `self.voc_match`, the intent decorators. Nothing here replaces them.
 
