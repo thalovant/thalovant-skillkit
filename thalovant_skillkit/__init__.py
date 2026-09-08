@@ -21,6 +21,10 @@ behaviour of the most careful copy:
     fallback   the ladder rung, an operator override, registering once
     service    request headers with a traceable id, and a POST that stays quiet
     knowledge  the knowledge-service client, previously vendored three times
+
+How a term may match is a fact about a language, not about this code, so it
+lives in locale/<lang>/matching.json beside everything else the fleet keeps
+per language -- not in a set of language codes written into vocab.py.
 """
 from __future__ import annotations
 
@@ -41,19 +45,21 @@ from .service import post_json, request_headers
 from .text import fold, fold_spaces, fold_tight, fold_words, strip_accents
 from .version import __version__
 from .vocab import (
-    WORDLESS_SCRIPTS,
+    available_langs,
     contains_term,
     first_match,
+    is_wordless,
     matches_any,
+    matching_rules,
     term_pattern,
 )
 
 __all__ = [
     "DEFAULT_LANG",
     "LOW_BAND",
-    "WORDLESS_SCRIPTS",
     "SkillResources",
     "__version__",
+    "available_langs",
     "contains_term",
     "context_of",
     "context_value",
@@ -63,8 +69,10 @@ __all__ = [
     "fold_spaces",
     "fold_tight",
     "fold_words",
+    "is_wordless",
     "location",
     "matches_any",
+    "matching_rules",
     "message_lang",
     "post_json",
     "register_once",

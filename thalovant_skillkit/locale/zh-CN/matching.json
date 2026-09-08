@@ -1,0 +1,5 @@
+{
+  "_comment": "This language does not put spaces between words, so a word boundary means nothing and a term is matched by plain containment.",
+  "word_separated": false,
+  "inflection_max": 0
+}

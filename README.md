@@ -45,6 +45,30 @@ Drift is not a tidiness problem:
 | `service` | request headers with a traceable id, and a POST that stays quiet |
 | `knowledge` | the knowledge-service client, previously vendored three times |
 
+## Language data lives in `locale/`, not in Python
+
+How a vocabulary term may match is a fact about a language, so it sits in
+`thalovant_skillkit/locale/<lang>/matching.json` beside everything else the
+fleet keeps per language — the same convention the skills and `thalovant-voice`
+use.
+
+```json
+{ "word_separated": true, "inflection_max": 3 }
+```
+
+- **`word_separated`** — false for Japanese, Korean, Thai and Chinese, which do
+  not put spaces between words, so a boundary means nothing and a term is
+  matched by containment.
+- **`inflection_max`** — how many letters a term may pick up and still be the
+  same word: `log` → "logs", `explique` → "expliquer", while `pod` must not
+  reach "podcast".
+
+A language with no file of its own inherits `en-US`, the same way a skill's
+locale does. Only the languages whose behaviour is actually known are shipped:
+Turkish, Finnish and Hungarian stack suffixes and three letters is plainly too
+tight for them, but the right number is a claim about a language and none is
+invented here.
+
 Each function is the **union** of what the skills already did — the behaviour of
 the most careful copy — so adopting it makes a thin skill more correct rather
 than differently wrong.

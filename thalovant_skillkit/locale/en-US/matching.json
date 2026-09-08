@@ -1,0 +1,6 @@
+{
+  "_comment": "How a vocabulary term is matched against speech in this language. A language with no file of its own inherits this one, the same way a skill's locale falls back to en-US.",
+  "word_separated": true,
+  "inflection_max": 3,
+  "_inflection_note": "How many letters a term may pick up and still be the same word: 'log' -> 'logs', 'explique' -> 'expliquer'. Four would let 'pod' reach 'podcast'."
+}

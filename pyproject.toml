@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.1.2"
+version = "0.2.0"
 description = "Shared plumbing for the Thalovant OVOS skills"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -19,6 +19,12 @@ Homepage = "https://github.com/thalovant/thalovant-skillkit"
 
 [tool.setuptools.packages.find]
 include = ["thalovant_skillkit*"]
+
+# The locale tree is data the library reads at runtime, so it has to be in
+# the wheel -- the runtime installs from a baked wheelhouse, not from a
+# checkout.
+[tool.setuptools.package-data]
+thalovant_skillkit = ["locale/*/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
