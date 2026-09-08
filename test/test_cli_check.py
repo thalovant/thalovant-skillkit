@@ -73,4 +73,4 @@ def test_a_model_directory_with_an_index_fails_a_duplicate(tmp_path: Path, monke
     assert cli.main(["check", "--model", str(model_dir), str(root)]) == 1
     out = capsys.readouterr().out
     assert "x.intent:1" in out and "thalovant-skill-garden.thalovant's water" in out
-    assert "1 sentence(s) already belong to another skill" in out
+    assert "1 sentence(s) this change claims already belong to another skill" in out

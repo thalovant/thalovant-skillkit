@@ -12,10 +12,16 @@ skill's CI needs nothing private: `check`. The fleet corpus (see
 `intents.py`) has the sentences and their lines, for a fleet checkout:
 `check --fleet`.
 
-Four kinds of finding, with different weight:
+Five kinds of finding, with different weight:
 
-* `duplicate` -- the same sentence, another skill. One core, one owner: the
-  line here or the line there never fires. This fails the check.
+* `duplicate` -- the same sentence, another skill, and this skill does not
+  publish it in the fleet's own record yet. One core, one owner: the line
+  here or the line there never fires. This change introduces it, so this
+  fails the check.
+* `known` -- the same sentence, another skill, and the fleet's record
+  already has both. Someone should still resolve it, but this change did
+  not cause it, so it does not fail. Once resolved it cannot come back:
+  the record drops it, and a line that re-adds it is a `duplicate` again.
 * `self` -- the same sentence in two of this skill's own intents. Padatious
   picks one and the other is dead for that sentence. Reported, not failed.
 * `near` -- a close paraphrase in another skill, by the embedding model the
@@ -56,7 +62,7 @@ PREDICTED_THRESHOLD = 0.9
 
 @dataclass(frozen=True)
 class Collision:
-    kind: str  # duplicate | self | near | predicted
+    kind: str  # duplicate | known | self | near | predicted
     mine: IntentLine
     theirs: IntentLine
     score: float
@@ -70,6 +76,10 @@ class Collision:
         if self.kind == "duplicate":
             return (f'"{self.mine.text}" is already {self.theirs.skill}\'s {self.theirs.intent} '
                     f"({where}); one core, one owner -- drop it here or agree on who answers")
+        if self.kind == "known":
+            return (f'"{self.mine.text}" is also {self.theirs.skill}\'s {self.theirs.intent} '
+                    f"({where}); the fleet already carries both, so this change did not cause "
+                    f"it -- one of the two skills never answers this")
         if self.kind == "self":
             return (f'"{self.mine.text}" is also this skill\'s {self.theirs.intent} '
                     f"({where}); padatious picks one and the other never fires for it")
@@ -97,11 +107,17 @@ def own_lines(skill_root: Path, lang: str) -> list[IntentLine]:
     return intent_lines(skill_root, locale_dir, lang, skill_id)
 
 
-def find_duplicates(mine: list[IntentLine], others: list[IntentLine]) -> list[Collision]:
+def find_duplicates(mine: list[IntentLine], others: list[IntentLine],
+                    already: set[str] | None = None) -> list[Collision]:
+    """Sentences another skill publishes. `already` is what this skill
+    publishes in the fleet's own record: a collision on one of those is
+    older than this change, and is reported without failing."""
     by_text: dict[str, IntentLine] = {}
     for line in others:
         by_text.setdefault(line.text, line)
-    return [Collision("duplicate", line, by_text[line.text], 1.0)
+    already = already or set()
+    return [Collision("known" if line.text in already else "duplicate",
+                      line, by_text[line.text], 1.0)
             for line in mine if line.text in by_text]
 
 
@@ -147,16 +163,23 @@ def find_near(mine: list[IntentLine], others: list[IntentLine],
 
 
 def find_indexed_duplicates(mine: list[IntentLine], index: dict, skill_id: str) -> list[Collision]:
-    """Exact duplicates by digest, against the index the fleet's model ships."""
+    """Exact duplicates by digest, against the index the fleet's model ships.
+
+    A sentence the index already lists under this skill's own label is a
+    collision the fleet has been carrying; this change did not introduce it,
+    so it is reported without failing.
+    """
     labels: dict[str, list[str]] = index.get("labels") or {}
     out: list[Collision] = []
     for line in mine:
-        for label in labels.get(sentence_key(line.lang, line.text), []):
-            owner, _, intent = label.partition(":")
-            if owner != skill_id:
-                theirs = IntentLine(owner, intent, line.lang, "", 0, "", "")
-                out.append(Collision("duplicate", line, theirs, 1.0))
-                break
+        published = labels.get(sentence_key(line.lang, line.text), [])
+        owners = [label for label in published if label.partition(":")[0] != skill_id]
+        if not owners:
+            continue
+        mine_already = len(owners) < len(published)
+        owner, _, intent = owners[0].partition(":")
+        theirs = IntentLine(owner, intent, line.lang, "", 0, "", "")
+        out.append(Collision("known" if mine_already else "duplicate", line, theirs, 1.0))
     return out
 
 
@@ -261,9 +284,12 @@ def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool 
         if not path.is_file():
             notes.append(f"{lang}: no fleet corpus, only this skill's own files compared")
             continue
-        others = [line for line in corpus_lines(load_corpus(path)) if line.skill != skill_id]
-        found = find_duplicates(mine, others)
-        seen = {(f.mine.file, f.mine.line, f.mine.text) for f in findings if f.kind == "duplicate"}
+        recorded = corpus_lines(load_corpus(path))
+        others = [line for line in recorded if line.skill != skill_id]
+        already = {line.text for line in recorded if line.skill == skill_id}
+        found = find_duplicates(mine, others, already)
+        seen = {(f.mine.file, f.mine.line, f.mine.text)
+                for f in findings if f.kind in ("duplicate", "known")}
         findings.extend(f for f in found if (f.mine.file, f.mine.line, f.mine.text) not in seen)
         if run_near:
             findings.extend(find_near(mine, others, threshold))
