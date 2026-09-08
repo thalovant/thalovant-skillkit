@@ -16,6 +16,7 @@ The corpus is one JSON file per language::
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from dataclasses import asdict, dataclass
@@ -155,6 +156,13 @@ def locale_langs(locale_dir: Path) -> list[str]:
         except (OSError, ValueError):
             pass
     return sorted(p.name for p in locale_dir.iterdir() if p.is_dir() and valid_lang(p.name))
+
+
+def sentence_key(lang: str, text: str) -> str:
+    """How a sentence is named in the published index: a digest of language
+    and text, so a skill can learn that a sentence is already someone's
+    without the fleet's sentences leaving the private corpus."""
+    return hashlib.sha256(f"{lang}\n{text}".encode()).hexdigest()
 
 
 # -- the corpus ---------------------------------------------------------------

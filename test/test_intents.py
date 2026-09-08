@@ -216,3 +216,49 @@ def test_check_fleet_on_a_skill_without_locale_reports_nothing(tmp_path: Path):
     import shutil
     shutil.rmtree(root / "thalovant_skill_bare" / "locale")
     assert fleet.check_fleet(root, tmp_path / "corpus", near=False) == ([], [])
+
+
+def test_indexed_duplicates_name_the_other_owner_only(tmp_path: Path):
+    """The model's index: digests to labels. A digest that includes my own
+    label is my own sentence; another skill's label is a duplicate."""
+    from thalovant_skillkit.model import Row, sentence_index
+
+    rows = [Row("will it rain", "weather:rain", "en-US"),
+            Row("will it rain", "pulse:pulse", "en-US"),
+            Row("water the garden", "pulse:pulse", "en-US"),
+            Row("va-t-il pleuvoir", "weather:rain", "fr-FR")]
+    index = sentence_index(rows)
+    assert index["version"] == 1
+    assert len(index["labels"]) == 3
+    def line(lang, number, text):
+        return intents.IntentLine("pulse", "pulse", lang, "p.intent", number, text, text)
+
+    mine = [line("en-US", 1, "will it rain"), line("en-US", 2, "water the garden"),
+            line("fr-FR", 1, "will it rain")]
+    found = fleet.find_indexed_duplicates(mine, index, "pulse")
+    assert [(f.mine.line, f.theirs.skill, f.theirs.intent) for f in found] == [
+        (1, "weather", "rain")]
+    assert found[0].fails and "fleet index" in found[0].describe()
+    # the same text in another language is another sentence
+    assert fleet.find_indexed_duplicates(mine[2:], index, "pulse") == []
+
+
+def test_resolve_model_takes_a_directory_first(tmp_path: Path):
+    assert fleet.resolve_model(str(tmp_path)) == tmp_path
+
+
+def test_check_with_a_model_directory_uses_its_index(tmp_path: Path, monkeypatch):
+    pytest.importorskip("model2vec.inference")
+    from thalovant_skillkit.model import Row, sentence_index
+
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "index.json").write_text(json.dumps(sentence_index(
+        [Row("will it rain", "thalovant-skill-weather.thalovant:rain", "en-US")])))
+    # no classifier: keep the predicted check out of this test
+    monkeypatch.setattr(fleet, "find_predicted", lambda *a, **k: [])
+    new = _skill(tmp_path / "new", "pulse", {"en-US/pulse.intent": "will it rain\nwater it\n"})
+    findings, notes = fleet.check_fleet(new, model=str(model_dir))
+    assert [(f.kind, f.mine.text, f.theirs.skill) for f in findings] == [
+        ("duplicate", "will it rain", "thalovant-skill-weather.thalovant")]
+    assert notes == []

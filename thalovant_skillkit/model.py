@@ -29,10 +29,13 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from thalovant_skillkit.intents import corpus_lines, load_corpus
+from thalovant_skillkit.intents import corpus_lines, load_corpus, sentence_key
 
 BASE_MODEL = "Jarbas/m2v-256-distiluse-base-multilingual-cased-v2"
+#: Where the fleet's model lives; what a skill's CI compares itself with.
+MODEL_ID = "thalovant/thalovant-m2v-intents"
 SEED = 42
+INDEX_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -134,6 +137,19 @@ def evaluate(model, rows: list[Row]) -> dict:
     }
 
 
+def sentence_index(rows: list[Row]) -> dict:
+    """Every sentence in the corpus as a digest, with the labels that publish
+    it. Ships beside the model so a skill can check for exact duplicates
+    against the whole fleet from the public model alone."""
+    labels: dict[str, list[str]] = defaultdict(list)
+    for row in rows:
+        key = sentence_key(row.lang, row.text)
+        if row.label not in labels[key]:
+            labels[key].append(row.label)
+    return {"version": INDEX_VERSION, "key": "sha256(lang + newline + text)",
+            "labels": dict(sorted(labels.items()))}
+
+
 def _model_card(name: str, base: str, labels: list[str], report: dict, meta: dict) -> str:
     langs = report["per_language"]
     table = "\n".join(
@@ -177,6 +193,12 @@ model.predict(["will it rain tomorrow"])
 Configure the pipeline with `"mode": "classifier"` and this model's path;
 `labels.json` beside the weights lists the labels the hub may route to.
 
+`index.json` names every sentence in the training corpus by a digest of its
+language and text, with the labels that publish it. `thalovant-skillkit check
+--model {name}` uses it to fail a skill that publishes a sentence another
+skill already owns, and asks this classifier what it makes of the rest --
+without the fleet's sentences leaving their private repositories.
+
 ## Held-out accuracy per language
 
 | Language | Rows | Accuracy |
@@ -196,7 +218,7 @@ Trained from the corpus built {meta.get('built', 'unknown')} covering
 
 
 def build(corpus_dir: Path, out_dir: Path, *, base: str = BASE_MODEL,
-          name: str = "thalovant-m2v-intents", test_size: float = 0.2,
+          name: str = MODEL_ID, test_size: float = 0.2,
           max_epochs: int = -1, seed: int = SEED) -> dict:
     """Train, evaluate, and write the model directory. Returns the report."""
     rows, meta = training_rows(corpus_dir)
@@ -214,6 +236,8 @@ def build(corpus_dir: Path, out_dir: Path, *, base: str = BASE_MODEL,
     pipeline.save_pretrained(str(out_dir))
     (out_dir / "labels.json").write_text(
         json.dumps({"valid_labels": labels}, indent=2) + "\n", encoding="utf-8")
+    (out_dir / "index.json").write_text(
+        json.dumps(sentence_index(rows), indent=0) + "\n", encoding="utf-8")
     (out_dir / "training.json").write_text(json.dumps({
         "name": name, "base": base, "built": built, "seed": seed,
         "rows": {"total": len(rows), "train": len(train_rows), "test": len(test_rows)},

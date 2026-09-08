@@ -17,12 +17,12 @@ import sys
 from pathlib import Path
 
 from .checks import check_all, find_package
+from .model import MODEL_ID
 from .version import __version__
 
 # Pinned by commit, as every workflow in the fleet is.
 CHECKOUT = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1"
 SETUP_PYTHON = "actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0"
-CACHE = "actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0"
 
 
 def _names(raw: str) -> dict[str, str]:
@@ -185,53 +185,32 @@ jobs:
       - uses: {SETUP_PYTHON}
         with:
           python-version: "3.12"
-      - uses: {CACHE}
-        with:
-          path: ~/.cache/huggingface
-          key: hf-${{{{ runner.os }}}}-intents-model
       - run: python -m pip install -e ".[test]"
       - run: thalovant-skillkit check
       - run: pytest -q
 
-      # Every skill's intents are trained into one classifier per language on
-      # the hub, so a sentence this skill publishes must not already be another
-      # skill's. The fleet corpus lists everyone's sentences; the check fails on
-      # an exact duplicate, annotated on the line, and warns on close ones.
-      # CROSS_REPO_TOKEN is the org secret for reading private repositories;
-      # ask an org admin to expose it to this repository if the step skips.
-      - name: Fetch the fleet's intents
-        id: fleet
+      # Every skill's intents are trained into one classifier on the hub, so a
+      # sentence this skill publishes must not already be another skill's. The
+      # fleet's model on the Hugging Face Hub carries an index of every sentence
+      # and the classifier itself: the check fails on an exact duplicate,
+      # annotated on the line, and warns on a sentence the classifier reads as
+      # another skill's. Public model, nothing private needed.
+      - name: Check against the fleet
+        run: thalovant-skillkit check --model {MODEL_ID}
+
+      # After a merge, ask the corpus to pick up this skill's sentences, so the
+      # next skill is checked against this one. CROSS_REPO_TOKEN is the org
+      # secret for private repositories; without it this step only says so.
+      - name: Tell the corpus a skill changed
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{{{ secrets.CROSS_REPO_TOKEN }}}}
         run: |
           if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::CROSS_REPO_TOKEN is not exposed here; the fleet check did not run"
+            echo "::warning::CROSS_REPO_TOKEN is not exposed here; the corpus was not told"
             exit 0
           fi
-          gh repo clone thalovant/intent-corpus fleet -- --depth 1 --quiet
-          mkdir -p fleet/model
-          release="gh release download model-latest --repo thalovant/intent-corpus"
-          if $release --pattern thalovant-m2v-intents.tar.gz --output - 2>/dev/null \\
-               | tar xz -C fleet/model; then
-            echo "model=fleet/model" >> "$GITHUB_OUTPUT"
-          else
-            echo "no fleet model published yet; comparing sentences only"
-          fi
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-      - name: Check against the fleet
-        if: steps.fleet.outputs.ready == 'true'
-        env:
-          MODEL: ${{{{ steps.fleet.outputs.model }}}}
-        run: thalovant-skillkit check --fleet fleet/corpus ${{MODEL:+--model "$MODEL"}}
-
-      # After a merge, ask the corpus to pick up this skill's sentences.
-      - name: Tell the corpus a skill changed
-        if: >-
-          github.event_name == 'push' && github.ref == 'refs/heads/main'
-          && steps.fleet.outputs.ready == 'true'
-        env:
-          GH_TOKEN: ${{{{ secrets.CROSS_REPO_TOKEN }}}}
-        run: gh api repos/thalovant/intent-corpus/dispatches -f event_type=skill-merged
+          gh api repos/thalovant/intent-corpus/dispatches -f event_type=skill-merged
 ''')
 
     put("README.md", f'''
@@ -293,16 +272,16 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"ok: {root.name} keeps its contracts")
     failed = bool(problems)
 
-    if args.fleet is not None:
+    if args.fleet is not None or args.model is not None:
         from .fleet import check_fleet, render
 
-        model_dir = Path(args.model) if args.model else None
+        corpus_dir = Path(args.fleet) if args.fleet else None
         try:
-            findings, notes = check_fleet(root, Path(args.fleet), near=not args.no_near,
-                                          threshold=args.threshold, model_dir=model_dir)
+            findings, notes = check_fleet(root, corpus_dir, near=not args.no_near,
+                                          threshold=args.threshold, model=args.model)
         except (ValueError, OSError) as failure:
-            # No package, no locale tree, no corpus: the contract checks above
-            # already said which; this is the same problem, not a traceback.
+            # No package, no locale tree, no corpus, no model: the contract
+            # checks above already said which; a traceback adds nothing.
             print(f"fleet check did not run: {failure}")
             return 1
         for note in notes:
@@ -390,16 +369,17 @@ def main(argv: list[str] | None = None) -> int:
 
     check = sub.add_parser("check", help="check a skill's locales and packaging")
     check.add_argument("directory", nargs="?", help="the skill (default: here)")
+    check.add_argument("--model", metavar="ID|DIR", nargs="?", const=MODEL_ID,
+                       help="compare with the fleet's published model (default "
+                            f"{MODEL_ID}): fail on a sentence its index says another skill "
+                            "publishes, warn on one its classifier reads as another skill's")
     check.add_argument("--fleet", metavar="DIR",
-                       help="directory of fleet corpus files (<lang>.json); also report "
-                            "sentences another skill already publishes")
+                       help="directory of fleet corpus files (<lang>.json): the same, with the "
+                            "other skill's file and line, plus close paraphrases")
     check.add_argument("--no-near", action="store_true",
-                       help="with --fleet: exact duplicates only, no embedding model")
+                       help="with --fleet: no paraphrase check, no embedding model")
     check.add_argument("--threshold", type=float, default=0.85,
                        help="with --fleet: similarity at which a paraphrase is reported (0.85)")
-    check.add_argument("--model", metavar="DIR",
-                       help="with --fleet: the fleet's trained classifier; also report sentences "
-                            "it reads as another skill's")
     check.set_defaults(func=cmd_check)
 
     corpus = sub.add_parser("corpus", help="write the fleet corpus from skill checkouts")

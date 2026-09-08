@@ -1,12 +1,17 @@
 """Does this skill publish a sentence another skill already owns?
 
 A skill's own suite loads one skill, so it cannot see that "will it rain" is
-also weather's, and that a real core with both loaded gives it to weather. The
-fleet corpus (see `intents.py`) is every other skill's sentences; this module
-compares a skill against it and says, per line of the skill's own files, what
-it found.
+also weather's, and that a real core with both loaded gives it to weather.
+This module compares a skill with the rest of the fleet and says, per line of
+the skill's own files, what it found.
 
-Three kinds of finding, with different weight:
+Two sources, one public and one not. The fleet's model on the Hugging Face
+Hub (`thalovant/thalovant-m2v-intents`, see `model.py`) ships an index of
+every sentence's digest and the classifier itself, so a skill's CI needs
+nothing private: `check --model`. The fleet corpus (see `intents.py`) has the
+sentences and their lines, for a fleet checkout: `check --fleet`.
+
+Four kinds of finding, with different weight:
 
 * `duplicate` -- the same sentence, another skill. One core, one owner: the
   line here or the line there never fires. This fails the check.
@@ -25,6 +30,7 @@ Three kinds of finding, with different weight:
 """
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -36,6 +42,7 @@ from thalovant_skillkit.intents import (
     intent_lines,
     load_corpus,
     locale_langs,
+    sentence_key,
 )
 
 MODEL = "Jarbas/ovos-model2vec-intents-distiluse-base-multilingual-cased-v2"
@@ -55,7 +62,7 @@ class Collision:
         return self.kind == "duplicate"
 
     def describe(self) -> str:
-        where = f"{self.theirs.file}:{self.theirs.line}"
+        where = f"{self.theirs.file}:{self.theirs.line}" if self.theirs.file else "fleet index"
         if self.kind == "duplicate":
             return (f'"{self.mine.text}" is already {self.theirs.skill}\'s {self.theirs.intent} '
                     f"({where}); one core, one owner -- drop it here or agree on who answers")
@@ -135,6 +142,35 @@ def find_near(mine: list[IntentLine], others: list[IntentLine],
     return out
 
 
+def find_indexed_duplicates(mine: list[IntentLine], index: dict, skill_id: str) -> list[Collision]:
+    """Exact duplicates by digest, against the index the fleet's model ships."""
+    labels: dict[str, list[str]] = index.get("labels") or {}
+    out: list[Collision] = []
+    for line in mine:
+        for label in labels.get(sentence_key(line.lang, line.text), []):
+            owner, _, intent = label.partition(":")
+            if owner != skill_id:
+                theirs = IntentLine(owner, intent, line.lang, "", 0, "", "")
+                out.append(Collision("duplicate", line, theirs, 1.0))
+                break
+    return out
+
+
+def resolve_model(model: str) -> Path:
+    """A local model directory, or a Hub repository fetched into the cache."""
+    path = Path(model)
+    if path.is_dir():
+        return path
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
+
+    try:
+        return Path(snapshot_download(repo_id=model))
+    except (RepositoryNotFoundError, HfHubHTTPError, OSError) as failure:
+        raise OSError(f"model {model!r} is neither a directory nor a Hub repository "
+                      f"this machine can fetch: {failure}") from failure
+
+
 def find_predicted(mine: list[IntentLine], model_dir: Path, skill_id: str,
                    threshold: float = PREDICTED_THRESHOLD) -> list[Collision]:
     """What the fleet's trained classifier makes of each of my sentences."""
@@ -173,40 +209,56 @@ def model_check_available() -> bool:
     return True
 
 
-def check_fleet(skill_root: Path, corpus_dir: Path, *, near: bool = True,
+def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool = True,
                 threshold: float = NEAR_THRESHOLD,
-                model_dir: Path | None = None) -> tuple[list[Collision], list[str]]:
-    """Compare a skill with the fleet corpus, every language both sides have,
-    and with the fleet's classifier when a model directory is given.
+                model: str | None = None) -> tuple[list[Collision], list[str]]:
+    """Compare a skill with the fleet: with the corpus (sentences and lines),
+    with the published model (its sentence index and its classifier), or
+    both. Every language the skill declares is compared.
 
     Returns the findings and the notes a person should read alongside them
-    (languages with no corpus, the near check skipped).
+    (languages with no corpus, a check skipped for a missing extra).
     """
     skill_root = Path(skill_root)
     skill_id, locale_dir = skill_identity(skill_root)
     findings: list[Collision] = []
     notes: list[str] = []
-    run_near = near and near_check_available()
-    if near and not run_near:
+    run_near = corpus_dir is not None and near and near_check_available()
+    if corpus_dir is not None and near and not run_near:
         notes.append("near-duplicate check skipped: install thalovant-skillkit[fleet]")
-    run_model = model_dir is not None and model_check_available()
-    if model_dir is not None and not run_model:
-        notes.append("classifier check skipped: install thalovant-skillkit[fleet]")
+    index: dict = {}
+    model_dir: Path | None = None
+    if model is not None:
+        if not model_check_available():
+            notes.append("classifier check skipped: install thalovant-skillkit[fleet]")
+        else:
+            model_dir = resolve_model(model)
+            index_path = model_dir / "index.json"
+            if index_path.is_file():
+                index = json.loads(index_path.read_text(encoding="utf-8"))
+            else:
+                notes.append(f"{model}: no index.json, exact duplicates not checked against it")
     for lang in locale_langs(locale_dir):
         mine = intent_lines(skill_root, locale_dir, lang, skill_id)
         if not mine:
             continue
         findings.extend(find_self_duplicates(mine))
+        if index:
+            findings.extend(find_indexed_duplicates(mine, index, skill_id))
+        if model_dir is not None:
+            findings.extend(find_predicted(mine, model_dir, skill_id))
+        if corpus_dir is None:
+            continue
         path = Path(corpus_dir) / f"{lang}.json"
         if not path.is_file():
             notes.append(f"{lang}: no fleet corpus, only this skill's own files compared")
             continue
         others = [line for line in corpus_lines(load_corpus(path)) if line.skill != skill_id]
-        findings.extend(find_duplicates(mine, others))
+        found = find_duplicates(mine, others)
+        seen = {(f.mine.file, f.mine.line, f.mine.text) for f in findings if f.kind == "duplicate"}
+        findings.extend(f for f in found if (f.mine.file, f.mine.line, f.mine.text) not in seen)
         if run_near:
             findings.extend(find_near(mine, others, threshold))
-        if run_model:
-            findings.extend(find_predicted(mine, Path(model_dir), skill_id))
     return findings, notes
 
 
