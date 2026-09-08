@@ -156,6 +156,10 @@ def find_indexed_duplicates(mine: list[IntentLine], index: dict, skill_id: str) 
     return out
 
 
+class ModelUnavailable(OSError):
+    """The fleet's model could not be fetched: offline, or not published yet."""
+
+
 def resolve_model(model: str) -> Path:
     """A local model directory, or a Hub repository fetched into the cache."""
     path = Path(model)
@@ -167,8 +171,8 @@ def resolve_model(model: str) -> Path:
     try:
         return Path(snapshot_download(repo_id=model))
     except (RepositoryNotFoundError, HfHubHTTPError, OSError) as failure:
-        raise OSError(f"model {model!r} is neither a directory nor a Hub repository "
-                      f"this machine can fetch: {failure}") from failure
+        raise ModelUnavailable(f"model {model!r} is neither a directory nor a Hub repository "
+                               f"this machine can fetch: {failure}") from failure
 
 
 def find_predicted(mine: list[IntentLine], model_dir: Path, skill_id: str,

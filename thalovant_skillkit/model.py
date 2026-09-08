@@ -219,9 +219,14 @@ Trained from the corpus built {meta.get('built', 'unknown')} covering
 
 def build(corpus_dir: Path, out_dir: Path, *, base: str = BASE_MODEL,
           name: str = MODEL_ID, test_size: float = 0.2,
-          max_epochs: int = -1, seed: int = SEED) -> dict:
-    """Train, evaluate, and write the model directory. Returns the report."""
+          max_epochs: int = -1, seed: int = SEED, corpus_commit: str = "") -> dict:
+    """Train, evaluate, and write the model directory. Returns the report.
+
+    `corpus_commit` is the commit of the corpus checkout, recorded in
+    `training.json` so a rebuild can tell whether the published model is
+    behind the corpus without retraining to find out."""
     rows, meta = training_rows(corpus_dir)
+    meta["commit"] = corpus_commit
     if not rows:
         raise ValueError(f"no corpus under {corpus_dir}")
     train_rows, test_rows = split(rows, test_size, seed)
