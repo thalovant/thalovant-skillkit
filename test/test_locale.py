@@ -76,3 +76,19 @@ def test_an_absent_locale_tree_is_empty_not_an_error(tmp_path):
     assert resources.available_langs() == ()
     assert resources.vocab("K", "en-US") == ()
     assert not resources.voc_match("K", "anything", "en-US")
+
+
+def test_a_file_read_does_not_fall_back_but_a_vocabulary_match_does(resources):
+    """Every skill's `_resource_lines` read exactly the language asked for, and
+    looped candidate languages one level up in the match. Falling back inside
+    the read too would fall back twice."""
+    assert resources.vocab("OnlyEnglish", "fr-FR") == ()
+    assert resources.lines("fr-FR", "vocab", "OnlyEnglish.voc") == ()
+    assert resources.lines("fr-FR", "vocab", "OnlyEnglish.voc", fallback=True) == ("umbrella",)
+
+    # ...while the match still finds it, which is where the fallback belongs.
+    assert resources.voc_match("OnlyEnglish", "do I need an umbrella", "fr-FR")
+
+
+def test_dialog_falls_back_so_a_missing_translation_is_not_silence(resources):
+    assert resources.dialog("news", "de-DE", {"what": "quiet"}) == "The news is quiet."

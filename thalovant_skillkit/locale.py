@@ -81,9 +81,18 @@ class SkillResources:
             if line.strip() and not line.strip().startswith("#")
         )
 
-    def lines(self, lang: str | None, folder: str, filename: str) -> tuple[str, ...]:
-        """The lines of one resource file, comments and blanks dropped."""
-        for candidate in self.candidate_langs(lang):
+    def lines(self, lang: str | None, folder: str, filename: str,
+              *, fallback: bool = False) -> tuple[str, ...]:
+        """The lines of one resource file, comments and blanks dropped.
+
+        Reads exactly the language asked for, because that is what every
+        skill's `_resource_lines` did and because the language fallback belongs
+        one level up, in the vocabulary match: a skill that loops candidates
+        itself would otherwise fall back twice. Pass `fallback=True` for
+        resources where an English answer beats no answer.
+        """
+        langs = self.candidate_langs(lang) if fallback else (self.lang(lang),)
+        for candidate in langs:
             found = self._lines(candidate, folder, filename)
             if found:
                 return found
@@ -93,7 +102,9 @@ class SkillResources:
         return self.lines(lang, "vocab", f"{voc_name}.voc")
 
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
-        return self.lines(lang, "dialog", f"{name}.dialog")
+        """Falls back to English: a translation that has not landed yet should
+        sound wrong rather than leave the skill silent mid-answer."""
+        return self.lines(lang, "dialog", f"{name}.dialog", fallback=True)
 
     def dialog(self, name: str, lang: str | None, data: dict | None = None) -> str:
         """One rendered dialog line, or the name itself if the file is missing.
