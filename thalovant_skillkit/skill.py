@@ -52,6 +52,13 @@ try:
 except ImportError:  # pragma: no cover - ovos-workshop 8 has converse built in
     _ConversationalBase = OVOSSkill
 
+try:
+    # The common-play framework brings its own base, and a skill that answers
+    # OCP searches must keep it. Absent when this workshop ships no OCP.
+    from ovos_workshop.skills.common_play import OVOSCommonPlaybackSkill as _CommonPlayBase
+except ImportError:  # pragma: no cover - a workshop without OCP
+    _CommonPlayBase = None
+
 from .fallback import register_once, resolve_priority
 from .locale import SkillResources
 from .message import context_of, message_lang, utterance
@@ -270,6 +277,23 @@ class ThalovantConversationalSkill(_SkillPlumbing, _ConversationalBase):
     active, which is how a game asks its next question or a skill takes a
     follow-up. On ovos-workshop 8 this is the same as `ThalovantSkill`.
     """
+
+
+if _CommonPlayBase is not None:
+
+    class ThalovantCommonPlaySkill(_SkillPlumbing, _CommonPlayBase):
+        """A skill that answers OCP searches, with the plumbing carried.
+
+        The common-play framework brings its own base, so this is the
+        ordinary `ThalovantSkill` treatment applied to that one instead:
+        the same helpers, the same locale handling, no OCP behaviour of its
+        own. Without it a common-play skill has to reach for the private
+        mixin, which is how the news skill found this gap.
+        """
+
+else:  # pragma: no cover - a workshop without OCP
+
+    ThalovantCommonPlaySkill = None
 
 
 class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
