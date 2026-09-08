@@ -22,6 +22,11 @@ behaviour of the most careful copy:
     service    request headers with a traceable id, and a POST that stays quiet
     knowledge  the knowledge-service client, previously vendored three times
 
+Two more modules are not imported here, because each needs something the core
+does not: `skill` carries base classes that hold a skill's plumbing and needs
+ovos-workshop (`pip install thalovant-skillkit[skill]`), and `testing` builds
+the message doubles skill tests keep reinventing.
+
 How a term may match is a fact about a language, not about this code, so it
 lives in locale/<lang>/matching.json beside everything else the fleet keeps
 per language -- not in a set of language codes written into vocab.py.
