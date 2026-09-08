@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.5.0"
+version = "0.6.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -28,18 +28,19 @@ dependencies = [
     "ovos-utils>=0.8.5",
     # tomllib arrived in 3.11; tomli is the same parser for the one version before.
     "tomli>=2.0; python_version < '3.11'",
+    # The skill framework itself: a skill needs it, and so does `check`.
+    "ovos-workshop>=8.0.0",
+    # The fleet check: the fleet's intent classifier and its sentence index.
+    "model2vec>=0.9",
+    "numpy>=1.24",
 ]
 
-# thalovant_skillkit.skill needs the skill framework; the rest of the library
-# does not, so a caller that only wants the codec or the message helpers is not
-# made to install it.
 [project.optional-dependencies]
-skill = ["ovos-workshop>=8.0.0"]
-# `check --fleet` near-duplicate detection: the model2vec model the OVOS
-# intent pipeline uses. Exact duplicates need nothing beyond the kit.
-fleet = ["model2vec>=0.9", "numpy>=1.24"]
-# `model`: train the Thalovant intent classifier (torch, CPU is enough).
-model = ["model2vec[train]>=0.9", "numpy>=1.24"]
+# Kept as empty names so older pins (`thalovant-skillkit[skill]`) still resolve.
+skill = []
+fleet = []
+# `model`: train the Thalovant intent classifier (torch; CPU is enough).
+model = ["model2vec[train]>=0.9"]
 
 [project.scripts]
 thalovant-skillkit = "thalovant_skillkit.cli:main"

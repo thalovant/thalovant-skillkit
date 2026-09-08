@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -145,11 +146,11 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 dynamic = ["version"]
 dependencies = [
-    "thalovant-skillkit[skill]>={__version__}",
+    "thalovant-skillkit>={__version__}",
 ]
 
 [project.optional-dependencies]
-test = ["pytest", "thalovant-skillkit[fleet]"]
+test = ["pytest"]
 
 [project.entry-points."opm.skill"]
 "{n['repo']}.thalovant" = "{n['package']}:{n['clazz']}"
@@ -186,17 +187,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install -e ".[test]"
+      # Locales, packaging, and this skill's sentences against every other
+      # skill's: every skill's intents train into one classifier on the hub, so
+      # a sentence another skill already publishes fails here, on its line.
       - run: thalovant-skillkit check
       - run: pytest -q
-
-      # Every skill's intents are trained into one classifier on the hub, so a
-      # sentence this skill publishes must not already be another skill's. The
-      # fleet's model on the Hugging Face Hub carries an index of every sentence
-      # and the classifier itself: the check fails on an exact duplicate,
-      # annotated on the line, and warns on a sentence the classifier reads as
-      # another skill's. Public model, nothing private needed.
-      - name: Check against the fleet
-        run: thalovant-skillkit check --model {MODEL_ID}
 
       # After a merge, ask the corpus to pick up this skill's sentences, so the
       # next skill is checked against this one. CROSS_REPO_TOKEN is the org
@@ -261,6 +256,11 @@ def cmd_new(args: argparse.Namespace) -> int:
     return 0
 
 
+def _has_intents(root: Path) -> bool:
+    package = find_package(root)
+    return package is not None and any((package / "locale").rglob("*.intent"))
+
+
 def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.directory or ".").resolve()
     problems = check_all(root)
@@ -272,30 +272,43 @@ def cmd_check(args: argparse.Namespace) -> int:
         print(f"ok: {root.name} keeps its contracts")
     failed = bool(problems)
 
-    if args.fleet is not None or args.model is not None:
-        from .fleet import check_fleet, render
+    # A skill with intents is compared with the fleet unless told not to. The
+    # corpus is opt-in; the model on the Hub is the default.
+    model = None if args.no_fleet else (args.model or MODEL_ID)
+    if args.fleet is None and (args.no_fleet or not _has_intents(root)):
+        return 1 if failed else 0
 
-        corpus_dir = Path(args.fleet) if args.fleet else None
-        try:
-            findings, notes = check_fleet(root, corpus_dir, near=not args.no_near,
-                                          threshold=args.threshold, model=args.model)
-        except (ValueError, OSError) as failure:
-            # No package, no locale tree, no corpus, no model: the contract
-            # checks above already said which; a traceback adds nothing.
-            print(f"fleet check did not run: {failure}")
+    from .fleet import ModelUnavailable, check_fleet, render
+
+    corpus_dir = Path(args.fleet) if args.fleet else None
+    try:
+        findings, notes = check_fleet(root, corpus_dir, near=not args.no_near,
+                                      threshold=args.threshold, model=model)
+    except ModelUnavailable as failure:
+        # Offline on a laptop is fine and says so; in CI the fleet check is
+        # the point, and a model that cannot be fetched is a failure there.
+        if os.environ.get("GITHUB_ACTIONS"):
+            print(f"::error::fleet check did not run: {failure}")
             return 1
-        for note in notes:
-            print(f"note: {note}")
-        for finding in sorted(findings, key=lambda f: (not f.fails, f.mine.file, f.mine.line)):
-            print(render(finding))
-        blocking = sum(1 for f in findings if f.fails)
-        if blocking:
-            print(f"{blocking} sentence(s) already belong to another skill")
-            failed = True
-        elif findings:
-            print(f"ok: nothing another skill owns; {len(findings)} thing(s) worth a look above")
-        else:
-            print("ok: nothing another skill owns")
+        print(f"fleet check skipped: {failure}")
+        return 1 if failed else 0
+    except (ValueError, OSError) as failure:
+        # No package, no locale tree, no corpus: the contract checks above
+        # already said which; a traceback adds nothing.
+        print(f"fleet check did not run: {failure}")
+        return 1
+    for note in notes:
+        print(f"note: {note}")
+    for finding in sorted(findings, key=lambda f: (not f.fails, f.mine.file, f.mine.line)):
+        print(render(finding))
+    blocking = sum(1 for f in findings if f.fails)
+    if blocking:
+        print(f"{blocking} sentence(s) already belong to another skill")
+        failed = True
+    elif findings:
+        print(f"ok: nothing another skill owns; {len(findings)} thing(s) worth a look above")
+    else:
+        print("ok: nothing another skill owns")
     return 1 if failed else 0
 
 
@@ -311,8 +324,10 @@ def cmd_model(args: argparse.Namespace) -> int:
     """Train the Thalovant intent classifier from a corpus directory."""
     from .model import BASE_MODEL, build
 
-    report = build(Path(args.corpus), Path(args.out), base=args.base or BASE_MODEL, name=args.name,
-                   test_size=args.test_size, max_epochs=args.max_epochs)
+    corpus_dir = Path(args.corpus)
+    report = build(corpus_dir, Path(args.out), base=args.base or BASE_MODEL, name=args.name,
+                   test_size=args.test_size, max_epochs=args.max_epochs,
+                   corpus_commit=_git(corpus_dir, "rev-parse", "HEAD"))
     print(f"held-out accuracy {report['accuracy']} over {report['rows']} rows, "
           f"{len(report['per_language'])} languages; {len(report['confusions'])} confusion(s)")
     for confusion in report["confusions"][:10]:
@@ -367,15 +382,16 @@ def main(argv: list[str] | None = None) -> int:
                      help="fallback rung, 91-100 (default 98: answers a topic)")
     new.set_defaults(func=cmd_new)
 
-    check = sub.add_parser("check", help="check a skill's locales and packaging")
+    check = sub.add_parser("check", help="check a skill: locales, packaging, and its "
+                                          "intents against the fleet's")
     check.add_argument("directory", nargs="?", help="the skill (default: here)")
-    check.add_argument("--model", metavar="ID|DIR", nargs="?", const=MODEL_ID,
-                       help="compare with the fleet's published model (default "
-                            f"{MODEL_ID}): fail on a sentence its index says another skill "
-                            "publishes, warn on one its classifier reads as another skill's")
+    check.add_argument("--no-fleet", action="store_true",
+                       help="only the skill's own contracts; do not fetch the fleet's model")
+    check.add_argument("--model", metavar="ID|DIR",
+                       help=f"the fleet's model to compare with (default {MODEL_ID})")
     check.add_argument("--fleet", metavar="DIR",
-                       help="directory of fleet corpus files (<lang>.json): the same, with the "
-                            "other skill's file and line, plus close paraphrases")
+                       help="directory of fleet corpus files (<lang>.json): the same findings "
+                            "with the other skill's file and line, plus close paraphrases")
     check.add_argument("--no-near", action="store_true",
                        help="with --fleet: no paraphrase check, no embedding model")
     check.add_argument("--threshold", type=float, default=0.85,
