@@ -65,3 +65,14 @@ def test_the_bus_holds_handlers_so_registration_can_be_checked():
     assert bus.handlers["some.event"] == [handler]
     bus.remove("some.event", handler)
     assert bus.handlers["some.event"] == []
+
+
+def test_the_bus_hears_what_a_current_core_actually_emits():
+    """The real core emits `ovos.utterance.speak`, not `speak`. A double that
+    knew only the old name reported silence from a skill the hub heard fine --
+    which is exactly how a first end-to-end check of a working skill read."""
+    bus = FakeBus()
+    bus.emit(message("old style", msg_type="speak"))
+    bus.emit(message("new style", msg_type="ovos.utterance.speak"))
+
+    assert bus.spoken() == ["old style", "new style"]
