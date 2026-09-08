@@ -96,17 +96,19 @@ def check_locale_contract(skill_root: Path) -> list[str]:
         for relative in sorted(source_files & target_files):
             source, target = source_root / relative, target_root / relative
             if locale not in PLACEHOLDER_EXEMPT and locale != SOURCE_LOCALE:
-                want, got = _placeholders(source), _placeholders(target)
-                if relative.suffix == ".intent":
-                    # Several English phrasings can translate to one, so a
-                    # translated intent file may repeat a slot fewer times.
-                    # It must still carry every slot and invent none. One
-                    # skill's copy of this check had learned that; the other
-                    # fifteen had not.
-                    want, got = Counter(set(want)), Counter(set(got))
+                # Compared as sets, not counts. English offers two variant
+                # lines for most replies and French follows; every other
+                # translation in the fleet writes one careful line. Counting
+                # occurrences flagged 162 files in one skill for exactly that,
+                # and is why five skills never adopted this check at all. What
+                # must never differ is the set: an invented placeholder raises
+                # KeyError mid-reply, a missing one loses what the reply was
+                # meant to say. How many variants a language offers is its
+                # own business.
+                want, got = set(_placeholders(source)), set(_placeholders(target))
                 if want != got:
-                    missing = sorted((want - got).elements())
-                    extra = sorted((got - want).elements())
+                    missing = sorted(want - got)
+                    extra = sorted(got - want)
                     detail = []
                     if missing:
                         detail.append(f"missing {missing}")

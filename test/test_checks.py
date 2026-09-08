@@ -75,18 +75,23 @@ def test_french_may_reorder_or_drop_placeholders(skill):
     assert check_locale_contract(skill) == []
 
 
-def test_an_intent_file_may_repeat_a_slot_fewer_times_but_not_lose_it(skill):
-    """Several English phrasings can translate to one, so the count may drop.
-    The slot itself may not disappear, and a new one may not appear."""
-    intent = skill / "thalovant_skill_demo/locale/de-DE/intents/hello.intent"
-    intent.write_text("hallo {who}\n", encoding="utf-8")          # one phrasing, same slot
-    assert check_locale_contract(skill) == []
+def test_a_translation_may_offer_fewer_variants_but_not_lose_a_placeholder(skill):
+    """English offers two variant lines and most translations write one, so
+    a placeholder may appear fewer times. It may not disappear, and a new one
+    may not be invented -- that raises KeyError mid-reply."""
+    for relative in ("intents/hello.intent", "dialog/hello.dialog"):
+        path = skill / "thalovant_skill_demo/locale/de-DE" / relative
+        (skill / "thalovant_skill_demo/locale/en-US" / relative).write_text(
+            "Hello {who}\nHi there {who}\n", encoding="utf-8")   # two variants
+        path.write_text("Hallo {who}\n", encoding="utf-8")         # one, complete
+        assert check_locale_contract(skill) == [], relative
 
-    intent.write_text("hallo\n", encoding="utf-8")                # slot gone
-    assert len(check_locale_contract(skill)) == 1
+        path.write_text("Hallo\n", encoding="utf-8")               # placeholder gone
+        assert len(check_locale_contract(skill)) == 1, relative
 
-    intent.write_text("hallo {who} um {when}\n", encoding="utf-8")  # slot invented
-    assert "unexpected ['{when}']" in check_locale_contract(skill)[0]
+        path.write_text("Hallo {who} um {when}\n", encoding="utf-8")   # invented
+        assert "unexpected ['{when}']" in check_locale_contract(skill)[0], relative
+        path.write_text("Hallo {who}\n", encoding="utf-8")
 
 
 def test_a_supported_locale_without_a_directory_is_named(skill):
