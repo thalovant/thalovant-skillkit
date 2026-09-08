@@ -21,9 +21,8 @@ A skill built on these classes writes its own behaviour and nothing else:
             return self.mentions(self.utterance(message), "WeatherKeyword",
                                  self.lang_of(message))
 
-        def handle_fallback(self, message) -> bool:
-            self.speak(self.dialog("forecast", self.lang_of(message)))
-            return True
+        def reply(self, utterance, lang, context):
+            return self.dialog("forecast", lang)
 
 The locale directory is found from the module the class is defined in, the
 fallback is registered once at a priority an operator can override, and every
@@ -41,13 +40,14 @@ from typing import Any
 
 from ovos_utils import classproperty
 from ovos_utils.process_utils import RuntimeRequirements
+from ovos_workshop.decorators import skill_api_method
 from ovos_workshop.skills import OVOSSkill
 from ovos_workshop.skills.fallback import FallbackSkill
 
 from .fallback import register_once, resolve_priority
 from .locale import SkillResources
+from .message import context_of, message_lang, utterance
 from .message import location as _location
-from .message import message_lang, utterance
 from .text import fold
 
 
@@ -187,6 +187,38 @@ class _SkillPlumbing:
             # the mistake is audible.
             return template.replace("\\n", "\n")
 
+    @staticmethod
+    def context_of(message: Any) -> dict:
+        """The message context, or {}."""
+        return context_of(message)
+
+    # -- the answer -----------------------------------------------------------
+
+    def reply(self, utterance: str, lang: str, context: dict) -> str | None:
+        """The skill's answer as text, or None when it has none.
+
+        The one method most skills need to write. Speaking on the hub and
+        previewing in the showroom both come through here, so the two cannot
+        drift apart -- nineteen skills carried a `preview_reply` that had to be
+        kept in step with the speaking path by hand.
+        """
+        raise NotImplementedError
+
+    @skill_api_method
+    def preview_reply(
+        self, utterance: str = "", lang: str | None = None, context: dict | None = None
+    ) -> str:
+        """What the showroom calls: the reply as text, with nothing spoken.
+
+        The preview bridge beside every hub invokes this over the skill API and
+        shows the result on the web, so a skill without it cannot be tried
+        before it is heard.
+        """
+        try:
+            return self.reply(utterance or "", lang or self._own_lang(), context or {}) or ""
+        except NotImplementedError:
+            return ""
+
     # -- settings -------------------------------------------------------------
 
     def setting(self, key: str, default: Any = None) -> Any:
@@ -246,5 +278,13 @@ class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
         raise NotImplementedError
 
     def handle_fallback(self, message: Any) -> bool:
-        """Say it. Return True when the skill answered."""
-        raise NotImplementedError
+        """Say what `reply` returns. Override only to do something other than speak.
+
+        Returns True when the skill answered, which is what tells ovos-core to
+        stop asking the skills behind it.
+        """
+        text = self.reply(self.utterance(message), self.lang_of(message), self.context_of(message))
+        if not text:
+            return False
+        self.speak(text)
+        return True

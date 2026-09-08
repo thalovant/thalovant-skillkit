@@ -118,10 +118,15 @@ class FakeBus:
         """Everything emitted of one type, in order."""
         return [m for m in self.emitted if getattr(m, "msg_type", None) == msg_type]
 
+    #: What a spoken sentence travels as. Older cores emit `speak`; current ones
+    #: emit `ovos.utterance.speak`. A test double that knew only one would
+    #: report silence from a skill the real core hears perfectly well.
+    SPEAK_TYPES = frozenset({"speak", "ovos.utterance.speak"})
+
     def spoken(self) -> list[str]:
         """Every sentence the skill said."""
         return [
             str((getattr(m, "data", None) or {}).get("utterance") or "")
             for m in self.emitted
-            if getattr(m, "msg_type", None) == "speak"
+            if getattr(m, "msg_type", None) in self.SPEAK_TYPES
         ]

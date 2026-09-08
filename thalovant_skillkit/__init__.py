@@ -22,10 +22,14 @@ behaviour of the most careful copy:
     service    request headers with a traceable id, and a POST that stays quiet
     knowledge  the knowledge-service client, previously vendored three times
 
-Two more modules are not imported here, because each needs something the core
-does not: `skill` carries base classes that hold a skill's plumbing and needs
-ovos-workshop (`pip install thalovant-skillkit[skill]`), and `testing` builds
-the message doubles skill tests keep reinventing.
+Three more modules are not imported here, because each stands on its own:
+`skill` carries base classes that hold a skill's plumbing and needs
+ovos-workshop (`pip install thalovant-skillkit[skill]`); `testing` builds the
+message doubles skill tests keep reinventing; `checks` is what every skill's CI
+runs -- a locale contract that was vendored into fifteen skills byte for byte,
+plus the packaging mistakes that read as a broken skill. `thalovant-skillkit
+new` writes a skill that passes all of it, and `thalovant-skillkit check` runs
+it on any skill.
 
 How a term may match is a fact about a language, not about this code, so it
 lives in locale/<lang>/matching.json beside everything else the fleet keeps

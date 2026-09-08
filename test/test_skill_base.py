@@ -164,10 +164,13 @@ def test_a_skill_that_forgets_to_answer_says_so_loudly(demo):
     class Empty(ThalovantFallbackSkill):
         pass
 
+    # Bypass OVOSSkill.__init__, which wants a bus; the plumbing is the point.
+    skill = Empty.__new__(Empty)
+
     with pytest.raises(NotImplementedError):
-        Empty.can_answer(object(), Msg())
+        skill.can_answer(Msg())
     with pytest.raises(NotImplementedError):
-        Empty.handle_fallback(object(), Msg())
+        skill.handle_fallback(Msg({"utterance": "anything"}))
 
 
 def test_settings_are_readable_before_the_skill_is_bound(demo):
@@ -233,3 +236,64 @@ def test_nothing_here_shadows_the_framework():
     assert collisions == set(), (
         f"these shadow OVOSSkill and will confuse or break it: {sorted(collisions)}"
     )
+
+
+class _Spoken(ThalovantFallbackSkill):
+    """A skill written the short way: `reply` and nothing else."""
+
+    FALLBACK_PRIORITY = 96
+    LOCALE_DIR = "/nonexistent"
+
+    def __init__(self):  # no bus, no config: the point is the plumbing
+        self.said = []
+
+    def speak(self, text, *args, **kwargs):
+        self.said.append(text)
+
+    def can_answer(self, message):
+        return "news" in self.utterance(message)
+
+    def reply(self, utterance, lang, context):
+        if "nothing" in utterance:
+            return None
+        return f"[{lang}] the news is quiet"
+
+
+def test_reply_is_spoken_on_the_hub_and_returned_to_the_showroom():
+    """Nineteen skills kept a `preview_reply` in step with their speaking path
+    by hand. Deriving both from one `reply` makes drift impossible."""
+    skill = _Spoken()
+
+    assert skill.handle_fallback(Msg({"utterance": "the news"}, {"lang": "fr-FR"})) is True
+    assert skill.said == ["[fr-FR] the news is quiet"]
+    assert skill.preview_reply("the news", "fr-FR") == "[fr-FR] the news is quiet"
+
+
+def test_no_reply_means_the_skill_did_not_answer():
+    """Returning False from the fallback is what lets the next skill be asked."""
+    skill = _Spoken()
+
+    assert skill.handle_fallback(Msg({"utterance": "news about nothing"})) is False
+    assert skill.said == []
+    assert skill.preview_reply("news about nothing") == ""
+
+
+def test_preview_falls_back_to_the_skills_language():
+    skill = _Spoken()
+
+    assert skill.preview_reply("the news").startswith("[en-US]")
+
+
+def test_a_skill_that_writes_neither_reply_nor_handle_fallback_says_so():
+    class Silent(ThalovantFallbackSkill):
+        pass
+
+    with pytest.raises(NotImplementedError):
+        Silent.reply(object(), "x", "en-US", {})
+    # ...but the showroom must never crash because a skill has no preview.
+    assert _Spoken.preview_reply.__name__ == "preview_reply"
+
+
+def test_preview_reply_is_exposed_over_the_skill_api():
+    """The preview bridge finds it through OVOS's skill-API decorator."""
+    assert getattr(ThalovantFallbackSkill.preview_reply, "api_method", False) is True
