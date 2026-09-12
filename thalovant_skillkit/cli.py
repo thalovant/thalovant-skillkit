@@ -326,6 +326,38 @@ def cmd_check(args: argparse.Namespace) -> int:
     return 1 if failed else 0
 
 
+def cmd_check_artifacts(args: argparse.Namespace) -> int:
+    """Check built archives offline, without importing or installing the skill."""
+    from .artifacts import check_artifacts
+
+    problems = check_artifacts(
+        args.directory or ".", wheel=args.wheel, sdist=args.sdist,
+        package_dirs=args.package, runtime_paths=args.runtime, source_paths=args.source,
+        wheel_excludes=args.wheel_exclude,
+        wheel_counts=dict(args.wheel_count), sdist_counts=dict(args.sdist_count),
+    )
+    if problems:
+        print(f"{len(problems)} artifact problem(s):")
+        for problem in problems:
+            print(f"  - {problem}")
+        return 1
+    print("ok: built artifacts match their declared source resources")
+    return 0
+
+
+def _artifact_count(value: str) -> tuple[str, int]:
+    pattern, separator, raw_count = value.rpartition("=")
+    try:
+        count = int(raw_count)
+    except ValueError as failure:
+        raise argparse.ArgumentTypeError(
+            "expected GLOB=COUNT with a nonnegative count",
+        ) from failure
+    if not separator or not pattern or count < 0:
+        raise argparse.ArgumentTypeError("expected GLOB=COUNT with a nonnegative count")
+    return pattern, count
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="thalovant-skillkit",
                                      description="Write and check Thalovant skills.")
@@ -357,9 +389,30 @@ def main(argv: list[str] | None = None) -> int:
                        help="with --fleet: similarity at which a paraphrase is reported (0.85)")
     check.set_defaults(func=cmd_check)
 
+    artifacts = sub.add_parser("check-artifacts", help="check built wheel/sdist resources offline")
+    artifacts.add_argument("directory", nargs="?", help="source checkout (default: here)")
+    artifacts.add_argument("--wheel", metavar="PATH", help="built wheel archive")
+    artifacts.add_argument("--sdist", metavar="PATH", help="built source tar archive")
+    artifacts.add_argument("--package", action="append", metavar="DIR",
+                           help="top-level import-package directory, repeatable; auto-discovered "
+                                "when omitted (supports src/package layouts)")
+    artifacts.add_argument("--runtime", action="append", default=[], metavar="PATH",
+                           help="additional source file/directory required in both artifacts")
+    artifacts.add_argument("--source", action="append", default=[], metavar="PATH",
+                           help="source file/directory required only in the sdist")
+    artifacts.add_argument("--wheel-exclude", action="append", default=[], metavar="PATH|GLOB",
+                           help="forbidden wheel path, directory prefix, or glob")
+    artifacts.add_argument("--wheel-count", action="append", default=[], type=_artifact_count,
+                           metavar="GLOB=COUNT", help="required wheel inventory count")
+    artifacts.add_argument("--sdist-count", action="append", default=[], type=_artifact_count,
+                           metavar="GLOB=COUNT", help="required sdist inventory count")
+    artifacts.set_defaults(func=cmd_check_artifacts)
+
     args = parser.parse_args(argv)
     if args.command == "new" and not 91 <= args.priority <= 100:
         parser.error("--priority must be between 91 and 100")
+    if args.command == "check-artifacts" and not (args.wheel or args.sdist):
+        parser.error("check-artifacts requires --wheel or --sdist")
     return args.func(args)
 
 

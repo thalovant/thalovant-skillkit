@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.9.0"
+version = "0.10.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,6 +39,12 @@ dependencies = [
 # Kept as empty names so older pins (`thalovant-skillkit[skill]`) still resolve.
 skill = []
 fleet = []
+testing = [
+    "ovoscope>=1.8.5a1",
+    "ovos-bus-client>=2.11.15a1",
+    "pytest>=8",
+    "pytest-timeout>=2",
+]
 
 [project.scripts]
 thalovant-skillkit = "thalovant_skillkit.cli:main"

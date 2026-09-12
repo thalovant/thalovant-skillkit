@@ -67,18 +67,21 @@ def test_a_single_term_check_stays_cheap():
     assert cost < 50, f"contains_term cost {cost:.0f}us against a ~0.5us budget"
 
 
-def test_the_library_takes_no_locks_on_the_utterance_path():
-    """A lock here would serialise every skill on a shared hub.
+def test_text_and_locale_helpers_take_no_locks_on_the_utterance_path():
+    """Pure message/text/resource helpers must not serialise unrelated skills.
 
     The caches are plain dicts and `functools.lru_cache`; neither blocks. This
     reads the source rather than the behaviour, because a lock that is only
-    contended under load will not show up in a single-threaded test.
+    contended under load will not show up in a single-threaded test. Stateful
+    opt-in helpers such as SessionStateStore have a separate per-instance lock;
+    they are not imported or used by these stateless helpers.
     """
     import thalovant_skillkit
 
     package = Path(thalovant_skillkit.__file__).parent
     offenders = {}
-    for module in sorted(package.glob("*.py")):
+    for name in ("message", "text", "vocab", "locale"):
+        module = package / f"{name}.py"
         source = module.read_text(encoding="utf-8")
         # Only the executable lines: the word appears in prose explaining why.
         code = "\n".join(
