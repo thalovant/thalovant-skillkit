@@ -165,11 +165,10 @@ def context_value(message: Any, *keys: str, default: Any = None) -> Any:
 
 
 def location(message: Any) -> dict | None:
-    """The house's location, as the satellite attaches it to every utterance.
+    """Read location from message context, then data, when it is a dictionary.
 
-    Without it OVOS answers from its own default -- Lawrence, Kansas -- so the
-    date-time skill reports the wrong hour and weather the wrong city. Three
-    skills each had their own spelling of this lookup and they disagreed.
+    Return None for a missing or non-dictionary selected value. This helper
+    does not consult the session or supply a geographic or timezone default.
     """
     value = context_value(message, "location")
     return value if isinstance(value, dict) else None

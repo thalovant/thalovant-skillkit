@@ -22,14 +22,15 @@ behaviour of the most careful copy:
     service    request headers with a traceable id, and a POST that stays quiet
     knowledge  the knowledge-service client, previously vendored three times
 
-Three more modules are not imported here, because each stands on its own:
-`skill` carries base classes that hold a skill's plumbing and needs
-ovos-workshop (`pip install thalovant-skillkit[skill]`); `testing` builds the
-message doubles skill tests keep reinventing; `checks` is what every skill's CI
-runs -- a locale contract that was vendored into fifteen skills byte for byte,
-plus the packaging mistakes that read as a broken skill. `thalovant-skillkit
-new` writes a skill that passes all of it, and `thalovant-skillkit check` runs
-it on any skill.
+Other modules are imported explicitly: `skill` carries the OVOS base classes;
+`testing` supplies message and recording-bus doubles; `testing_ovos` provides
+optional integration helpers; `sessions` holds bounded application state; and
+`checks` and `artifacts` validate source contracts and built archives.
+ovos-workshop and the fleet-check dependencies are included in the base install;
+the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install
+`thalovant-skillkit[testing]` for the OVOScope integration stack.
+`thalovant-skillkit new` writes a complete skill, and `thalovant-skillkit check`
+runs its source and fleet contracts.
 
 How a term may match is a fact about a language, not about this code, so it
 lives in locale/<lang>/matching.json beside everything else the fleet keeps

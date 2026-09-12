@@ -67,7 +67,7 @@ from .text import fold
 
 
 class _SkillPlumbing:
-    """What both base classes share. Not used directly."""
+    """Shared helpers for SkillKit's OVOS base classes. Not used directly."""
 
     #: Where this skill's `locale/` tree lives. Found from the module the class
     #: is defined in, so a skill laid out like every other one sets nothing.
@@ -156,10 +156,10 @@ class _SkillPlumbing:
 
     @staticmethod
     def location_of(message: Any) -> dict | None:
-        """The house's location, as the satellite attaches it.
+        """A location dictionary from message context, then data, or None.
 
-        Without it OVOS answers from its own default, which is Lawrence,
-        Kansas -- an hour out and a continent away from most listeners.
+        This helper does not read session location or supply a default city.
+        The skill decides how to handle an absent location.
         """
         return _location(message)
 
@@ -203,10 +203,10 @@ class _SkillPlumbing:
     def dialog(self, name: str, lang: str | None = None, data: dict | None = None) -> str:
         """One rendered line from `locale/<lang>/dialog/<name>.dialog`.
 
-        Picked at random when the file offers several, so a skill asked the
-        same thing twice does not answer identically. Falls back to English,
-        and to the name itself if nothing is found -- a missing translation
-        should sound wrong rather than raise mid-answer.
+        Picked at random when the file offers several; repeats are possible.
+        Uses the locale resource fallback chain and returns the name itself
+        if no dialog is found. Missing formatting values leave the template
+        visible instead of raising during an answer.
         """
         lines = self.locale_resources.dialog_lines(name, lang or self._own_lang())
         if not lines:
@@ -233,10 +233,10 @@ class _SkillPlumbing:
     def reply(self, utterance: str, lang: str, context: dict) -> str | None:
         """The skill's answer as text, or None when it has none.
 
-        The one method most skills need to write. Speaking on the hub and
-        previewing in the showroom both come through here, so the two cannot
-        drift apart -- nineteen skills carried a `preview_reply` that had to be
-        kept in step with the speaking path by hand.
+        The fallback base calls this after can_answer and speaks a nonempty
+        result. Other bases require their own handlers to invoke it. A preview
+        calls the same logic independently, so random or changing results can
+        differ between calls.
         """
         raise NotImplementedError
 
@@ -244,11 +244,11 @@ class _SkillPlumbing:
     def preview_reply(
         self, utterance: str = "", lang: str | None = None, context: dict | None = None
     ) -> str:
-        """What the showroom calls: the reply as text, with nothing spoken.
+        """Expose reply text through the skill API without speaking or routing.
 
-        The preview bridge beside every hub invokes this over the skill API and
-        shows the result on the web, so a skill without it cannot be tried
-        before it is heard.
+        A configured preview integration can call this method. It returns an
+        empty string for an absent reply or an unimplemented reply hook; other
+        exceptions propagate. Side effects inside reply still execute.
         """
         try:
             return self.reply(utterance or "", lang or self._own_lang(), context or {}) or ""

@@ -152,12 +152,13 @@ def knowledge_reply(
 ) -> KnowledgeReply:
     """Ask the knowledge service and classify the age-policy outcome.
 
-    Returns (answer, policy). POLICY_BLOCKED means the hub policy rated the
-    content too mature; that reply is the policy speaking, so callers deliver
-    it instead of substituting packaged content. POLICY_UNAVAILABLE means the
-    classifier could not reach a verdict, which is a service outage rather
-    than a statement about the question, so callers must not repeat the
-    service's age wording. Both suppress packaged fallbacks.
+    Returns KnowledgeReply(answer, policy, augmented). POLICY_BLOCKED means the
+    hub policy rated the content too mature; that reply is the policy speaking,
+    so callers deliver it instead of substituting packaged content.
+    POLICY_UNAVAILABLE means the age policy could not be evaluated, including
+    invalid settings or an unavailable classifier. Callers report unavailability
+    without repeating blocked-content wording. Both outcomes suppress packaged
+    fallbacks.
     """
     if not service_url or not prompt:
         return KnowledgeReply(None, POLICY_NONE)

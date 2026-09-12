@@ -130,8 +130,8 @@ class SkillResources:
         return cached
 
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
-        """Falls back to English: a translation that has not landed yet should
-        sound wrong rather than leave the skill silent mid-answer."""
+        """Read the selected locale's dialog, falling back to the configured
+        default locale if the file has no usable lines."""
         return self.lines(lang, "dialog", f"{name}.dialog", fallback=True)
 
     def dialog(self, name: str, lang: str | None, data: dict | None = None) -> str:

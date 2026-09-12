@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Expand the README into a verified installation-to-package walkthrough and
+  add an API/CLI reference for released 0.10.0 behavior. Clarify locale fallback,
+  session ownership, test isolation, check limitations, and service outcomes.
+- Correct inline API documentation without changing runtime behavior.
+
 ## 0.10.0 (2026-09-12)
 
 - Add an opt-in `SessionStateStore` with bounded capacity, monotonic expiry,
