@@ -1,8 +1,4 @@
-"""Intent expansion, the corpus round-trip, and what the fleet check reports.
-
-The embedding model is not loaded here; `find_near` is exercised in
-`test_fleet_model.py` only when the model is in the local cache.
-"""
+"""Intent expansion, corpus round-trips and fleet checks with small model doubles."""
 from __future__ import annotations
 
 import json
@@ -117,7 +113,10 @@ def test_corpus_reads_back_what_the_builder_writes(fleet_dir: Path, tmp_path: Pa
     path = _corpus(tmp_path / "corpus", "en-US", skills)
     loaded = intents.load_corpus(path)
     assert loaded["version"] == intents.CORPUS_VERSION
-    assert loaded["skills"]["thalovant-skill-time.thalovant"]["sha"] == "abc"
+    assert loaded["skills"]["thalovant-skill-time.thalovant"] == {
+        "repo": "thalovant-skill-time.thalovant",
+        "sha": "abc",
+    }
     texts = {(line.skill, line.text) for line in intents.corpus_lines(loaded)}
     assert ("thalovant-skill-time.thalovant", "what time is it") in texts
     assert ("thalovant-skill-weather.thalovant", "will it pour") in texts
@@ -293,3 +292,88 @@ def test_check_with_a_model_directory_uses_its_index(tmp_path: Path, monkeypatch
     assert [(f.kind, f.mine.text, f.theirs.skill) for f in findings] == [
         ("duplicate", "will it rain", "thalovant-skill-weather.thalovant")]
     assert notes == []
+
+
+def test_bilingual_fleet_check_reuses_models_but_reload_sees_updated_artifacts(
+    tmp_path: Path, monkeypatch,
+):
+    """Each locale is compared; models live only until this check finishes."""
+    np = pytest.importorskip("numpy")
+    model2vec = pytest.importorskip("model2vec")
+    inference = pytest.importorskip("model2vec.inference")
+    loads = {"near": [], "classifier": []}
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "index.json").write_text(json.dumps(_index([])))
+
+    class FakeModel:
+        @classmethod
+        def from_pretrained(cls, identifier):
+            loads["near"].append(identifier)
+            return cls()
+
+        def encode(self, texts):
+            return np.array([[1.0, 0.0] for _ in texts])
+
+    class FakePipeline:
+        @classmethod
+        def from_pretrained(cls, identifier):
+            loads["classifier"].append(identifier)
+            pipeline = cls()
+            pipeline.classes_ = [(Path(identifier) / "label.txt").read_text()]
+            return pipeline
+
+        def predict_proba(self, texts):
+            return np.array([[0.99] for _ in texts])
+
+    monkeypatch.setattr(model2vec, "StaticModel", FakeModel)
+    monkeypatch.setattr(inference, "StaticModelPipeline", FakePipeline)
+    langs = ("en-US", "fr-FR")
+    mine = _skill(tmp_path, "garden", {
+        "en-US/garden.intent": "water the garden\n",
+        "fr-FR/garden.intent": "arroser le jardin\n",
+    }, langs=langs)
+    weather = _skill(tmp_path, "weather", {
+        "en-US/rain.intent": "will it rain\n",
+        "fr-FR/rain.intent": "va-t-il pleuvoir\n",
+    }, langs=langs)
+    skill_id, locale_dir = fleet.skill_identity(weather)
+    corpus_dir = tmp_path / "corpus"
+    for lang in langs:
+        _corpus(corpus_dir, lang, [(skill_id, weather, locale_dir)])
+
+    for run, owner in enumerate(("original-owner", "updated-owner"), 1):
+        (model_dir / "label.txt").write_text(f"{owner}:question")
+        findings, notes = fleet.check_fleet(mine, corpus_dir, model=str(model_dir))
+        assert notes == []
+        assert {(f.kind, f.mine.lang, f.theirs.skill) for f in findings} == {
+            ("near", lang, skill_id) for lang in langs
+        } | {("predicted", lang, owner) for lang in langs}
+        assert loads == {
+            "near": [fleet.MODEL] * run,
+            "classifier": [str(model_dir)] * run,
+        }
+
+
+@pytest.mark.parametrize("has_intents", [False, True])
+def test_fleet_does_not_load_models_without_comparison_data(tmp_path, monkeypatch, has_intents):
+    """No intents need no model; no other skill's sentences need no embedder."""
+    model2vec = pytest.importorskip("model2vec")
+    inference = pytest.importorskip("model2vec.inference")
+
+    def unexpected_load(*args, **kwargs):
+        pytest.fail("No model should be loaded for an empty comparison")
+
+    monkeypatch.setattr(model2vec.StaticModel, "from_pretrained", unexpected_load)
+    monkeypatch.setattr(inference.StaticModelPipeline, "from_pretrained", unexpected_load)
+    root = _skill(tmp_path, "garden", {"en-US/garden.intent": "water the garden\n"}
+                  if has_intents else {})
+    skill_id, locale_dir = fleet.skill_identity(root)
+    corpus_dir = tmp_path / "corpus"
+    _corpus(corpus_dir, "en-US", [(skill_id, root, locale_dir)])
+    model_dir = tmp_path / "model"
+    model_dir.mkdir()
+    (model_dir / "index.json").write_text(json.dumps(_index([])))
+    assert fleet.check_fleet(
+        root, corpus_dir, model=None if has_intents else str(model_dir),
+    ) == ([], [])

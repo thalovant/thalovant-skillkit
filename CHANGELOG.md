@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.11.3 (2026-09-13)
+
+- Fix the generated English and French test phrases to pass the question-only
+  gate introduced in 0.11.2. Generated tests also reject room chatter, including
+  when it contains a topic keyword. SkillKit's CI now creates projects with
+  ordinary and question-word names and runs their tests.
+- Reuse the embedding model and classifier across languages within each fleet
+  check. A later check loads fresh artifacts; empty comparisons load no model.
+- Restore the corpus round-trip assertion for both repository identity and SHA.
+
 ## 0.11.2 (2026-09-13)
 
 - A generated skill's `can_answer` goes through `claims()` before its keyword

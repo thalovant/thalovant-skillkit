@@ -131,8 +131,19 @@ def find_self_duplicates(mine: list[IntentLine]) -> list[Collision]:
     return out
 
 
+def _load_model(model_type, identifier: str, cache: dict | None):
+    """Reuse a loaded artifact only for the check that owns this cache."""
+    if cache is None:
+        return model_type.from_pretrained(identifier)
+    key = (model_type, identifier)
+    if key not in cache:
+        cache[key] = model_type.from_pretrained(identifier)
+    return cache[key]
+
+
 def find_near(mine: list[IntentLine], others: list[IntentLine],
-              threshold: float = NEAR_THRESHOLD) -> list[Collision]:
+              threshold: float = NEAR_THRESHOLD, *,
+              _model_cache: dict | None = None) -> list[Collision]:
     """Closest other-skill sentence per line of mine, above the threshold.
     Exact matches are the duplicate check's business and are skipped here."""
     if not mine or not others:
@@ -140,7 +151,7 @@ def find_near(mine: list[IntentLine], others: list[IntentLine],
     import numpy as np
     from model2vec import StaticModel
 
-    model = StaticModel.from_pretrained(MODEL)
+    model = _load_model(StaticModel, MODEL, _model_cache)
 
     def unit(texts: list[str]):
         vectors = model.encode(texts).astype("float32")
@@ -203,14 +214,15 @@ def resolve_model(model: str) -> Path:
 
 
 def find_predicted(mine: list[IntentLine], model_dir: Path, skill_id: str,
-                   threshold: float = PREDICTED_THRESHOLD) -> list[Collision]:
+                   threshold: float = PREDICTED_THRESHOLD, *,
+                   _model_cache: dict | None = None) -> list[Collision]:
     """What the fleet's trained classifier makes of each of my sentences."""
     if not mine:
         return []
     import numpy as np
     from model2vec.inference import StaticModelPipeline
 
-    pipeline = StaticModelPipeline.from_pretrained(str(model_dir))
+    pipeline = _load_model(StaticModelPipeline, str(model_dir), _model_cache)
     classes = np.asarray(pipeline.classes_)
     proba = pipeline.predict_proba([line.text for line in mine])
     out: list[Collision] = []
@@ -254,6 +266,9 @@ def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool 
     skill_id, locale_dir = skill_identity(skill_root)
     findings: list[Collision] = []
     notes: list[str] = []
+    # Both models cover every locale. Load each on its first useful comparison,
+    # then release it after this check so a later run sees any artifact updates.
+    model_cache: dict = {}
     run_near = corpus_dir is not None and near and near_check_available()
     if corpus_dir is not None and near and not run_near:
         notes.append("near-duplicate check skipped: install thalovant-skillkit[fleet]")
@@ -277,7 +292,7 @@ def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool 
         if index:
             findings.extend(find_indexed_duplicates(mine, index, skill_id))
         if model_dir is not None:
-            findings.extend(find_predicted(mine, model_dir, skill_id))
+            findings.extend(find_predicted(mine, model_dir, skill_id, _model_cache=model_cache))
         if corpus_dir is None:
             continue
         path = Path(corpus_dir) / f"{lang}.json"
@@ -292,7 +307,7 @@ def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool 
                 for f in findings if f.kind in ("duplicate", "known")}
         findings.extend(f for f in found if (f.mine.file, f.mine.line, f.mine.text) not in seen)
         if run_near:
-            findings.extend(find_near(mine, others, threshold))
+            findings.extend(find_near(mine, others, threshold, _model_cache=model_cache))
     return findings, notes
 
 
