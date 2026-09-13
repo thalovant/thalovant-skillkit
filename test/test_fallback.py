@@ -76,5 +76,7 @@ def test_a_questions_only_fallback_considers_only_what_asks():
     assert net.claims("what is the weather", "en-US")
     assert not net.claims("C'est bruyant dehors avec les travaux", "fr-FR")
     assert not net.claims("it is cold in here, close the window", "en-US")
-    assert everything.claims("C'est bruyant dehors avec les travaux", "fr-FR"), "the last voice claims all"
-    assert ThalovantFallbackSkill.asks("quelle heure est-il", "fr") and not ThalovantFallbackSkill.asks("passe-moi le sel", "fr")
+    # the last voice in the house claims everything
+    assert everything.claims("C'est bruyant dehors avec les travaux", "fr-FR")
+    assert ThalovantFallbackSkill.asks("quelle heure est-il", "fr")
+    assert not ThalovantFallbackSkill.asks("passe-moi le sel", "fr")
