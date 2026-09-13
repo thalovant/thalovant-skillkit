@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.2 (2026-09-13)
+
+- A generated skill's `can_answer` goes through `claims()` before its keyword
+  test, and the generated class sets `QUESTIONS_ONLY = True`, so the gate
+  applies to new skills as well as to the ones that set it by hand.
+
 ## 0.11.1 (2026-09-13)
 
 - Add `ThalovantFallbackSkill.QUESTIONS_ONLY`, `asks()` and `claims()`: a fallback

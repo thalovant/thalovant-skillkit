@@ -70,9 +70,14 @@ class {n['clazz']}(ThalovantFallbackSkill):
     # from low in the ladder silences every skill behind it.
     FALLBACK_PRIORITY = {priority}
 
+    # Claim only sentences that ask something: a keyword net answers room
+    # chatter otherwise. The last voice in the house (priority 100) sets False.
+    QUESTIONS_ONLY = True
+
     def can_answer(self, message) -> bool:
         """Cheap and narrow: this runs for everything anyone says."""
-        return self.mentions(self.utterance(message), "{n['keyword']}", self.lang_of(message))
+        utterance, lang = self.utterance(message), self.lang_of(message)
+        return self.claims(utterance, lang) and self.mentions(utterance, "{n['keyword']}", lang)
 
     def reply(self, utterance: str, lang: str, context: dict) -> str | None:
         """The answer as text. Spoken on the hub, shown in the showroom."""
