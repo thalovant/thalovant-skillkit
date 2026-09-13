@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.11.0 (2026-09-13)
+
+- Add `bus.wait_for_response` for requests sharing a response topic: explicit
+  correlation predicate, one finite timeout, and listener cleanup on success,
+  timeout or error. Used by live Custos queries and persona rewrites to isolate
+  simultaneous callers without serializing them.
+- Generated CI now rebuilds a wheel from its source distribution and checks
+  both artifacts against source resources, catching files missing from releases.
+- Add cached `SkillResources.matches_literal_intent` so fallback skills can
+  recognize their own concrete localized examples without broad keyword gates
+  or treating slot/alternative patterns as literal phrases.
 
 - Expand the README into a verified installation-to-package walkthrough and
   add an API/CLI reference for released 0.10.0 behavior. Clarify locale fallback,

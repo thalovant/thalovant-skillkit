@@ -1,4 +1,4 @@
-# SkillKit 0.10.0 reference
+# SkillKit 0.11.0 reference
 
 Practical contracts for the released Python API and CLI. Start with the
 [README](../README.md) for installation, base-class choice and a complete skill.
@@ -48,6 +48,44 @@ commands. These low-level matchers do not fold their inputs; normalize text
 and terms with `fold` first, or use the folding `SkillResources` wrappers.
 Language-specific matching rules live in the library's `locale/`.
 
+## Correlated bus requests
+
+`thalovant_skillkit.bus.wait_for_response(bus, message, reply_type, *, matches,
+timeout=5.0)` subscribes before emitting and returns the first matching response,
+or `None` on timeout. Use it when several rooms share one response topic. Native
+topic-only waiters can give both callers the first room's reply.
+
+```python
+from uuid import uuid4
+from ovos_bus_client.message import Message
+from thalovant_skillkit.bus import wait_for_response
+
+# The provider must copy data.id to the reply. This is a protocol requirement,
+# not something the helper can arrange on behalf of a different service.
+def ask(bus):
+    request_id = uuid4().hex
+    request = Message("example.query", {"id": request_id},
+                      {"session": {"session_id": "kitchen", "lang": "en-US"}})
+    return wait_for_response(
+        bus, request, "example.answer",
+        matches=lambda reply: reply.data.get("id") == request_id,
+        timeout=3.0,
+    )
+```
+
+The predicate must be cheap and should reject malformed replies. Match a fresh
+ID for every request, never only a persona, node or session ID. A provider using
+`message.reply` can also echo a context correlation field. Confirm the provider's
+actual reply contract before selecting a field. Preserve the originating session
+when constructing a request; the helper does not modify context or validate the
+response payload.
+
+Timeouts must be positive and finite. The deadline includes time spent emitting;
+the helper cannot interrupt a blocking transport's `emit`. Unrelated replies do
+not extend the deadline. It removes its listener on every exit and propagates
+transport and predicate errors to the caller. Handle them with the skill's normal
+unavailable response. This helper uses the base dependencies; OvoScope is optional.
+
 ## Locale resources and base helpers
 
 Create `SkillResources(locale_dir, default_lang="en-US")`, or use
@@ -76,6 +114,7 @@ the chosen/default directory or a requested file exists.
 | `lines(lang, folder, filename, fallback=False)` | Cached tuple of stripped, nonblank, non-comment lines. Always resolves language; `fallback=True` also tries the default locale when the file has no usable lines. |
 | `vocab(voc_name, lang)` | Lines from `vocab/<name>.voc`, without secondary file fallback. |
 | `dialog_lines(name, lang)` | Lines from `dialog/<name>.dialog`, with default-locale fallback. |
+| `matches_literal_intent(utterance, name, lang=None)` | Entire concrete `.intent` line, normalized for case, accents, punctuation and spaces. Reads flat and `intents/` layouts in the resolved locale. Skips lines with `{}` slots or `[]()\|` patterns. Does not merge English into another supported locale or replace the intent engines. |
 | `voc_match(voc_name, utterance, lang=None)` | Containment match against resolved then default vocabulary; returns a boolean. |
 | `voc_term(voc_name, utterance, lang=None)` | Longest matching folded term in the first matching candidate locale, or `""`. |
 | `voc_match_lang(voc_name, utterance, lang=None)` | Candidate locale whose vocabulary matched, or `""`. |

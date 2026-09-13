@@ -16,7 +16,7 @@ Python 3.10 and newer. Run these commands from a working directory where
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install "thalovant-skillkit>=0.10.0"
+python -m pip install "thalovant-skillkit>=0.11.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install -e ".[test]" build
@@ -24,8 +24,9 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-With SkillKit 0.10.0, this produces a fallback skill, five passing tests, locale
-resources, package metadata, and a GitHub test workflow. No running hub is needed.
+With SkillKit 0.11.0, this produces a fallback skill, five passing tests, locale
+resources, package metadata, and a GitHub test workflow including wheel and source
+distribution validation. No running hub is needed.
 The generated workflow tests the project; it does not publish or install it on a
 speaker. Package installation requires access to your Python package index.
 

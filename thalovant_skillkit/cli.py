@@ -190,12 +190,15 @@ jobs:
       - uses: {SETUP_PYTHON}
         with:
           python-version: "3.12"
-      - run: python -m pip install -e ".[test]"
+      - run: python -m pip install -e ".[test]" build
       # Locales, packaging, and this skill's sentences against every other
       # skill's: every skill's intents train into one classifier on the hub, so
       # a sentence another skill already publishes fails here, on its line.
       - run: thalovant-skillkit check
       - run: pytest -q
+      # Build the wheel from the sdist, so missing build inputs fail too.
+      - run: python -m build
+      - run: thalovant-skillkit check-artifacts --wheel dist/*.whl --sdist dist/*.tar.gz
 
       # After a merge, ask the corpus to pick up this skill's sentences, so the
       # next skill is checked against this one. CROSS_REPO_TOKEN is the org

@@ -20,7 +20,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .message import standardize
-from .text import fold
+from .text import fold, fold_words
 from .vocab import contains_term, first_match
 
 DEFAULT_LANG = "en-US"
@@ -45,6 +45,7 @@ class SkillResources:
         # match. A skill asks `mentions()` on the utterance path, so this runs
         # for every word someone says.
         self._folded_cache: dict[tuple[str, str], tuple[str, ...]] = {}
+        self._literal_intent_cache: dict[tuple[str, str], frozenset[str]] = {}
 
     # -- which language this skill can actually serve -------------------------
 
@@ -149,6 +150,38 @@ class SkillResources:
             return lines[0]
 
     # -- matching -------------------------------------------------------------
+
+    def matches_literal_intent(self, utterance: str, name: str,
+                               lang: str | None = None) -> bool:
+        """Match an entire concrete line of a packaged ``.intent`` resource.
+
+        Useful before a fallback's narrower vocabulary gate: a published phrase
+        must still work when the intent classifier falls below its threshold.
+        Case, accents, punctuation and whitespace follow ``fold_words``. Only
+        the resolved resource locale is checked; English is not merged into a
+        supported non-English locale. Regional/unsupported locale resolution
+        follows ``lang()`` as for other resources.
+
+        ``name`` accepts an optional ``.intent`` suffix. Both conventional root
+        and ``intents/`` locations are read. Lines containing slot, alternative,
+        or optional-group syntax are excluded, never interpreted as literals.
+        This does not parse or replace OVOS's intent engines.
+        """
+        text = fold_words(utterance)
+        if not text:
+            return False
+        resolved = self.lang(lang)
+        filename = name if name.endswith(".intent") else f"{name}.intent"
+        key = (resolved, filename)
+        if key not in self._literal_intent_cache:
+            self._literal_intent_cache[key] = frozenset(
+                folded
+                for folder in ("", "intents")
+                for line in self._lines(resolved, folder, filename)
+                if not any(character in line for character in "{}[]()|")
+                if (folded := fold_words(line))
+            )
+        return text in self._literal_intent_cache[key]
 
     def voc_match(self, voc_name: str, utterance: str, lang: str | None = None) -> bool:
         """Whether the utterance contains any term from this vocabulary.
