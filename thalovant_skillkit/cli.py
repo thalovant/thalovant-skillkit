@@ -75,7 +75,7 @@ class {n['clazz']}(ThalovantFallbackSkill):
     QUESTIONS_ONLY = True
 
     def can_answer(self, message) -> bool:
-        """Cheap and narrow: this runs for everything anyone says."""
+        """Consider requests that earlier handlers left unanswered."""
         utterance, lang = self.utterance(message), self.lang_of(message)
         return self.claims(utterance, lang) and self.mentions(utterance, "{n['keyword']}", lang)
 
@@ -109,17 +109,25 @@ from {n['package']} import {n['clazz']}
 
 
 def test_it_hears_its_keyword():
-    assert {n['clazz']}().can_answer(message("tell me about {n['slug'].replace('-', ' ')}"))
+    assert {n['clazz']}().can_answer(message("what is {n['slug'].replace('-', ' ')}"))
 
 
 def test_it_hears_it_in_french():
-    assert {n['clazz']}().can_answer(message("{n['slug'].replace('-', ' ')}", lang="fr-FR"))
+    assert {n['clazz']}().can_answer(
+        message("que sais-tu sur {n['slug'].replace('-', ' ')}", lang="fr-FR")
+    )
 
 
 def test_it_ignores_what_is_not_its_business():
     """Write this one first. A skill that answers too much fails silently:
     nothing breaks, another skill just stops being heard."""
-    assert not {n['clazz']}().can_answer(message("set a timer for ten minutes"))
+    skill = {n['clazz']}()
+    assert not skill.can_answer(message("set a timer for ten minutes"))
+    # Use plain statements: a skill's name can itself contain question words.
+    assert not skill.can_answer(message("it is cold in here, close the window"))
+    assert not skill.can_answer(
+        message("c'est bruyant dehors avec les travaux", lang="fr-FR")
+    )
 
 
 def test_it_has_something_to_say():
@@ -230,6 +238,11 @@ pip install -e ".[test]"
 thalovant-skillkit check
 pytest
 ```
+
+Try "what is {n['slug'].replace('-', ' ')}" in English or
+"que sais-tu sur {n['slug'].replace('-', ' ')}" in French. The scaffold accepts
+questions about its keyword and leaves room chatter alone. The French keyword
+starts with the same words as the English one; translate it before sharing.
 
 Say what it answers in `{n['package']}/locale/<lang>/vocab/{n['keyword']}.voc`,
 how it replies in `locale/<lang>/dialog/{n['dialog']}.dialog`, and the rest in
