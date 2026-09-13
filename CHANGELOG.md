@@ -2,6 +2,10 @@
 
 ## 0.11.0 (2026-09-13)
 
+- Add `ThalovantFallbackSkill.QUESTIONS_ONLY`, `asks()` and `claims()`: a fallback
+  that sets the flag considers only sentences that ask something, by the
+  language's own question words (thalovant-languages 0.3.0). Measured on
+  2026-09-12, keyword nets answered room chatter that merely held a word.
 - Add `bus.wait_for_response` for requests sharing a response topic: explicit
   correlation predicate, one finite timeout, and listener cleanup on success,
   timeout or error. Used by live Custos queries and persona rewrites to isolate

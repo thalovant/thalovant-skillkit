@@ -331,6 +331,31 @@ class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
         except Exception:  # noqa: BLE001 - settings are absent before binding
             return {}
 
+    #: Claim only sentences that ask something. A keyword net that claims any
+    #: sentence holding one of its words answers room chatter: measured on
+    #: 2026-09-12, "C'est bruyant dehors avec les travaux" drew the weather and
+    #: "Il fait beau aujourd'hui, on va se promener" a timezone complaint. The
+    #: language's own question words decide (thalovant-languages), so a skill
+    #: sets this and keeps its vocabulary as it is. Off by default: the last
+    #: voice in the house (priority 100) must claim everything.
+    QUESTIONS_ONLY: bool = False
+
+    @staticmethod
+    def asks(utterance: str, lang: str | None) -> bool:
+        """Whether `utterance` asks something in `lang`, by the language's own words."""
+        from thalovant_languages import asks
+
+        return asks(utterance, lang)
+
+    def claims(self, utterance: str, lang: str | None) -> bool:
+        """Whether the fallback may consider `utterance` at all.
+
+        The `QUESTIONS_ONLY` gate, applied before a subclass's own test: a
+        subclass calls this from `can_answer` and `handle_fallback` and keeps
+        its keyword test after it.
+        """
+        return not self.QUESTIONS_ONLY or self.asks(utterance, lang)
+
     def can_answer(self, message: Any) -> bool:
         """Whether this skill has something to say about `message`.
 

@@ -55,3 +55,26 @@ def test_a_handler_is_registered_once_however_often_registration_runs():
     assert register_once(skill, handler, 98) is True
     assert register_once(skill, handler, 98) is False
     assert skill._fallback_handlers == [(98, handler)]
+
+
+def test_a_questions_only_fallback_considers_only_what_asks():
+    """The gate before a subclass's own keyword test."""
+    from thalovant_skillkit.skill import ThalovantFallbackSkill
+
+    class Net(ThalovantFallbackSkill):
+        QUESTIONS_ONLY = True
+
+        def __init__(self):  # no bus, no OVOS plumbing: the gate is pure
+            pass
+
+    class Everything(ThalovantFallbackSkill):
+        def __init__(self):
+            pass
+
+    net, everything = Net(), Everything()
+    assert net.claims("Il fait quoi dehors ?", "fr-FR")
+    assert net.claims("what is the weather", "en-US")
+    assert not net.claims("C'est bruyant dehors avec les travaux", "fr-FR")
+    assert not net.claims("it is cold in here, close the window", "en-US")
+    assert everything.claims("C'est bruyant dehors avec les travaux", "fr-FR"), "the last voice claims all"
+    assert ThalovantFallbackSkill.asks("quelle heure est-il", "fr") and not ThalovantFallbackSkill.asks("passe-moi le sel", "fr")
