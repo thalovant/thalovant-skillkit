@@ -30,6 +30,8 @@ dependencies = [
     "tomli>=2.0; python_version < '3.11'",
     # The skill framework itself: a skill needs it, and so does `check`.
     "ovos-workshop>=8.0.0",
+    # The question test the fallback gate reads: the language's own words.
+    "thalovant-languages>=0.3.0",
     # The fleet check: the fleet's intent classifier and its sentence index.
     "model2vec>=0.9",
     "numpy>=1.24",
