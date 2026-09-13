@@ -1,4 +1,4 @@
-# SkillKit 0.11.0 reference
+# SkillKit 0.12.0 reference
 
 Practical contracts for the released Python API and CLI. Start with the
 [README](../README.md) for installation, [Writing a Skill](https://docs.thalovant.com/developers/writing-a-skill/)
@@ -168,6 +168,34 @@ missing keys or a stored `None`. `False`, `0` and `""` are retained.
 `reply`; it returns `""` for an empty answer or `NotImplementedError`. It does
 not replay a skill's audio or simulate its intent handler.
 
+## Non-repeating choices
+
+Import `ShuffleBag` from
+[`thalovant_skillkit.selection`](../thalovant_skillkit/selection.py) when a skill
+cycles through sounds, questions or dialog lines. It keeps each equal item once
+and draws every item before reshuffling. Adjacent draws differ whenever the pool
+has at least two items. An empty input raises `ValueError`; a one-item pool always
+returns that item.
+
+```python
+from random import Random
+from thalovant_skillkit.selection import ShuffleBag
+
+sounds = ShuffleBag(["duck.ogg", "bear.ogg", "robot.ogg"], rng=Random(7))
+first = sounds.draw()
+assert sounds.draw() != first
+# Another speaker may have played in between this speaker's requests.
+assert sounds.draw(avoid=first) != first
+```
+
+`draw(avoid=item)` replaces the previous-draw rule with the caller's chosen item.
+If that item is the only one left in a larger pool, the bag starts a fresh cycle
+to avoid repeating it. Each bag owns its history and lock; the skill owns speaker
+state, lifetime and compound playback operations. Pass a seeded `random.Random`
+for repeatable tests. To vary spoken lines, select through OVOS's public
+`speak_dialog` rendering callback so native rendering and message metadata remain
+available; the helper itself neither formats nor plays its items.
+
 ## Fallback priorities
 
 [`ThalovantFallbackSkill`](../thalovant_skillkit/skill.py) defaults to priority
@@ -245,7 +273,7 @@ key wins over these defaults. Extra keywords populate message data.
 callbacks or produce replies for `wait_for_response`. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.10.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.12.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -277,6 +305,14 @@ list. `of_type(topic)` selects an exact topic. `spoken` returns canonical
 ID, deserialized to an OVOS Session; it is `None` when the source declares no ID.
 Completion alone does not prove correct routing, replies or session isolation:
 assert those outcomes in your test.
+
+`turn.for_session(session_id)` returns a view containing only messages with that
+explicit session ID. Filter first, then use `spoken`, `audio` or `audio_stops` to
+assert the intended room's output. `audio` returns decoded remote bytes and their
+extension, or a local URI, with the original message for routing checks. It never
+opens or plays a URI. Malformed audio payloads raise `AssertionError`.
+See [per-speaker speech and audio assertions](testing-audio.md) for examples,
+namespace handling, and the distinction between queued output and audible sound.
 
 ## Source and fleet checks
 

@@ -6,6 +6,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import wave
 from pathlib import Path
 from threading import Event
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ import pytest
 from thalovant_skillkit import testing_ovos
 from thalovant_skillkit.testing_ovos import (
     XDG_VARIABLES,
+    CapturedTurn,
     capture_turn,
     deferred_capture_gc,
     isolated_xdg,
@@ -154,6 +156,192 @@ def test_capture_propagates_only_the_originating_speakers_latest_session(integra
     assert len(result.of_type("background.update")) == 1
     assert len(bus.ee.listeners("message")) == before
     assert not bus.ee.listeners("test.turn.finished")
+
+
+@pytest.mark.parametrize("topics", [
+    ("speak",), ("ovos.utterance.speak",), ("speak", "ovos.utterance.speak"),
+])
+def test_session_view_selects_speech_without_namespace_twins(integration_scope, topics):
+    """Filtering happens before namespace selection, and real repeats remain."""
+    from ovos_bus_client.message import Message
+    from ovos_bus_client.session import Session
+    from ovos_utils.fakebus import FakeBus
+
+    bus = FakeBus(modernize=False, emit_legacy=False)
+    alice = Session("alice")
+    alice.lang = "fr-FR"
+    bob = Session("bob")
+
+    def reply(message):
+        for _ in range(2):
+            for topic in topics:
+                bus.emit(Message(topic, {"utterance": "bonjour"},
+                                 {"session": alice.serialize()}))
+                audio_topic = "mycroft.audio.queue" if topic == "speak" else "ovos.audio.queue"
+                bus.emit(Message(audio_topic, {"binary_data": b"alice".hex(), "audio_ext": "wav"},
+                                 {"session": alice.serialize()}))
+            # A canonical message from Bob must not hide Alice's legacy speech.
+            bus.emit(Message("ovos.utterance.speak", {"utterance": "hello"},
+                             {"session": bob.serialize()}))
+            bus.emit(Message("ovos.audio.queue", {"binary_data": b"bob".hex(), "audio_ext": "wav"},
+                             {"session": bob.serialize()}))
+        bus.emit(Message("test.turn.finished"))
+
+    bus.on("test.turn", reply)
+    try:
+        capture = capture_turn(
+            SimpleNamespace(bus=bus), Message("test.turn", {}, {"session": alice.serialize()}),
+            eof_msgs=["test.turn.finished"], terminal_signals=False, timeout=1,
+        )
+        alice_turn, bob_turn = capture.for_session("alice"), capture.for_session("bob")
+        assert alice_turn.spoken == ["bonjour", "bonjour"]
+        assert bob_turn.spoken == ["hello", "hello"]
+        assert [audio.binary for audio in alice_turn.audio] == [b"alice", b"alice"]
+        assert [audio.binary for audio in bob_turn.audio] == [b"bob", b"bob"]
+        assert alice_turn.session.lang == "fr-FR"
+        assert capture.session.session_id == "alice"
+        assert len(capture.messages) > len(alice_turn.messages)
+        assert capture.of_type("speak") == [m for m in capture.messages if m.msg_type == "speak"]
+    finally:
+        bus.close()
+
+
+def test_session_view_excludes_unscoped_and_malformed_carriers(integration_scope):
+    """An absent carrier is never inferred from the capture's originating session."""
+    from ovos_bus_client.message import Message
+    from ovos_bus_client.session import Session
+
+    alice = Session("alice")
+    good = Message("speak", {"utterance": "mine"}, {"session": alice.serialize()})
+    unscoped = Message("speak", {"utterance": "unscoped"})
+    malformed = Message("speak", {"utterance": "bad"}, {"session": "alice"})
+    capture = CapturedTurn([good, unscoped, malformed], alice)
+    assert capture.spoken == ["mine", "unscoped", "bad"]  # Original behavior is unchanged.
+    assert capture.for_session("alice").messages == [good]
+    assert capture.for_session("alice").spoken == ["mine"]
+    assert capture.for_session("unknown").messages == []
+    assert capture.for_session("unknown").session is None
+    for invalid in (None, "", "  ", 7):
+        with pytest.raises(ValueError, match="session_id"):
+            capture.for_session(invalid)
+
+
+def test_native_audio_and_stop_keep_two_speakers_separate(integration_scope, tmp_path):
+    """Inspect real OVOS play_audio bytes and Stop dispatch without starting a player."""
+    from ovos_bus_client.message import Message, dig_for_message
+    from ovos_bus_client.session import Session, SessionManager
+    from ovos_workshop.skills import OVOSSkill
+
+    sounds = {}
+    for speaker, pcm in (("alice", b"\x01\x00\xff\xff"), ("bob", b"\x02\x00\xfe\xff")):
+        path = tmp_path / f"{speaker}.wav"
+        with wave.open(str(path), "wb") as audio:
+            audio.setnchannels(1)
+            audio.setsampwidth(2)
+            audio.setframerate(16_000)
+            audio.writeframes(pcm)
+        sounds[speaker] = path
+
+    class AudioSkill(OVOSSkill):
+        def initialize(self):
+            self.active_sessions = set()
+            self.add_event("test.audio.play", self.play)
+
+        def play(self, message):
+            self.active_sessions.add(SessionManager.get(message).session_id)
+            self.speak(message.data["text"])
+            self.play_audio(message.data["sound"], instant=message.data.get("instant", False))
+
+        def stop_session(self, session):
+            self.active_sessions.discard(session.session_id)
+            source = dig_for_message()
+            self.bus.emit(source.forward("mycroft.audio.speech.stop", {"skill_id": self.skill_id}))
+            return True
+
+    sessions = {name: Session(name) for name in sounds}
+    sessions["alice"].lang = "fr-FR"
+
+    def source(speaker, topic="test.audio.play", *, instant=False):
+        return Message(topic, {
+            "text": "bonjour" if speaker == "alice" else "hello",
+            "sound": str(sounds[speaker]), "instant": instant,
+        }, {"session": sessions[speaker].serialize(), "source": f"speaker-{speaker}",
+            "destination": "skills"})
+
+    with skill_harness(
+        AudioSkill, skill_id="skillkit-audio", scheduler=False, resources_dir=str(tmp_path),
+    ) as harness:
+        def interleave(message):
+            harness.bus.emit(source("alice"))
+            harness.bus.emit(source("bob"))
+            harness.bus.emit(source("alice", "skillkit-audio.stop"))
+            harness.bus.emit(source("bob", instant=True))
+            harness.bus.emit(Message("test.turn.finished"))
+
+        harness.bus.on("test.interleave", interleave)
+        capture = capture_turn(
+            SimpleNamespace(bus=harness.bus), Message("test.interleave"),
+            eof_msgs=["test.turn.finished"], terminal_signals=False, timeout=2,
+        )
+        alice, bob = capture.for_session("alice"), capture.for_session("bob")
+        assert alice.spoken == ["bonjour"]
+        assert bob.spoken == ["hello", "hello"]
+        for name, turn, count in (("alice", alice, 1), ("bob", bob, 2)):
+            assert len(turn.audio) == count
+            assert all(sound.binary == sounds[name].read_bytes() for sound in turn.audio)
+            assert all(sound.extension == "wav" and sound.uri is None for sound in turn.audio)
+            assert all(sound.message.context["source"] == f"speaker-{name}" for sound in turn.audio)
+            assert all(sound.message.context["session"]["session_id"] == name
+                       for sound in turn.audio)
+        assert alice.session.lang == "fr-FR"
+        assert len(alice.audio_stops) == 1
+        assert alice.audio_stops[0].context["source"] == "speaker-alice"
+        assert not bob.audio_stops
+        response, = alice.of_type("skillkit-audio.stop.response")
+        assert response.data["result"] is True
+        assert response.context["destination"] == "speaker-alice"
+        assert harness.skill.active_sessions == {"bob"}
+
+
+def test_audio_inspection_prefers_namespace_twins_and_keeps_order(integration_scope):
+    """Inspect URI and byte requests without fetching the URI or losing repeat queues."""
+    from ovos_bus_client.message import Message
+
+    payload = {"binary_data": b"example bytes".hex(), "audio_ext": "ogg"}
+    queue = Message("ovos.audio.queue", payload)
+    instant = Message("mycroft.audio.play_sound", {"uri": "https://invalid.test/cue.wav"})
+    stop = Message("ovos.audio.stop")
+    capture = CapturedTurn([
+        Message("mycroft.audio.queue", payload), queue, instant,
+        Message("mycroft.audio.queue", payload), queue,
+        Message("mycroft.audio.speech.stop"), stop,
+    ], None)
+    assert [audio.message for audio in capture.audio] == [queue, instant, queue]
+    assert capture.audio[0].binary == b"example bytes"
+    assert capture.audio[0].extension == "ogg"
+    assert capture.audio[1].uri == "https://invalid.test/cue.wav"
+    assert capture.audio[1].binary is None
+    assert capture.audio_stops == [stop]
+
+
+@pytest.mark.parametrize("payload, error", [
+    ({}, "expected either"),
+    ({"uri": "cue.wav", "binary_data": "00"}, "expected either"),
+    ({"uri": ""}, "uri must"),
+    ({"binary_data": 12, "audio_ext": "wav"}, "hex text"),
+    ({"binary_data": "not hex", "audio_ext": "wav"}, "invalid hexadecimal"),
+    ({"binary_data": "00"}, "audio_ext"),
+    ({"binary_data": "00", "audio_ext": ""}, "audio_ext"),
+    ({"binary_data": "00", "audio_ext": 7}, "audio_ext"),
+    ({"binary_data": "  ", "audio_ext": "wav"}, "no audio bytes"),
+])
+def test_audio_inspection_rejects_malformed_payloads(integration_scope, payload, error):
+    """Bad transport data must fail an assertion rather than look like valid audio."""
+    from ovos_bus_client.message import Message
+
+    capture = CapturedTurn([Message("mycroft.audio.queue", payload)], None)
+    with pytest.raises(AssertionError, match=error):
+        _ = capture.audio
 
 
 def test_timed_out_capture_fails_and_detaches_its_listeners(integration_scope):

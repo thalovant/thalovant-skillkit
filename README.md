@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.11.0"
+python -m pip install --pre "thalovant-skillkit==0.12.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.11.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.12.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -35,7 +35,8 @@ locale resources, package metadata, and a GitHub test workflow. The check report
 vocabulary files, so it has no intent examples for fleet comparison. The workflow
 tests and validates packages; it does not install your skill on a speaker.
 
-The sample recognizes `garden watering` and returns a placeholder reply. Edit
+The sample answers `what is garden watering` with a placeholder reply and
+declines ordinary room chatter. Edit
 `thalovant_skill_garden_watering/__init__.py` for its behavior and `locale/` inside
 that package for vocabulary and replies. Both initial vocabularies use the same
 English keyword; translate them before calling the skill translated.
@@ -57,7 +58,7 @@ and unit checks as CI:
 
 ```bash
 python -m pip install --pre -e . pytest ruff
-python -m ruff check thalovant_skillkit test
+python -m ruff check thalovant_skillkit test scripts
 python -m pytest -q
 ```
 
