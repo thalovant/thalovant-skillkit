@@ -25,6 +25,12 @@ jobs:
       # Catches a broken README or malformed metadata before it reaches an
       # index that will not let the version be replaced.
       - run: python -m twine check dist/*
+      # Upload only artifacts whose installed CLI can build and test a real
+      # generated consumer. The publish job depends on this same build job.
+      - name: Verify the installed wheel before allowing publication
+        run: >-
+          python scripts/check-installed-package.py
+          --wheel dist/*.whl --sdist dist/*.tar.gz --work-dir "${{ runner.temp }}"
       - uses: actions/upload-artifact@v4
         with:
           name: dist

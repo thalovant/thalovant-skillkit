@@ -122,6 +122,28 @@ def managed_minicroft(skill_ids: list[str] | str, **options: Any) -> Iterator[An
         croft.stop()
 
 
+@dataclass(frozen=True)
+class CapturedAudio:
+    """One queued or immediate sound, decoded without opening or playing its URI."""
+
+    message: Any
+    uri: str | None
+    binary: bytes | None
+    extension: str | None
+
+
+def _session_carrier(message: Any) -> dict:
+    context = getattr(message, "context", None)
+    carrier = context.get("session") if isinstance(context, dict) else None
+    return carrier if isinstance(carrier, dict) else {}
+
+
+def _audio_messages(messages: list[Any], canonical: str, legacy: str) -> list[Any]:
+    """Prefer a canonical topic over its legacy mirror, as ``spoken`` does."""
+    selected = canonical if any(m.msg_type == canonical for m in messages) else legacy
+    return [m for m in messages if m.msg_type == selected]
+
+
 @dataclass
 class CapturedTurn:
     """Completed bus traffic and the originating session's newest state."""
@@ -137,6 +159,73 @@ class CapturedTurn:
         """Canonical speech, falling back to legacy-only stacks without doubling twins."""
         messages = self.of_type("ovos.utterance.speak") or self.of_type("speak")
         return [str(message.data.get("utterance", "")) for message in messages]
+
+    def for_session(self, session_id: str) -> CapturedTurn:
+        """Select only messages carrying this explicit session ID.
+
+        Unscoped or malformed carriers are excluded, never assigned to a room.
+        The returned view has its own list but shares the original messages.
+        Existing full-capture ``spoken`` and ``of_type`` behavior is unchanged.
+        """
+        if not isinstance(session_id, str) or not session_id.strip():
+            raise ValueError("session_id must be a nonempty string")
+        messages = [m for m in self.messages
+                    if _session_carrier(m).get("session_id") == session_id]
+        session = self.session if getattr(self.session, "session_id", None) == session_id else None
+        if messages:
+            from ovos_bus_client.session import Session
+
+            session = Session.deserialize(_session_carrier(messages[-1]))
+        return CapturedTurn(messages, session)
+
+    @property
+    def audio(self) -> list[CapturedAudio]:
+        """Queued and immediate sound requests, in captured order.
+
+        Canonical topics take precedence over their legacy mirrors per operation.
+        Remote ``binary_data`` is decoded from hex and keeps its declared
+        ``audio_ext``. URI requests are reported without reading a file or URL.
+        Malformed or ambiguous payloads raise ``AssertionError`` for the test.
+        """
+        selected = _audio_messages(self.messages, "ovos.audio.queue", "mycroft.audio.queue")
+        selected += _audio_messages(
+            self.messages, "ovos.audio.play_sound", "mycroft.audio.play_sound",
+        )
+        selected_ids = {id(message) for message in selected}
+        result = []
+        for message in self.messages:
+            if id(message) not in selected_ids:
+                continue
+            data = getattr(message, "data", None)
+            if not isinstance(data, dict):
+                raise AssertionError(f"{message.msg_type}: audio data must be a dictionary")
+            if ("uri" in data) == ("binary_data" in data):
+                raise AssertionError(f"{message.msg_type}: expected either uri or binary_data")
+            if "uri" in data:
+                if not isinstance(data["uri"], str) or not data["uri"]:
+                    raise AssertionError(f"{message.msg_type}: uri must be a nonempty string")
+                result.append(CapturedAudio(message, data["uri"], None, None))
+                continue
+            binary, extension = data["binary_data"], data.get("audio_ext")
+            if not isinstance(binary, str) or not binary:
+                raise AssertionError(f"{message.msg_type}: binary_data must be nonempty hex text")
+            if not isinstance(extension, str) or not extension:
+                raise AssertionError(f"{message.msg_type}: audio_ext must be a nonempty string")
+            try:
+                decoded = bytes.fromhex(binary)
+            except ValueError as error:
+                raise AssertionError(
+                    f"{message.msg_type}: invalid hexadecimal binary_data",
+                ) from error
+            if not decoded:
+                raise AssertionError(f"{message.msg_type}: binary_data contains no audio bytes")
+            result.append(CapturedAudio(message, None, decoded, extension))
+        return result
+
+    @property
+    def audio_stops(self) -> list[Any]:
+        """Audio Stop requests, preferring the canonical topic over legacy mirrors."""
+        return _audio_messages(self.messages, "ovos.audio.stop", "mycroft.audio.speech.stop")
 
 
 def capture_turn(

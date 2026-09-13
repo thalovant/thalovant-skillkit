@@ -25,7 +25,8 @@ behaviour of the most careful copy:
 Other modules are imported explicitly: `skill` carries the OVOS base classes;
 `testing` supplies message and recording-bus doubles; `testing_ovos` provides
 optional integration helpers; `sessions` holds bounded application state; and
-`checks` and `artifacts` validate source contracts and built archives.
+`selection` provides independent shuffle bags. `checks` and `artifacts` validate
+source contracts and built archives.
 ovos-workshop and the fleet-check dependencies are included in the base install;
 the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install
 `thalovant-skillkit[testing]` for the OVOScope integration stack.

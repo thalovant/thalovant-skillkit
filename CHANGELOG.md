@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.12.0 (2026-09-13)
+
+- Add opt-in session-filtered captured turns and decoded audio records for
+  testing speech, queued sound bytes and Stop routing across speakers. Existing
+  unfiltered capture and speech behavior is unchanged.
+- Add `selection.ShuffleBag` for non-repeating sounds or dialog, with independent
+  state, seeded randomness and explicit previous-choice avoidance per speaker.
+- Gate pull requests and publication on installing the built wheel in a fresh
+  environment, generating skills and testing their installed packages outside
+  the source checkout.
+
 ## 0.11.3 (2026-09-13)
 
 - Fix the generated English and French test phrases to pass the question-only
