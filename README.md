@@ -16,7 +16,7 @@ Python 3.10 and newer. Run these commands from a working directory where
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install "thalovant-skillkit>=0.11.0"
+python -m pip install --pre "thalovant-skillkit>=0.11.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install -e ".[test]" build
@@ -29,6 +29,13 @@ resources, package metadata, and a GitHub test workflow including wheel and sour
 distribution validation. No running hub is needed.
 The generated workflow tests the project; it does not publish or install it on a
 speaker. Package installation requires access to your Python package index.
+
+The current OVOS stack is published as prereleases; `--pre` installs the stack
+covered by the native integration jobs. For a deliberately older **Workshop 8**
+environment, install `"ovos-workshop==8.0.0" "setuptools<81"` together with
+SkillKit. That stack selects an older OVOS Plugin Manager which imports
+`pkg_resources`, removed in setuptools 81. Keep this compatibility constraint
+limited to the legacy environment; current OVOS does not need it.
 
 The generated `en-US` and `fr-FR` files are starting points. Both initially use
 `garden watering` as their keyword. Translate the French vocabulary and replace

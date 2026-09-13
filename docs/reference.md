@@ -5,6 +5,15 @@ Practical contracts for the released Python API and CLI. Start with the
 Source links below contain the full signatures. OVOS owns intent dispatch,
 session identity, speech, playback, scheduling and lifecycle hooks.
 
+## Tested OVOS environments
+
+Use `pip install --pre thalovant-skillkit` for the current OVOS prerelease stack.
+The fleet also tests Workshop 8 separately with `ovos-workshop==8.0.0` and
+`setuptools<81`: its older OVOS Plugin Manager imports `pkg_resources`, which
+setuptools 81 removed. This is an upstream legacy dependency constraint, not a
+requirement for current OVOS or the artifact checker. Use a separate environment
+when testing that combination.
+
 ## Messages and text
 
 Import these helpers from `thalovant_skillkit` or
