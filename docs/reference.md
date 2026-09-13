@@ -1,9 +1,10 @@
 # SkillKit 0.11.0 reference
 
 Practical contracts for the released Python API and CLI. Start with the
-[README](../README.md) for installation, base-class choice and a complete skill.
-Source links below contain the full signatures. OVOS owns intent dispatch,
-session identity, speech, playback, scheduling and lifecycle hooks.
+[README](../README.md) for installation, [Writing a Skill](https://docs.thalovant.com/developers/writing-a-skill/)
+for base-class choice, or the [SkillKit tutorial](https://docs.thalovant.com/developers/skillkit-tutorial/)
+for a complete skill. Source links below contain the full signatures. OVOS owns
+intent dispatch, session identity, speech, playback, scheduling and lifecycle hooks.
 
 ## Tested OVOS environments
 
