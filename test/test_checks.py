@@ -8,11 +8,11 @@ import pytest
 
 from thalovant_skillkit.checks import (
     check_all,
-    collapsed_alias,
     check_entry_point,
     check_fallback_priority,
     check_locale_contract,
     check_package_data,
+    collapsed_alias,
     vocab_problems,
 )
 
