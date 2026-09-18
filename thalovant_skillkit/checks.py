@@ -128,7 +128,6 @@ def vocab_problems(text: str) -> list[tuple[int, str, str]]:
             reason = collapsed_alias(alias)
             if reason:
                 found.append((number, alias.strip(), reason))
-                break
     return found
 
 

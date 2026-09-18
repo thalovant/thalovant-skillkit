@@ -254,3 +254,15 @@ def test_a_list_joined_in_the_target_language_s_punctuation():
     assert collapsed_alias("每天，每日")          # full-width comma
     assert collapsed_alias("毎日、毎週")          # ideographic comma
     assert collapsed_alias("كل يوم، يوميا")      # Arabic comma
+
+
+def test_every_bad_alias_on_a_line_is_reported():
+    # A collapsed line can carry more than one swallowed alias, and a reader
+    # fixing the line needs to see all of them, not just the first.
+    body = "daily|cada día, todos los días|Joka päivä joka päivä\n"
+    found = vocab_problems(body)
+    assert [alias for _, alias, _ in found] == [
+        "cada día, todos los días",
+        "Joka päivä joka päivä",
+    ]
+    assert {number for number, _, _ in found} == {1}
