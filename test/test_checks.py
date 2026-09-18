@@ -237,3 +237,12 @@ def test_a_spaced_phrase_is_judged_on_words_not_letters():
     # a repeat in four healthy Iberian locales.
     for alias in ("cada día", "cada dia", "Cada día", "cada semana"):
         assert collapsed_alias(alias) is None, alias
+
+
+def test_an_ordinary_word_that_doubles_a_pair_of_letters_is_fine():
+    # German "Wochenende" carries "en" twice. Reading letters for a repeat
+    # anywhere inside flagged a correct word; a swallowed list in a language
+    # without spaces is the same unit over and over and nothing else.
+    assert collapsed_alias("Wochenende") is None
+    assert collapsed_alias("週末") is None
+    assert collapsed_alias("週に週に週に週に")

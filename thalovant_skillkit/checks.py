@@ -65,14 +65,19 @@ def _repeated_run(alias: str) -> str | None:
                 return " ".join(words[start:start + size])
     # A language that does not write spaces collapses into one long run
     # instead, so look at the characters -- but only when there are no spaces
-    # to go on. Spanish "cada día" is c-a-d-a-d-í-a, which carries "ad" twice
-    # and is a perfectly ordinary way to say "every day".
+    # to go on, and only when the repeat is the WHOLE alias. Both halves of
+    # that matter: Spanish "cada día" is c-a-d-a-d-í-a and carries "ad" twice,
+    # and German "Wochenende" carries "en" twice, and both are ordinary words.
+    # A swallowed list in such a language is the same unit over and over and
+    # nothing else, as in a "weekly" that reads 週に週に週に週に.
     if not any(character.isspace() for character in alias):
         letters = alias.lower()
-        for size in range(2, len(letters) // 2 + 1):
-            for start in range(len(letters) - 2 * size + 1):
-                if letters[start:start + size] == letters[start + size:start + 2 * size]:
-                    return letters[start:start + size]
+        for size in range(1, len(letters) // 2 + 1):
+            if len(letters) % size:
+                continue
+            unit = letters[:size]
+            if unit * (len(letters) // size) == letters:
+                return unit
     return None
 
 
