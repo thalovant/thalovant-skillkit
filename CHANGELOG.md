@@ -9,7 +9,8 @@
   Found live: every non-English locale of the reminder and alarm skills had lost
   its repeat cadences this way, so "remind me every day" was recurring in English
   and a silent one-off in thirty other languages. The two tells are a comma and
-  the same words twice running. Counting fields is deliberately not one of them:
+  the same words twice running, in the target language's punctuation as well as
+  English's. Counting fields is deliberately not one of them:
   French weather has no abbreviation for Monday, and a count calls all seven of
   its weekdays broken.
 

@@ -56,6 +56,13 @@ def _placeholders(path: Path) -> Counter[str]:
     return Counter(PLACEHOLDER.findall(path.read_text(encoding="utf-8")))
 
 
+#: The punctuation a language joins a list with. A swallowed list arrives
+#: joined in the *target* language's marks, not English's, so the full-width
+#: comma, the ideographic comma and the Arabic comma all have to count: a
+#: Chinese "每天，每日" is as collapsed as a Spanish "cada día, todos los días".
+LIST_PUNCTUATION = (",", "\uff0c", "\u3001", "\u060c")
+
+
 def _repeated_run(alias: str) -> str | None:
     """The same words, or the same characters, twice in a row."""
     words = alias.lower().split()
@@ -101,8 +108,9 @@ def collapsed_alias(alias: str) -> str | None:
     alias = alias.strip()
     if not alias:
         return None
-    if "," in alias:
-        return "contains a comma, so it reads as a list rather than one term"
+    separator = next((mark for mark in LIST_PUNCTUATION if mark in alias), None)
+    if separator is not None:
+        return (f"contains {separator!r}, so it reads as a list rather than one term")
     repeated = _repeated_run(alias)
     if repeated:
         return f"repeats {repeated!r}, so it reads as several aliases run together"

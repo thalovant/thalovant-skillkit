@@ -246,3 +246,11 @@ def test_an_ordinary_word_that_doubles_a_pair_of_letters_is_fine():
     assert collapsed_alias("Wochenende") is None
     assert collapsed_alias("週末") is None
     assert collapsed_alias("週に週に週に週に")
+
+
+def test_a_list_joined_in_the_target_language_s_punctuation():
+    # A swallowed list arrives joined in the language it was translated into,
+    # not in English's punctuation.
+    assert collapsed_alias("每天，每日")          # full-width comma
+    assert collapsed_alias("毎日、毎週")          # ideographic comma
+    assert collapsed_alias("كل يوم، يوميا")      # Arabic comma
