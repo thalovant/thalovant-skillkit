@@ -56,6 +56,66 @@ def _placeholders(path: Path) -> Counter[str]:
     return Counter(PLACEHOLDER.findall(path.read_text(encoding="utf-8")))
 
 
+def _repeated_run(alias: str) -> str | None:
+    """The same words, or the same characters, twice in a row."""
+    words = alias.lower().split()
+    for size in range(1, len(words) // 2 + 1):
+        for start in range(len(words) - 2 * size + 1):
+            if words[start:start + size] == words[start + size:start + 2 * size]:
+                return " ".join(words[start:start + size])
+    # A language that does not write spaces collapses into one long run
+    # instead, so look at the characters too.
+    letters = alias.lower().replace(" ", "")
+    for size in range(2, len(letters) // 2 + 1):
+        for start in range(len(letters) - 2 * size + 1):
+            if letters[start:start + size] == letters[start + size:start + 2 * size]:
+                return letters[start:start + size]
+    return None
+
+
+def collapsed_alias(alias: str) -> str | None:
+    """Why this alias looks like a whole list that lost its separators.
+
+    A ``.voc`` line is ``canonical|alias|alias|...``. Hand a translator the
+    aliases as one unit and it answers with one string -- joined by a comma,
+    by a space, or by nothing at all -- and the line then offers one long
+    alias nobody would ever say in place of the several short ones people do.
+
+    Two tells, both chosen for precision rather than reach. A comma: a
+    vocabulary term is a thing somebody says, not a list. And the same words
+    twice running: several English synonyms translate to the same phrase in
+    most languages, so a swallowed list repeats itself where a real alias does
+    not. Deliberately quiet about a locale that simply has fewer aliases than
+    English -- no abbreviation for Monday, one word where English has three --
+    because how many ways a language offers to say a thing is its own
+    business, exactly as with the placeholder check above.
+    """
+    alias = alias.strip()
+    if not alias:
+        return None
+    if "," in alias:
+        return "contains a comma, so it reads as a list rather than one term"
+    repeated = _repeated_run(alias)
+    if repeated:
+        return f"repeats {repeated!r}, so it reads as several aliases run together"
+    return None
+
+
+def vocab_problems(text: str) -> list[tuple[int, str, str]]:
+    """Every alias in a ``.voc`` body that swallowed its list, with its line."""
+    found: list[tuple[int, str, str]] = []
+    for number, line in enumerate(text.splitlines(), 1):
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "|" not in stripped:
+            continue
+        for alias in stripped.split("|")[1:]:
+            reason = collapsed_alias(alias)
+            if reason:
+                found.append((number, alias.strip(), reason))
+                break
+    return found
+
+
 def check_locale_contract(skill_root: Path) -> list[str]:
     """Every supported locale carries every en-US resource, with the same
     placeholders, valid JSON, compiling regexes, and matching package metadata.
@@ -121,6 +181,12 @@ def check_locale_contract(skill_root: Path) -> list[str]:
                     json.loads(target.read_text(encoding="utf-8"))
                 except ValueError as failure:
                     problems.append(f"locale/{locale}/{relative} is not valid JSON: {failure}")
+            elif relative.suffix == ".voc":
+                for number, alias, reason in vocab_problems(
+                    target.read_text(encoding="utf-8")
+                ):
+                    problems.append(f"locale/{locale}/{relative}:{number} "
+                                    f"alias {alias!r} {reason}")
             elif relative.suffix == ".rx":
                 lines = target.read_text(encoding="utf-8").splitlines()
                 for number, pattern in enumerate(lines, 1):
