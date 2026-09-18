@@ -12,6 +12,8 @@ from thalovant_skillkit.checks import (
     check_fallback_priority,
     check_locale_contract,
     check_package_data,
+    collapsed_alias,
+    vocab_problems,
 )
 
 
@@ -164,3 +166,103 @@ def test_a_locale_tree_left_out_of_the_wheel_is_caught(skill):
     problems = check_package_data(skill)
 
     assert len(problems) == 1 and "package_data" in problems[0]
+
+
+# --- a translated alias that swallowed the list it belonged to ---------------
+#
+# A .voc line is canonical|alias|alias|... Hand a translator the aliases as one
+# unit and it answers with one string, and the line then offers one long alias
+# nobody says in place of the several short ones people do. Found live: every
+# non-English locale of the reminder and alarm skills had lost its repeat
+# cadences this way, so "remind me every day" was recurring in English and a
+# one-off in thirty other languages.
+
+
+def test_a_comma_reads_as_a_list_not_a_term():
+    assert collapsed_alias("día a día, todos los días")
+    assert collapsed_alias("Semanalmente, cada semana, cada semana")
+
+
+def test_words_twice_running_read_as_aliases_run_together():
+    assert collapsed_alias("denně každý den každý den")
+    assert collapsed_alias("Joka päivä joka päivä")  # case must not matter
+
+
+def test_a_language_without_spaces_collapses_into_one_run():
+    assert collapsed_alias("週に週に週に週に")
+
+
+def test_a_real_alias_is_left_alone():
+    for alias in (
+        "lundi",
+        "ce lundi",
+        "lundi prochain",
+        "monday through friday",
+        "los cabos de semana",
+        "毎日",
+    ):
+        assert collapsed_alias(alias) is None, alias
+
+
+def test_an_idiom_that_repeats_a_word_is_not_a_collapse():
+    # Real German for "day after day". The repeated word is not an adjacent
+    # repeat of the same run, which is what separates an idiom from a list.
+    assert collapsed_alias("Tag für Tag") is None
+
+
+def test_fewer_aliases_than_english_is_not_a_finding():
+    # French has no abbreviation for Monday and no "on monday"/"this monday"
+    # split. Counting fields would call all seven weekdays broken.
+    body = "monday|lundi|ce lundi|lundi prochain\n"
+    assert vocab_problems(body) == []
+
+
+def test_vocab_problems_reports_the_line_and_the_alias():
+    body = "daily|every day|each day\nweekly|Joka viikko joka viikko\n"
+    found = vocab_problems(body)
+    assert len(found) == 1
+    number, alias, reason = found[0]
+    assert number == 2
+    assert alias == "Joka viikko joka viikko"
+    assert "repeats" in reason
+
+
+def test_comments_and_plain_lines_are_skipped():
+    assert vocab_problems("# a, comment\nplain line, with a comma\n") == []
+
+
+def test_a_spaced_phrase_is_judged_on_words_not_letters():
+    # "cada día" is c-a-d-a-d-í-a: "ad" twice, and an ordinary way to say
+    # "every day". Reading the letters of a language that writes spaces finds
+    # a repeat in four healthy Iberian locales.
+    for alias in ("cada día", "cada dia", "Cada día", "cada semana"):
+        assert collapsed_alias(alias) is None, alias
+
+
+def test_an_ordinary_word_that_doubles_a_pair_of_letters_is_fine():
+    # German "Wochenende" carries "en" twice. Reading letters for a repeat
+    # anywhere inside flagged a correct word; a swallowed list in a language
+    # without spaces is the same unit over and over and nothing else.
+    assert collapsed_alias("Wochenende") is None
+    assert collapsed_alias("週末") is None
+    assert collapsed_alias("週に週に週に週に")
+
+
+def test_a_list_joined_in_the_target_language_s_punctuation():
+    # A swallowed list arrives joined in the language it was translated into,
+    # not in English's punctuation.
+    assert collapsed_alias("每天，每日")          # full-width comma
+    assert collapsed_alias("毎日、毎週")          # ideographic comma
+    assert collapsed_alias("كل يوم، يوميا")      # Arabic comma
+
+
+def test_every_bad_alias_on_a_line_is_reported():
+    # A collapsed line can carry more than one swallowed alias, and a reader
+    # fixing the line needs to see all of them, not just the first.
+    body = "daily|cada día, todos los días|Joka päivä joka päivä\n"
+    found = vocab_problems(body)
+    assert [alias for _, alias, _ in found] == [
+        "cada día, todos los días",
+        "Joka päivä joka päivä",
+    ]
+    assert {number for number, _, _ in found} == {1}

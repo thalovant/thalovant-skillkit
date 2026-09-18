@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.13.0 (2026-09-18)
+
+- `check` now reports a translated `.voc` alias that swallowed the list it
+  belonged to. A line is `canonical|alias|alias|...`; a translator handed the
+  aliases as one unit answers with one string, joined by a comma, by a space or
+  by nothing at all, and the line then offers one long alias nobody would say.
+  Found live: every non-English locale of the reminder and alarm skills had lost
+  its repeat cadences this way, so "remind me every day" was recurring in English
+  and a silent one-off in thirty other languages. The two tells are a comma and
+  the same words twice running, in the target language's punctuation as well as
+  English's. Counting fields is deliberately not one of them:
+  French weather has no abbreviation for Monday, and a count calls all seven of
+  its weekdays broken.
+
 ## 0.12.0 (2026-09-13)
 
 - Add opt-in session-filtered captured turns and decoded audio records for
