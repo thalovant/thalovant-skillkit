@@ -229,3 +229,11 @@ def test_vocab_problems_reports_the_line_and_the_alias():
 
 def test_comments_and_plain_lines_are_skipped():
     assert vocab_problems("# a, comment\nplain line, with a comma\n") == []
+
+
+def test_a_spaced_phrase_is_judged_on_words_not_letters():
+    # "cada día" is c-a-d-a-d-í-a: "ad" twice, and an ordinary way to say
+    # "every day". Reading the letters of a language that writes spaces finds
+    # a repeat in four healthy Iberian locales.
+    for alias in ("cada día", "cada dia", "Cada día", "cada semana"):
+        assert collapsed_alias(alias) is None, alias

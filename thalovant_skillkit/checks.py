@@ -64,12 +64,15 @@ def _repeated_run(alias: str) -> str | None:
             if words[start:start + size] == words[start + size:start + 2 * size]:
                 return " ".join(words[start:start + size])
     # A language that does not write spaces collapses into one long run
-    # instead, so look at the characters too.
-    letters = alias.lower().replace(" ", "")
-    for size in range(2, len(letters) // 2 + 1):
-        for start in range(len(letters) - 2 * size + 1):
-            if letters[start:start + size] == letters[start + size:start + 2 * size]:
-                return letters[start:start + size]
+    # instead, so look at the characters -- but only when there are no spaces
+    # to go on. Spanish "cada día" is c-a-d-a-d-í-a, which carries "ad" twice
+    # and is a perfectly ordinary way to say "every day".
+    if not any(character.isspace() for character in alias):
+        letters = alias.lower()
+        for size in range(2, len(letters) // 2 + 1):
+            for start in range(len(letters) - 2 * size + 1):
+                if letters[start:start + size] == letters[start + size:start + 2 * size]:
+                    return letters[start:start + size]
     return None
 
 
