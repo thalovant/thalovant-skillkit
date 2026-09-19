@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.13.0"
+version = "0.14.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -26,6 +26,9 @@ classifiers = [
 dependencies = [
     "requests>=2.31",
     "ovos-utils>=0.8.5",
+    # Shared script-aware regional matching, also used by OVOS's resource loader.
+    "ovos-spec-tools>=1.12.0a1",
+    "langcodes>=3.5",
     # tomllib arrived in 3.11; tomli is the same parser for the one version before.
     "tomli>=2.0; python_version < '3.11'",
     # The skill framework itself: a skill needs it, and so does `check`.

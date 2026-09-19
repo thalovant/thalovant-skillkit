@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.14.0 (2026-09-19)
+
+- Resolve regional language tags through shared OVOS/CLDR language and script
+  relationships. Exact overrides and parent tags win; reference locales replace
+  alphabetical selection. Missing regional files try compatible translations
+  before the configured default. `matching_langs` exposes this chain without
+  an unrelated default. Resource selection never changes the session language.
+- Preserve BCP-47 script, extension and private-use subtags when normalizing
+  messages. Partial regional vocabularies and literal intent examples inherit
+  their language's phrases without mixing unrelated languages into intent matching.
+- Declare the language matcher dependencies explicitly and document regional
+  overrides, speech-language preservation and script/translation boundaries.
+- Accept repeated-digit numbers such as `11` in vocabulary checks. Document a
+  file-local `# skillkit: literal-alias <text>` exception for words with natural
+  repetition; other aliases on the same line are still checked.
+
 ## 0.13.0 (2026-09-18)
 
 - `check` now reports a translated `.voc` alias that swallowed the list it

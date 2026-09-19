@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.12.0"
+python -m pip install --pre "thalovant-skillkit==0.14.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.12.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.14.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -40,6 +40,9 @@ declines ordinary room chatter. Edit
 `thalovant_skill_garden_watering/__init__.py` for its behavior and `locale/` inside
 that package for vocabulary and replies. Both initial vocabularies use the same
 English keyword; translate them before calling the skill translated.
+
+Regional tags such as `en-CA`, `en-GB`, and `fr-CA` reuse compatible translations
+while retaining the speaker's language. Add regional files only where wording differs.
 
 ## Continue building
 

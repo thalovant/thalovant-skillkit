@@ -183,6 +183,17 @@ def test_a_comma_reads_as_a_list_not_a_term():
     assert collapsed_alias("Semanalmente, cada semana, cada semana")
 
 
+def test_repeated_digits_are_valid_numeric_aliases():
+    assert vocab_problems("vowel|8|11|88|११\n") == []
+    assert collapsed_alias("24 24")
+
+
+def test_natural_reduplication_requires_an_exact_documented_exception():
+    body = "# Swahili: sasa means now.\n# skillkit: literal-alias sasa\nnow|sasa|now now\n"
+    assert [alias for _, alias, _ in vocab_problems(body)] == ["now now"]
+    assert vocab_problems("# skillkit: literal-alias sasa\nnow|sasa sasa\n")
+
+
 def test_words_twice_running_read_as_aliases_run_together():
     assert collapsed_alias("denně každý den každý den")
     assert collapsed_alias("Joka päivä joka päivä")  # case must not matter

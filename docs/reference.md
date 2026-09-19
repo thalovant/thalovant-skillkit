@@ -111,27 +111,52 @@ that property when these coupled defaults do not fit your skill.
 `ThalovantCommonPlaySkill` is `None` when the installed workshop cannot provide
 its upstream Open Common Play base.
 
-Language selection is exact standardized directory → first alphabetically
-sorted directory with the same primary language → configured default locale.
-For example, `fr-CA` can select bundled `fr-FR`. This does not guarantee that
-the chosen/default directory or a requested file exists.
+Language selection prefers an exact tag, then a parent tag, then the language's
+reference locale, then other compatible regional resources. The configured
+default (normally `en-US`) is the last resort. For example, `en-GB` uses `en-US`
+when no British translation is bundled; a partial `fr-CA` folder inherits missing
+files from `fr-FR` before English. A matching configured default takes precedence
+over the reference variety. OVOS language distance and CLDR data provide the
+language/script relationships; there is no fixed list of accepted countries.
+
+Resource fallback never rewrites the message/session language. `en-CA` remains
+`en-CA` for speech and routing even when its text comes from `en-US`. Exact regional
+files override defaults without copying a whole translation. Incompatible scripts
+are not substituted: a `zh-CN` translation alone does not provide Traditional
+Chinese support. A missing compatible translation uses the configured default;
+fallback is not a claim of a new translation or an available ASR/TTS voice.
 
 | Resource operation | Behavior |
 |---|---|
 | `available_langs()` | Sorted directory names under the locale root. |
 | `lang(lang)` | Resolve and cache the language choice. |
-| `candidate_langs(lang)` | Resolved locale, then default locale, without duplicates. |
-| `lines(lang, folder, filename, fallback=False)` | Cached tuple of stripped, nonblank, non-comment lines. Always resolves language; `fallback=True` also tries the default locale when the file has no usable lines. |
+| `matching_langs(lang)` | Ordered compatible bundled locales, without an unrelated default. |
+| `candidate_langs(lang)` | Compatible locales, then configured default, without duplicates. |
+| `lines(lang, folder, filename, fallback=False)` | Cached tuple of stripped, nonblank, non-comment lines. Always resolves language; `fallback=True` tries the remaining compatible locales before the default when the file has no usable lines. |
 | `vocab(voc_name, lang)` | Lines from `vocab/<name>.voc`, without secondary file fallback. |
-| `dialog_lines(name, lang)` | Lines from `dialog/<name>.dialog`, with default-locale fallback. |
-| `matches_literal_intent(utterance, name, lang=None)` | Entire concrete `.intent` line, normalized for case, accents, punctuation and spaces. Reads flat and `intents/` layouts in the resolved locale. Skips lines with `{}` slots or `[]()\|` patterns. Does not merge English into another supported locale or replace the intent engines. |
-| `voc_match(voc_name, utterance, lang=None)` | Containment match against resolved then default vocabulary; returns a boolean. |
+| `dialog_lines(name, lang)` | Lines from `dialog/<name>.dialog`, with regional, same-language and default fallback. |
+| `matches_literal_intent(utterance, name, lang=None)` | Entire concrete `.intent` line, normalized for case, accents, punctuation and spaces. Reads flat and `intents/` layouts across compatible regional locales. Skips lines with `{}` slots or `[]()\|` patterns. Does not merge English into another supported locale or replace the intent engines. |
+| `voc_match(voc_name, utterance, lang=None)` | Containment match against compatible regional then default vocabulary; returns a boolean. |
 | `voc_term(voc_name, utterance, lang=None)` | Longest matching folded term in the first matching candidate locale, or `""`. |
 | `voc_match_lang(voc_name, utterance, lang=None)` | Candidate locale whose vocabulary matched, or `""`. |
 
 Caches belong to each `SkillResources` instance. Missing files are cached too;
 there is no public invalidation method or file watcher. Recreate the resource
 object after changing locale files during development.
+
+Vocabulary checks flag aliases that appear to contain a whole list or accidental
+repetition. A keyed line uses `canonical|alias|another alias`. Numbers such as
+`11` are valid. If a language naturally repeats a word or syllable, document the
+reason and exempt only that exact alias in its `.voc` file:
+
+```text
+# Swahili: sasa is one word meaning now.
+# skillkit: literal-alias sasa
+now|sasa
+```
+
+The exception is case-insensitive and local to this file. Other aliases still
+undergo validation; fix a joined list by separating its terms with `|`.
 
 ```python
 from pathlib import Path
