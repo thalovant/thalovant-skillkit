@@ -140,11 +140,10 @@ class SkillResources:
               *, fallback: bool = False) -> tuple[str, ...]:
         """The lines of one resource file, comments and blanks dropped.
 
-        Reads exactly the language asked for, because that is what every
-        skill's `_resource_lines` did and because the language fallback belongs
-        one level up, in the vocabulary match: a skill that loops candidates
-        itself would otherwise fall back twice. Pass `fallback=True` for
-        resources where an English answer beats no answer.
+        By default, read only the resolved locale. This lets callers walk the
+        candidate chain themselves without applying fallback twice. With
+        ``fallback=True``, try compatible regional files and then the configured
+        default until a file supplies usable lines.
         """
         langs = self.candidate_langs(lang) if fallback else (self.lang(lang),)
         for candidate in langs:
@@ -170,8 +169,7 @@ class SkillResources:
         return cached
 
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
-        """Read the selected locale's dialog, falling back to the configured
-        default locale if the file has no usable lines."""
+        """Read dialog through compatible regional locales, then the default."""
         return self.lines(lang, "dialog", f"{name}.dialog", fallback=True)
 
     def dialog(self, name: str, lang: str | None, data: dict | None = None) -> str:
