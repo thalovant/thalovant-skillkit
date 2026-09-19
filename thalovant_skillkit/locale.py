@@ -19,6 +19,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from langcodes import Language
+from ovos_spec_tools.language import lang_distance, lang_matches
+
 from .message import standardize
 from .text import fold, fold_words
 from .vocab import contains_term, first_match
@@ -40,12 +43,14 @@ class SkillResources:
         # handful of language tags and resource filenames, so the caches are
         # small and do not need eviction.
         self._lang_cache: dict[str | None, str] = {}
+        self._matching_langs_cache: dict[str | None, tuple[str, ...]] = {}
+        self._candidate_langs_cache: dict[str | None, tuple[str, ...]] = {}
         self._lines_cache: dict[tuple[str, str, str], tuple[str, ...]] = {}
         # Vocabulary folded once per language and file rather than on every
         # match. A skill asks `mentions()` on the utterance path, so this runs
         # for every word someone says.
         self._folded_cache: dict[tuple[str, str], tuple[str, ...]] = {}
-        self._literal_intent_cache: dict[tuple[str, str], frozenset[str]] = {}
+        self._literal_intent_cache: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
 
     # -- which language this skill can actually serve -------------------------
 
@@ -55,15 +60,42 @@ class SkillResources:
         return tuple(sorted(p.name for p in self.root.iterdir() if p.is_dir()))
 
     def _resolve_lang(self, lang: str | None) -> str:
-        """The bundled locale closest to `lang`: exact, then language, then en-US."""
-        normalized = standardize(lang or self.default_lang)
-        if (self.root / normalized).is_dir():
-            return normalized
-        primary = normalized.split("-", 1)[0].casefold()
-        for candidate in self.available_langs():
-            if candidate.split("-", 1)[0].casefold() == primary:
-                return candidate
-        return self.default_lang
+        """An exact regional override, the language's reference locale, or the default."""
+        candidates = self.matching_langs(lang) or self.matching_langs(self.default_lang)
+        return candidates[0] if candidates else self.default_lang
+
+    def matching_langs(self, lang: str | None) -> tuple[str, ...]:
+        """Bundled, script-compatible locales, without the unrelated default.
+
+        Prefer an exact tag, then a parent tag, then the language's reference
+        variety (en-US, fr-FR, pt-PT, ...), then other usable regional resources.
+        OVOS's language-distance policy supplies compatibility and reference
+        regions; no table of country aliases or copied locale trees is needed.
+        Directory names are returned unchanged, including legacy casing.
+        """
+        if lang not in self._matching_langs_cache:
+            normalized = standardize(lang or self.default_lang)
+            try:
+                parsed = Language.get(normalized)
+            except ValueError:
+                self._matching_langs_cache[lang] = ()
+                return ()
+            reference = Language.make(language=parsed.language, script=parsed.script).to_tag()
+
+            def rank(candidate: str) -> tuple:
+                tag = standardize(candidate)
+                # A region/script parent remains first when the request adds
+                # a variant, Unicode extension or private-use suffix.
+                parent = normalized == tag or normalized.startswith(tag + "-")
+                return (not parent, -len(tag) if parent else 0,
+                        tag != standardize(self.default_lang), lang_distance(reference, tag),
+                        lang_distance(normalized, tag), tag, candidate)
+
+            self._matching_langs_cache[lang] = tuple(sorted(
+                (candidate for candidate in self.available_langs()
+                 if lang_matches(normalized, standardize(candidate))), key=rank,
+            ))
+        return self._matching_langs_cache[lang]
 
     def lang(self, lang: str | None) -> str:
         if lang not in self._lang_cache:
@@ -71,13 +103,20 @@ class SkillResources:
         return self._lang_cache[lang]
 
     def candidate_langs(self, lang: str | None) -> tuple[str, ...]:
-        """The languages to try in order: the requested one, then English.
+        """Regional overrides, compatible language resources, then the default.
 
-        Falling back to English matters for vocabularies a translation has not
-        reached yet -- without it the skill goes silent rather than answering
-        in the wrong language, which is the worse of the two.
+        A partial fr-CA folder inherits missing files from fr-FR before English.
+        The configured default is a last resort, never a substitute for an
+        available same-language translation. This does not change session/TTS
+        language or claim that a fallback text is a regional translation.
         """
-        return tuple(dict.fromkeys((self.lang(lang), self.default_lang)))
+        if lang not in self._candidate_langs_cache:
+            defaults = self.matching_langs(self.default_lang)
+            default = defaults[0] if defaults else self.default_lang
+            self._candidate_langs_cache[lang] = tuple(dict.fromkeys(
+                (*self.matching_langs(lang), default),
+            ))
+        return self._candidate_langs_cache[lang]
 
     # -- what it says ---------------------------------------------------------
 
@@ -101,11 +140,10 @@ class SkillResources:
               *, fallback: bool = False) -> tuple[str, ...]:
         """The lines of one resource file, comments and blanks dropped.
 
-        Reads exactly the language asked for, because that is what every
-        skill's `_resource_lines` did and because the language fallback belongs
-        one level up, in the vocabulary match: a skill that loops candidates
-        itself would otherwise fall back twice. Pass `fallback=True` for
-        resources where an English answer beats no answer.
+        By default, read only the resolved locale. This lets callers walk the
+        candidate chain themselves without applying fallback twice. With
+        ``fallback=True``, try compatible regional files and then the configured
+        default until a file supplies usable lines.
         """
         langs = self.candidate_langs(lang) if fallback else (self.lang(lang),)
         for candidate in langs:
@@ -131,8 +169,7 @@ class SkillResources:
         return cached
 
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
-        """Read the selected locale's dialog, falling back to the configured
-        default locale if the file has no usable lines."""
+        """Read dialog through compatible regional locales, then the default."""
         return self.lines(lang, "dialog", f"{name}.dialog", fallback=True)
 
     def dialog(self, name: str, lang: str | None, data: dict | None = None) -> str:
@@ -158,7 +195,7 @@ class SkillResources:
         Useful before a fallback's narrower vocabulary gate: a published phrase
         must still work when the intent classifier falls below its threshold.
         Case, accents, punctuation and whitespace follow ``fold_words``. Only
-        the resolved resource locale is checked; English is not merged into a
+        compatible regional resources are checked; English is not merged into a
         supported non-English locale. Regional/unsupported locale resolution
         follows ``lang()`` as for other resources.
 
@@ -170,14 +207,15 @@ class SkillResources:
         text = fold_words(utterance)
         if not text:
             return False
-        resolved = self.lang(lang)
+        candidates = self.matching_langs(lang) or (self.lang(lang),)
         filename = name if name.endswith(".intent") else f"{name}.intent"
-        key = (resolved, filename)
+        key = (candidates, filename)
         if key not in self._literal_intent_cache:
             self._literal_intent_cache[key] = frozenset(
                 folded
+                for candidate in candidates
                 for folder in ("", "intents")
-                for line in self._lines(resolved, folder, filename)
+                for line in self._lines(candidate, folder, filename)
                 if not any(character in line for character in "{}[]()|")
                 if (folded := fold_words(line))
             )

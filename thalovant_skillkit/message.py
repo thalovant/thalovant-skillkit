@@ -1,44 +1,23 @@
-"""Reading the things every skill reads out of a bus message.
-
-Seventeen skills wrote their own `_utterance` and eighteen their own
-`_message_lang`, in ten different shapes. The shapes were not alternatives --
-they were the same function at different levels of thoroughness, and the thin
-ones were simply wrong more often. `_message_lang` in five skills read only
-`context["lang"]`, so an utterance carrying its language in `data` or in the
-session was answered in the wrong language.
-
-The versions here are the union: what the most careful skill did, which is what
-all of them meant.
-"""
+"""Read utterances, languages and context consistently across OVOS messages."""
 from __future__ import annotations
 
 from typing import Any
 
+from langcodes import standardize_tag
 
-# ovos_utils.lang.standardize_lang_tag is deprecated in favour of
-# ovos_spec_tools.standardize_lang, and six skills still call the old name and
-# print a deprecation warning on every utterance. Importing it in one place
-# means the next rename is one edit rather than nineteen.
+
 def _canonical(lang: str) -> str:
-    """The shape a locale directory is named in: "fr_fr" -> "fr-FR", "fr" -> "fr".
-
-    Applied to whatever the OVOS normaliser returns, because what it returns
-    depends on which version is installed. ovos-utils 0.8.5 -- the floor the
-    skills themselves declare -- strips the region ("en-us" -> "en",
-    "FR-fr" -> "fr") and leaves an underscore alone ("fr_fr" -> "fr_fr"), while
-    0.14 returns "en-US" and "fr-FR". A skill resolving "fr_fr" against the
-    older one found no `fr_fr` directory, split on "-" to get a primary of
-    "fr_fr", matched nothing, and served French in English.
-
-    Canonicalising here makes the answer the same on every version.
-    """
+    """Normalize BCP-47 casing and aliases, tolerating legacy malformed tags."""
+    try:
+        # BCP-47 extensions have their own casing: the `ca` in
+        # en-GB-u-ca-gregory is a calendar key, not the Canadian region.
+        return standardize_tag(str(lang).strip())
+    except ValueError:
+        pass
     parts = [part for part in str(lang).replace("_", "-").split("-") if part]
     if not parts:
         return ""
-    # A tag is language-[script]-[region]-[variant...], and each part has its
-    # own casing: "zh-Hant-TW". Upper-casing the second part regardless turned
-    # that into "zh-HANT" and dropped the region entirely, which the
-    # source-scout locale test caught.
+    # Best-effort casing for malformed legacy input that langcodes rejects.
     canonical = [parts[0].lower()]
     for part in parts[1:]:
         if len(part) == 4 and part.isalpha():
@@ -68,27 +47,15 @@ except ImportError:  # pragma: no cover
 _TEXT_KEYS = ("utterance", "phrase", "text", "query")
 
 
-def _has_region(tag: str) -> bool:
-    """Whether the tag already names a region, which is the part that gets lost."""
-    return any((len(part) == 2 and part.isalpha()) or (len(part) == 3 and part.isdigit())
-               for part in tag.split("-")[1:])
-
-
 def standardize(lang: str | None) -> str:
-    """A BCP-47 tag in the shape a locale directory uses.
+    """Preserve explicit region/script/extension tags; expand bare languages via OVOS.
 
-    The region comes from the tag as given, never from the OVOS normaliser,
-    because older versions throw it away: ovos-utils 0.8.5 -- the floor the
-    skills themselves declare -- turns "en-us" into "en" and "FR-fr" into "fr".
-    Nothing downstream can recover a region that has already been discarded, so
-    a caller asking for "FR-fr" has to be answered from its own text.
-
-    The normaliser is still consulted for a bare language, where there is no
-    region to lose and its language knowledge is worth having.
+    Older OVOS normalizers discard regions. Canonicalize structured tags directly
+    so a Canadian French session remains ``fr-CA`` on every supported stack.
     """
     raw = lang or "en-US"
     canonical = _canonical(raw)
-    if _has_region(canonical):
+    if "-" in canonical:
         return canonical
     return _canonical(_standardize(raw)) or canonical
 

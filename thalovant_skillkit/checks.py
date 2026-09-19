@@ -108,6 +108,9 @@ def collapsed_alias(alias: str) -> str | None:
     alias = alias.strip()
     if not alias:
         return None
+    # Repeated digits are numbers, not duplicated translations (11, 88, ...).
+    if alias.isdecimal():
+        return None
     separator = next((mark for mark in LIST_PUNCTUATION if mark in alias), None)
     if separator is not None:
         return (f"contains {separator!r}, so it reads as a list rather than one term")
@@ -118,13 +121,23 @@ def collapsed_alias(alias: str) -> str | None:
 
 
 def vocab_problems(text: str) -> list[tuple[int, str, str]]:
-    """Every alias in a ``.voc`` body that swallowed its list, with its line."""
+    """Report collapsed lists, respecting explicitly documented literal aliases.
+
+    Natural reduplication cannot be distinguished from a duplicated translation
+    by spelling alone. A ``# skillkit: literal-alias <text>`` comment exempts
+    that exact alias in this file; other aliases on the same line remain checked.
+    """
     found: list[tuple[int, str, str]] = []
+    prefix = "# skillkit: literal-alias "
+    literals = {line.strip()[len(prefix):].strip().casefold()
+                for line in text.splitlines() if line.strip().startswith(prefix)}
     for number, line in enumerate(text.splitlines(), 1):
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "|" not in stripped:
             continue
         for alias in stripped.split("|")[1:]:
+            if alias.strip().casefold() in literals:
+                continue
             reason = collapsed_alias(alias)
             if reason:
                 found.append((number, alias.strip(), reason))
