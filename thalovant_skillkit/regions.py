@@ -28,7 +28,11 @@ def _files(root: Path) -> dict[str, str]:
 
 def regional_sources(locale_root: Path) -> dict[str, str]:
     """Read and validate regional definitions before touching generated files."""
+    if locale_root.is_symlink():
+        raise ValueError("locale directory must not be a symlink")
     manifest = locale_root / "regional.json"
+    if manifest.is_symlink():
+        raise ValueError("regional.json must not be a symlink")
     if not manifest.exists():
         return {}
     data = json.loads(manifest.read_text(encoding="utf-8"))

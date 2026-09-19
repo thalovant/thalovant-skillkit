@@ -84,3 +84,18 @@ def test_cli_and_no_manifest_compatibility(locale):
     assert main(["locales", root]) == 0
     (locale / "regional.json").unlink()
     assert sync_regions(locale) == []
+
+
+@pytest.mark.parametrize("kind", ["manifest", "root"])
+def test_symlinked_authoring_inputs_are_rejected(locale, tmp_path, kind):
+    if kind == "manifest":
+        manifest = locale / "regional.json"
+        outside = tmp_path / "external.json"
+        manifest.replace(outside)
+        manifest.symlink_to(outside)
+    else:
+        linked = tmp_path / "linked-locale"
+        linked.symlink_to(locale, target_is_directory=True)
+        locale = linked
+    assert "symlink" in sync_regions(locale, write=True)[0]
+    assert not (locale / "en-CA").exists()
