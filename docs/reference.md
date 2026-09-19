@@ -439,3 +439,88 @@ or its exact string), defaulting to 13. Invalid configuration raises `ValueError
 `knowledge_answer(...)` is the compatibility wrapper returning `(answer, policy)`.
 The knowledge client expects a JSON object response; it is not a general schema
 validator, and caller-input/type errors can still propagate.
+
+## Regional resources CLI
+
+`thalovant-skillkit locales [directory]` checks `locale/regional.json` against
+the generated folders. Add `--write` to regenerate and add their tags to
+`supported.json`. Exit codes: 0 when current, 1 on errors. A skill without a
+manifest needs no migration. `check` also includes this freshness check.
+
+
+### Authoring a region
+
+Use SkillKit **0.15.0 or later** when a regional translation must also work with
+native OVOS intents or code that reads files directly. Keep the common words in
+the original language folder and write only the differences in
+`locale/regional.json` inside your skill package:
+
+```json
+{
+  "version": 1,
+  "locales": {
+    "fr-CA": {
+      "source": "fr-FR",
+      "overrides": {
+        "dialog/garden.watering.dialog": "Cette démo peut parler de la fin de semaine.\n"
+      }
+    },
+    "en-CA": {"source": "en-US", "overrides": {}}
+  }
+}
+```
+
+Each override key is a file path relative to its locale folder. Its value is the
+**complete file text**, including `\n` between lines. Keep placeholders such as
+`{score}`, JSON keys, vocabulary identifiers before `|`, and regex group names
+unchanged. This command copies shared text; it does not translate it for you.
+
+From the skill's repository, run:
+
+```bash
+thalovant-skillkit locales --write
+thalovant-skillkit check --no-fleet
+python -m pytest -q
+```
+
+**Expected result:** `fr-CA` contains the Canadian reply plus all the other French
+resources. `en-CA` contains the shared English resources. Both tags appear in
+`supported.json`, and the checker reports that the skill keeps its contracts.
+The earlier fallback test now selects `fr-CA` and expects the new Canadian reply;
+update those two assertions after generating this example.
+
+Commit the manifest, generated folders, and updated `supported.json`. Future
+edits go in the source language or the manifest, then run `locales --write` again.
+Do not edit generated files directly: ordinary `check` reports stale or manually
+changed files. `thalovant-skillkit locales` performs the same freshness check
+without writing. If a source file is removed, the tool names obsolete generated
+files for you to remove explicitly; it never silently deletes them.
+
+Sources must be existing base locales in the same language. Chaining one generated
+region to another is not supported. A regional override must name an existing
+source file and preserve its placeholders. To add a new resource, put it in the
+base locale first. Full validation still belongs to `check` and your tests.
+Generation happens during development, with no network calls or extra work when
+someone speaks. Generated files are ordinary package data and need the same
+wheel checks as other translations.
+
+Start with common regional variants of languages your skill already supports:
+
+| Shared translation | Common regional targets |
+| --- | --- |
+| `en-US` | `en-CA`, `en-GB`, `en-AU`, `en-NZ` |
+| `fr-FR` | `fr-CA`, `fr-BE`, `fr-CH` |
+| `es-ES` | `es-MX`, `es-AR`, `es-CO`, `es-US` |
+| `de-DE` | `de-AT`, `de-CH` |
+| `pt-PT` | `pt-AO`, `pt-MZ` |
+| `nl-NL`, `sv-SE` | `nl-BE`, `sv-FI`, respectively |
+| `zh-CN` | `zh-SG`; `zh-TW` needs Traditional Chinese wording |
+
+Keep existing regional translations where they already fit. Identical wording
+can be inherited honestly; separate folders do not mean separate native-speaker
+reviews. Regional English spelling, Canadian French expressions, Swiss German
+orthography and Argentine Spanish grammar need contextual review. For Chinese,
+[OpenCC's Taiwan configuration](https://github.com/BYVoid/OpenCC#configurations-配置文件)
+can help prepare Traditional characters and common Taiwan terms. Check spoken
+phrases and regex literals too; conversion does not create a Cantonese translation.
+Ask fluent speakers to review important flows before claiming linguistic quality.

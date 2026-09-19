@@ -42,7 +42,9 @@ that package for vocabulary and replies. Both initial vocabularies use the same
 English keyword; translate them before calling the skill translated.
 
 Regional tags such as `en-CA`, `en-GB`, and `fr-CA` reuse compatible translations
-while retaining the speaker's language. Add regional files only where wording differs.
+while retaining the speaker's language. For regional wording, keep only the differences
+in `locale/regional.json`; `thalovant-skillkit locales --write` builds complete OVOS
+resources. See the [regional guide](https://docs.thalovant.com/developers/writing-a-skill/#support-regional-variations).
 
 ## Continue building
 

@@ -8,6 +8,7 @@ available to the consumer's imports.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import subprocess
 import sys
@@ -120,6 +121,16 @@ def main() -> None:
         for name in NAMES:
             project = work / f"thalovant-skill-{name}"
             run(cli, "new", name, "--directory", project, cwd=work, env=env)
+            locale = project / f"thalovant_skill_{name.replace('-', '_')}" / "locale"
+            dialog = f"dialog/{name.replace('-', '.')}.dialog"
+            (locale / "regional.json").write_text(json.dumps({
+                "version": 1,
+                "locales": {"en-CA": {"source": "en-US", "overrides": {
+                    dialog: "This Canadian example keeps the shared vocabulary.\n",
+                }}},
+            }), encoding="utf-8")
+            run(cli, "locales", project, "--write", cwd=work, env=env)
+            run(cli, "locales", project, cwd=work, env=env)
             run(cli, "check", project, cwd=work, env=env)
             # Build through the source archive, then install the generated
             # wheel with its declared test extra and the tested Kit version.

@@ -379,6 +379,22 @@ def _artifact_count(value: str) -> tuple[str, int]:
     return pattern, count
 
 
+def cmd_locales(args: argparse.Namespace) -> int:
+    """Materialize regional translations using the skill's explicit overrides."""
+    from .regions import sync_regions
+
+    package = find_package(Path(args.directory or "."))
+    if package is None:
+        print("no thalovant_skill_* package found")
+        return 1
+    problems = sync_regions(package / "locale", write=args.write)
+    for problem in problems:
+        print(problem)
+    if not problems:
+        print("ok: regional locale files are current")
+    return int(bool(problems))
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="thalovant-skillkit",
                                      description="Write and check Thalovant skills.")
@@ -391,6 +407,12 @@ def main(argv: list[str] | None = None) -> int:
     new.add_argument("--priority", type=int, default=98,
                      help="fallback rung, 91-100 (default 98: answers a topic)")
     new.set_defaults(func=cmd_new)
+
+    locales = sub.add_parser("locales", help="check or generate regional locale resources")
+    locales.add_argument("directory", nargs="?", help="skill checkout (default: here)")
+    locales.add_argument("--write", action="store_true",
+                         help="regenerate from locale/regional.json; default is read-only")
+    locales.set_defaults(func=cmd_locales)
 
     check = sub.add_parser("check", help="check a skill: locales, packaging, and its "
                                           "intents against the fleet's")
