@@ -25,6 +25,8 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from .regions import regional_sources, sync_regions
+
 PLACEHOLDER = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}|<[A-Za-z_][A-Za-z0-9_.-]*>")
 # skill.json keys that describe the package rather than the language, and so
 # must not differ between locales.
@@ -157,6 +159,10 @@ def check_locale_contract(skill_root: Path) -> list[str]:
         return [f"{package.name} has no locale/ directory"]
 
     problems: list[str] = []
+    try:
+        regional_bases = regional_sources(locale_root)
+    except (OSError, ValueError, KeyError, TypeError):
+        regional_bases = {}  # sync_regions reports the precise manifest error.
     supported_file = locale_root / "supported.json"
     if not supported_file.is_file():
         return ["locale/supported.json is missing; it lists the locales this skill ships"]
@@ -183,7 +189,8 @@ def check_locale_contract(skill_root: Path) -> list[str]:
             problems.append(f"locale/{locale}/{relative} is missing ({SOURCE_LOCALE} has it)")
         for relative in sorted(source_files & target_files):
             source, target = source_root / relative, target_root / relative
-            if locale not in PLACEHOLDER_EXEMPT and locale != SOURCE_LOCALE:
+            base = regional_bases.get(locale, locale)
+            if base not in PLACEHOLDER_EXEMPT and locale != SOURCE_LOCALE:
                 # Compared as sets, not counts. English offers two variant
                 # lines for most replies and French follows; every other
                 # translation in the fleet writes one careful line. Counting
@@ -378,9 +385,11 @@ def check_package_data(skill_root: Path) -> list[str]:
 def check_all(skill_root: Path) -> list[str]:
     """Every check, in the order a person would want to read them."""
     root = Path(skill_root)
+    package = find_package(root)
     return (
         check_entry_point(root)
         + check_package_data(root)
         + check_fallback_priority(root)
         + check_locale_contract(root)
+        + (sync_regions(package / "locale") if package else [])
     )

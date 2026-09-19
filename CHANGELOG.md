@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0 (2026-09-19)
+
+- Add `thalovant-skillkit locales [directory] [--write]`: generate complete OVOS
+  resources from a shared language and explicit regional overrides. The default
+  only checks; normal `check` also detects missing or stale generated resources.
+- Keep regional authoring offline and out of the request path. Validate source
+  languages, paths and placeholders before writing; preserve existing base locales
+  and report obsolete files instead of deleting them.
+- Document regional translation provenance, native intent compatibility, and
+  the difference between inherited wording and a reviewed local translation.
+
 ## 0.14.0 (2026-09-19)
 
 - Resolve regional language tags through shared OVOS/CLDR language and script
