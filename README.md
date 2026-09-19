@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.14.0"
+python -m pip install --pre "thalovant-skillkit==0.15.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.14.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.15.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
