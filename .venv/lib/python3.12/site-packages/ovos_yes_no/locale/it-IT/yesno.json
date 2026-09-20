@@ -1,0 +1,44 @@
+{
+  "yes": [
+    "Sì",
+    "Sì",
+    "Certo",
+    "Confermo",
+    "Affermativo",
+    "Sì",
+    "Certamente",
+    "Corretto",
+    "Concordo",
+    "Sono d'accordo",
+    "Ovvio"
+  ],
+  "no": [
+    "no",
+    "No",
+    "negativo",
+    "no no",
+    "nah",
+    "Non concordo",
+    "Non sono d'accordo"
+  ],
+  "neutral_yes": [
+    "Per favore",
+    "Sicuro",
+    "Sicuramente",
+    "Certamente",
+    "Appropriato",
+    "Appropriato",
+    "Ovviamente",
+    "È così"
+  ],
+  "neutral_no": [
+    "Indesiderabile",
+    "Indesiderato",
+    "Inappropriato",
+    "Bugia",
+    "Stai mentendo",
+    "Errore",
+    "Stai sbagliando",
+    "Sbagliato"
+  ]
+}

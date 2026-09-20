@@ -1,0 +1,2 @@
+[console_scripts]
+ovos-config = ovos_config.__main__:config

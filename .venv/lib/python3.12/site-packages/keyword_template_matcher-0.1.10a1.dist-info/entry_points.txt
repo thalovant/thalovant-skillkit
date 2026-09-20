@@ -1,0 +1,2 @@
+[opm.transformer.intent]
+ovos-keyword-template-matcher = kw_template_matcher.opm:KeywordTemplateMatcher

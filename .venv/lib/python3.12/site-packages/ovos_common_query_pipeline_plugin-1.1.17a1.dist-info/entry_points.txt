@@ -1,0 +1,2 @@
+[opm.pipeline]
+ovos-common-query-pipeline-plugin = ovos_commonqa.opm:CommonQAService

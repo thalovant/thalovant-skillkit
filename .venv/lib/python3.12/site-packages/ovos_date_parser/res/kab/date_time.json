@@ -1,0 +1,83 @@
+{
+  "decade_format": {
+    "default": "{number}"
+  },
+  "hundreds_format": {
+    "default": "{number}"
+  },
+  "thousand_format": {
+    "default": "{number}"
+  },
+  "year_format": {
+    "default": "{year} {bc}",
+    "bc": ""
+  },
+  "date_format": {
+    "date_full": "{weekday}, {day} {month} {formatted_year}",
+    "date_full_no_year": "{weekday}, {day} {month}",
+    "date_full_no_year_month": "{weekday}, {day}",
+    "today": "ass-a",
+    "tomorrow": "azekka",
+    "yesterday": "iḍelli"
+  },
+  "date_time_format": {
+    "date_time": "{formatted_date} {formatted_time}"
+  },
+  "weekday": {
+    "0": "letnayen",
+    "1": "ttlata",
+    "2": "laṛebɛa",
+    "3": "lexmis",
+    "4": "lǧemɛa",
+    "5": "ssebt",
+    "6": "lḥedd"
+  },
+  "date": {
+    "1": "yiwen",
+    "2": "sin",
+    "3": "kṛaḍ",
+    "4": "kuẓ",
+    "5": "semmus",
+    "6": "sḍis",
+    "7": "sa",
+    "8": "tam",
+    "9": "tẓa",
+    "10": "mraw",
+    "11": "ḥḍac",
+    "12": "tnac",
+    "13": "tleṭṭac",
+    "14": "ṛbeɛṭac",
+    "15": "xemseṭṭac",
+    "16": "seṭṭac",
+    "17": "sebeɛṭac",
+    "18": "temmenṭac",
+    "19": "tseɛṭac",
+    "20": "ɛecrin",
+    "21": "waḥed u ɛecrin",
+    "22": "tnayn u ɛecrin",
+    "23": "tlata u ɛecrin",
+    "24": "ṛebɛa u ɛecrin",
+    "25": "xemsa u ɛecrin",
+    "26": "setta u ɛecrin",
+    "27": "sebɛa u ɛecrin",
+    "28": "tmanya u ɛecrin",
+    "29": "tesɛa u ɛecrin",
+    "30": "tlatin",
+    "31": "waḥed u tlatin"
+  },
+  "month": {
+    "1": "yennayer",
+    "2": "fuṛar",
+    "3": "meɣres",
+    "4": "yebrir",
+    "5": "mayyu",
+    "6": "yunyu",
+    "7": "yulyu",
+    "8": "ɣuct",
+    "9": "ctembeṛ",
+    "10": "tubeṛ",
+    "11": "wambeṛ",
+    "12": "dujembeṛ"
+  },
+  "number": {}
+}

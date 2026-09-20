@@ -1,0 +1,3 @@
+[opm.pipeline]
+ovos-ocp-pipeline-plugin = ocp_pipeline.opm:OCPPipelineMatcher
+ovos-ocp-pipeline-plugin-legacy = ocp_pipeline.opm:MycroftCPSLegacyPipeline

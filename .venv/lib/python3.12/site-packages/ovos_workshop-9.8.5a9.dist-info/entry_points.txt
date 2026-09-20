@@ -1,0 +1,2 @@
+[console_scripts]
+ovos-skill-launcher = ovos_workshop.skill_launcher:_launch_script

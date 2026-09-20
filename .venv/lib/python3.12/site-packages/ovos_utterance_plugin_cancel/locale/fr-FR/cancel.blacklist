@@ -1,0 +1,18 @@
+# OVOS-INTENT-2 §4.3 blacklist for the cancel transformer.
+#
+# Utterance prefixes that veto the cancel suffix match.
+#
+# When an utterance starts with one of these phrases, the cancel
+# suffix match is skipped — even if the utterance happens to end with
+# a word from cancel.voc. The utterance is *about* the cancel word
+# (define it, spell it, pronounce it, ask after it) rather than a
+# command to cancel.
+(joue|dis|épelle|prononce|lis|répète|écris|tape)
+(définis|explique|traduis)
+(dis-moi|raconte-moi) (le|la|ce|sur|quoi|comment)
+apprends-moi
+comment (dit-on|écrit-on|prononce-t-on|épelle-t-on|fais-tu|fonctionne)
+(qu'est-ce que|quel est|quelle est)
+quel est (le sens|le contraire|l'opposé|la traduction|la prononciation)
+quelle est (la signification|la traduction|la prononciation)
+pourquoi (tu|ne|ça ne|ça)

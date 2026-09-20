@@ -375,3 +375,26 @@ class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
             return False
         self.speak(text)
         return True
+
+
+class ThalovantConversationalFallbackSkill(ThalovantFallbackSkill, _ConversationalBase):
+    """A fallback skill that can also finish what it started.
+
+    A skill that asks a question needs `converse()`, and a skill that answers
+    what no intent claimed needs the fallback ladder. Until this existed you
+    had to pick one, and picking `ThalovantFallbackSkill` meant `converse()`
+    was never called at all: the converse plumbing -- `activate()`,
+    `deactivate()` and the `ovos.converse.ping` acknowledgement -- lives on
+    ovos-workshop's `ConversationalSkill`, and a skill only answers that ping
+    when its `skill_id` is in `session.converse_handlers`. A class without
+    the plumbing can never get itself in there, so the method sat there
+    looking correct and was dead.
+
+    That is not a hypothetical: the reminder skill asked "What should I
+    remind you about?", the answer went back through the pipeline as a fresh
+    command, and the fart skill matched "fart".
+
+    Both parents descend from `OVOSSkill`, so the fallback registration and
+    the converse event handlers both run -- `_register_system_event_handlers`
+    chains through the whole MRO.
+    """

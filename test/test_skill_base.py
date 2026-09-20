@@ -351,3 +351,45 @@ def test_common_play_base_carries_the_plumbing_without_touching_ocp():
     assert shared == {"runtime_requirements"}, shared
     for helper in ("utterance", "lang_of", "dialog", "mentions", "locale_resources"):
         assert hasattr(ThalovantCommonPlaySkill, helper)
+
+
+# --------------------------------------------------------------------------
+# A fallback skill that can also finish what it started
+#
+# `converse()` on a class without the converse plumbing is dead code, and it
+# does not look dead: the method is there, unit tests that call it directly
+# pass, and ovos-core never calls it. It cost the reminder skill a shipped
+# release -- "What should I remind you about?" answered with "fart" reached
+# the fart skill, because a skill only answers `ovos.converse.ping` when its
+# skill_id is in `session.converse_handlers`, and a skill with no
+# `activate()` can never put itself there.
+# --------------------------------------------------------------------------
+
+
+def test_the_combined_base_carries_both_sets_of_plumbing():
+    from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill as Combined
+
+    # The fallback half.
+    assert hasattr(Combined, "register_thalovant_fallback")
+    assert hasattr(Combined, "FALLBACK_PRIORITY")
+    # The converse half -- without these the skill is never polled.
+    for plumbing in ("activate", "deactivate", "_handle_converse_broadcast_ack"):
+        assert hasattr(Combined, plumbing), f"{plumbing} is what makes converse reachable"
+
+
+def test_a_plain_fallback_skill_still_cannot_converse():
+    """The gap this base closes, stated as a fact rather than a memory.
+
+    If this ever starts failing, ovos-workshop has folded converse back into
+    the ordinary skill and the combined base is no longer load-bearing.
+    """
+    assert not hasattr(ThalovantFallbackSkill, "activate")
+
+
+def test_the_combined_base_linearizes_fallback_before_converse():
+    from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill as Combined
+
+    names = [cls.__name__ for cls in Combined.__mro__]
+    assert names.index("FallbackSkill") < names.index("ConversationalSkill")
+    # Both reach OVOSSkill once; a broken diamond would not import at all.
+    assert names.count("OVOSSkill") == 1

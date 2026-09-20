@@ -1,0 +1,2 @@
+[opm.transformer.intent]
+ovos-ahocorasick-ner-plugin = ahocorasick_ner.opm:AhocorasickNERTransformer

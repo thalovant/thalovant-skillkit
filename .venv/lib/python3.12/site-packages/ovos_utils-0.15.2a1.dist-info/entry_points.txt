@@ -1,0 +1,2 @@
+[console_scripts]
+ovos-logs = ovos_utils.log_parser:ovos_logs

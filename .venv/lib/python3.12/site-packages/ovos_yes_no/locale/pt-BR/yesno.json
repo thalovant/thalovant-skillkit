@@ -1,0 +1,54 @@
+{
+  "yes": [
+    "correto",
+    "afirmativo",
+    "correcto",
+    "(confirmo|confirmar|confirma)",
+    "afirmativo",
+    "sim",
+    "(confirmado|confirmada)",
+    "correto",
+    "(concordo|concordar)",
+    "(de acordo|acordado)",
+    "de (facto|fato)"
+  ],
+  "no": [
+    "não",
+    "nao",
+    "negativo",
+    "não",
+    "não",
+    "discordo",
+    "discordou"
+  ],
+  "neutral_yes": [
+    "por favor",
+    "claro",
+    "claramente",
+    "verdade",
+    "obviamente",
+    "obvio",
+    "facto",
+    "fato",
+    "certeza"
+  ],
+  "neutral_no": [
+    "sem hipótese",
+    "não há hipótese",
+    "mentindo",
+    "mentir",
+    "enganar",
+    "enganado",
+    "enganada",
+    "indesejável",
+    "mentira",
+    "mentiras",
+    "falso",
+    "inadequado",
+    "mentira",
+    "mentiroso",
+    "erro",
+    "errado",
+    "errada"
+  ]
+}

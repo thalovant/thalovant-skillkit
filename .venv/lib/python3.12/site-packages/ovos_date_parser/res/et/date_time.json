@@ -1,0 +1,112 @@
+{
+  "decade_format": {
+    "default": "{number}"
+  },
+  "hundreds_format": {
+    "default": "{number}"
+  },
+  "thousand_format": {
+    "default": "{number}"
+  },
+  "year_format": {
+    "default": "{year} {bc}",
+    "bc": "enne Kristust"
+  },
+  "date_format": {
+    "date_full": "{weekday} {day} {month} {formatted_year}",
+    "date_full_no_year": "{weekday} {day} {month}",
+    "date_full_no_year_month": "{weekday} {day}",
+    "today": "täna",
+    "tomorrow": "homme",
+    "yesterday": "eile"
+  },
+  "date_time_format": {
+    "date_time": "{formatted_date} {formatted_time}"
+  },
+  "weekday": {
+    "0": "esmaspäev",
+    "1": "teisipäev",
+    "2": "kolmapäev",
+    "3": "neljapäev",
+    "4": "reede",
+    "5": "laupäev",
+    "6": "pühapäev"
+  },
+  "date": {
+    "1": "esimene",
+    "2": "teine",
+    "3": "kolmas",
+    "4": "neljas",
+    "5": "viies",
+    "6": "kuues",
+    "7": "seitsmes",
+    "8": "kaheksas",
+    "9": "üheksas",
+    "10": "kümnes",
+    "11": "üheteistkümnes",
+    "12": "kaheteistkümnes",
+    "13": "kolmeteistkümnes",
+    "14": "neljateistkümnes",
+    "15": "viieteistkümnes",
+    "16": "kuueteistkümnes",
+    "17": "seitsmeteistkümnes",
+    "18": "kaheksateistkümnes",
+    "19": "üheksateistkümnes",
+    "20": "kahekümnes",
+    "21": "kahekümne esimene",
+    "22": "kahekümne teine",
+    "23": "kahekümne kolmas",
+    "24": "kahekümne neljas",
+    "25": "kahekümne viies",
+    "26": "kahekümne kuues",
+    "27": "kahekümne seitsmes",
+    "28": "kahekümne kaheksas",
+    "29": "kahekümne üheksas",
+    "30": "kolmekümnes",
+    "31": "kolmekümne esimene"
+  },
+  "month": {
+    "1": "jaanuar",
+    "2": "veebruar",
+    "3": "märts",
+    "4": "aprill",
+    "5": "mai",
+    "6": "juuni",
+    "7": "juuli",
+    "8": "august",
+    "9": "september",
+    "10": "oktoober",
+    "11": "november",
+    "12": "detsember"
+  },
+  "number": {
+    "0": "null",
+    "1": "üks",
+    "2": "kaks",
+    "3": "kolm",
+    "4": "neli",
+    "5": "viis",
+    "6": "kuus",
+    "7": "seitse",
+    "8": "kaheksa",
+    "9": "üheksa",
+    "10": "kümme",
+    "20": "kakskümmend",
+    "30": "kolmkümmend",
+    "40": "nelikümmend",
+    "50": "viiskümmend",
+    "60": "kuuskümmend",
+    "70": "seitsekümmend",
+    "80": "kaheksakümmend",
+    "90": "üheksakümmend",
+    "11": "üksteist",
+    "12": "kaksteist",
+    "13": "kolmteist",
+    "14": "neliteist",
+    "15": "viisteist",
+    "16": "kuusteist",
+    "17": "seitseteist",
+    "18": "kaheksateist",
+    "19": "üheksateist"
+  }
+}

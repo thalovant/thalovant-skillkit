@@ -1,0 +1,112 @@
+{
+  "decade_format": {
+    "default": "{number}"
+  },
+  "hundreds_format": {
+    "default": "{number}"
+  },
+  "thousand_format": {
+    "default": "{number}"
+  },
+  "year_format": {
+    "default": "{year} {bc}",
+    "bc": "ennen Kristusta"
+  },
+  "date_format": {
+    "date_full": "{weekday} {day} {month} {formatted_year}",
+    "date_full_no_year": "{weekday} {day} {month}",
+    "date_full_no_year_month": "{weekday} {day}",
+    "today": "tänään",
+    "tomorrow": "huomenna",
+    "yesterday": "eilen"
+  },
+  "date_time_format": {
+    "date_time": "{formatted_date} {formatted_time}"
+  },
+  "weekday": {
+    "0": "maanantai",
+    "1": "tiistai",
+    "2": "keskiviikko",
+    "3": "torstai",
+    "4": "perjantai",
+    "5": "lauantai",
+    "6": "sunnuntai"
+  },
+  "date": {
+    "1": "ensimmäinen",
+    "2": "toinen",
+    "3": "kolmas",
+    "4": "neljäs",
+    "5": "viides",
+    "6": "kuudes",
+    "7": "seitsemäs",
+    "8": "kahdeksas",
+    "9": "yhdeksäs",
+    "10": "kymmenes",
+    "11": "yhdestoista",
+    "12": "kahdestoista",
+    "13": "kolmastoista",
+    "14": "neljästoista",
+    "15": "viidestoista",
+    "16": "kuudestoista",
+    "17": "seitsemästoista",
+    "18": "kahdeksastoista",
+    "19": "yhdeksästoista",
+    "20": "kahdeskymmenes",
+    "21": "kahdeskymmenesensimmäinen",
+    "22": "kahdeskymmenestoinen",
+    "23": "kahdeskymmeneskolmas",
+    "24": "kahdeskymmenesneljäs",
+    "25": "kahdeskymmenesviides",
+    "26": "kahdeskymmeneskuudes",
+    "27": "kahdeskymmenesseitsemäs",
+    "28": "kahdeskymmeneskahdeksas",
+    "29": "kahdeskymmenesyhdeksäs",
+    "30": "kolmaskymmenes",
+    "31": "kolmaskymmenesensimmäinen"
+  },
+  "month": {
+    "1": "tammikuu",
+    "2": "helmikuu",
+    "3": "maaliskuu",
+    "4": "huhtikuu",
+    "5": "toukokuu",
+    "6": "kesäkuu",
+    "7": "heinäkuu",
+    "8": "elokuu",
+    "9": "syyskuu",
+    "10": "lokakuu",
+    "11": "marraskuu",
+    "12": "joulukuu"
+  },
+  "number": {
+    "0": "nolla",
+    "1": "yksi",
+    "2": "kaksi",
+    "3": "kolme",
+    "4": "neljä",
+    "5": "viisi",
+    "6": "kuusi",
+    "7": "seitsemän",
+    "8": "kahdeksan",
+    "9": "yhdeksän",
+    "10": "kymmenen",
+    "20": "kaksikymmentä",
+    "30": "kolmekymmentä",
+    "40": "neljäkymmentä",
+    "50": "viisikymmentä",
+    "60": "kuusikymmentä",
+    "70": "seitsemänkymmentä",
+    "80": "kahdeksankymmentä",
+    "90": "yhdeksänkymmentä",
+    "11": "yksitoista",
+    "12": "kaksitoista",
+    "13": "kolmetoista",
+    "14": "neljätoista",
+    "15": "viisitoista",
+    "16": "kuusitoista",
+    "17": "seitsemäntoista",
+    "18": "kahdeksantoista",
+    "19": "yhdeksäntoista"
+  }
+}

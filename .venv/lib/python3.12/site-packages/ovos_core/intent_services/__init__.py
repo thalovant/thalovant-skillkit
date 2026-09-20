@@ -1,0 +1,1 @@
+from ovos_core.intent_services.service import IntentService
