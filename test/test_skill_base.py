@@ -366,30 +366,44 @@ def test_common_play_base_carries_the_plumbing_without_touching_ocp():
 # --------------------------------------------------------------------------
 
 
-def test_the_combined_base_carries_both_sets_of_plumbing():
+def test_the_combined_base_converses_exactly_like_the_conversational_one():
+    """Parity, not a hard-coded method list.
+
+    Which methods carry converse is ovos-workshop's business and it moved
+    once already: on workshop 8 converse is built into the ordinary skill,
+    on 9 it is a separate `ConversationalSkill`. Naming the methods here
+    would pin this test to one of those. What must be true on both is that
+    the combined base is conversational in whatever way
+    `ThalovantConversationalSkill` is.
+    """
+    from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill as Combined
+    from thalovant_skillkit.skill import ThalovantConversationalSkill as Conversational
+
+    missing = [
+        name
+        for name in dir(Conversational)
+        if not name.startswith("__") and not hasattr(Combined, name)
+    ]
+    assert not missing, f"the combined base is missing converse plumbing: {missing}"
+
+
+def test_the_combined_base_keeps_the_fallback_half():
     from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill as Combined
 
-    # The fallback half.
-    assert hasattr(Combined, "register_thalovant_fallback")
-    assert hasattr(Combined, "FALLBACK_PRIORITY")
-    # The converse half -- without these the skill is never polled.
-    for plumbing in ("activate", "deactivate", "_handle_converse_broadcast_ack"):
-        assert hasattr(Combined, plumbing), f"{plumbing} is what makes converse reachable"
+    missing = [
+        name
+        for name in dir(ThalovantFallbackSkill)
+        if not name.startswith("__") and not hasattr(Combined, name)
+    ]
+    assert not missing, f"the combined base is missing fallback plumbing: {missing}"
+    assert Combined.FALLBACK_PRIORITY == ThalovantFallbackSkill.FALLBACK_PRIORITY
 
 
-def test_a_plain_fallback_skill_still_cannot_converse():
-    """The gap this base closes, stated as a fact rather than a memory.
-
-    If this ever starts failing, ovos-workshop has folded converse back into
-    the ordinary skill and the combined base is no longer load-bearing.
-    """
-    assert not hasattr(ThalovantFallbackSkill, "activate")
-
-
-def test_the_combined_base_linearizes_fallback_before_converse():
+def test_the_combined_base_linearizes_without_a_broken_diamond():
     from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill as Combined
 
     names = [cls.__name__ for cls in Combined.__mro__]
-    assert names.index("FallbackSkill") < names.index("ConversationalSkill")
-    # Both reach OVOSSkill once; a broken diamond would not import at all.
+    # A diamond that does not linearize raises at class creation, so reaching
+    # here at all is most of the claim; this pins the shape it settled on.
+    assert names[1] == "ThalovantFallbackSkill"
     assert names.count("OVOSSkill") == 1
