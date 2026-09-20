@@ -1,0 +1,2 @@
+[opm.pipeline]
+ovos-padatious-pipeline-plugin = ovos_padatious.opm:PadatiousPipeline

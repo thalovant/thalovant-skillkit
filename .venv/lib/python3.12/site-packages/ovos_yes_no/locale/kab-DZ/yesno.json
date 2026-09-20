@@ -1,0 +1,49 @@
+{
+  "yes": [
+    "yes[0]: ih",
+    "yes[1]: wah",
+    "yes[2]: iḥ",
+    "yes[3]: sentem",
+    "yes[4]: ihh",
+    "yes[5]: ihih",
+    "yes[6]: yettwasentem",
+    "yes[7]: iṣeḥḥa",
+    "yes[8]: wufqeɣ",
+    "yes[9]: qebleɣ",
+    "yes[10]: s tidet",
+    "yes[11]: d tidet"
+  ],
+  "no": [
+    "no[0]: ala",
+    "no[1]: mačči",
+    "no[2]: uhu",
+    "no[3]: mačči akken",
+    "no[4]: uhuḥ",
+    "no[5]: ur wufqeɣ ara",
+    "no[6]: ur qbileɣ ara"
+  ],
+  "neutral_yes": [
+    "neutral_yes[0]: ttxil-k",
+    "neutral_yes[1]: yerbeḥ",
+    "neutral_yes[2]: iban akk",
+    "neutral_yes[3]: iban kan",
+    "neutral_yes[4]: ilaq",
+    "neutral_yes[5]: ilaqen",
+    "neutral_yes[6]: iban",
+    "neutral_yes[7]: d tidet",
+    "neutral_yes[8]: ttxil-m",
+    "neutral_yes[9]: deg leɛnaya-k",
+    "neutral_yes[10]: ma ulac aɣilif"
+  ],
+  "neutral_no": [
+    "neutral_no[0]: ur ilaq ara",
+    "neutral_no[1]: ur yelhi ara",
+    "neutral_no[2]: ur nlaq ara",
+    "neutral_no[3]: d tikerkas",
+    "neutral_no[4]: iskiddib",
+    "neutral_no[5]: tuccḍa",
+    "neutral_no[6]: d tuccḍa",
+    "neutral_no[7]: ur iṣeḥḥa ara",
+    "neutral_no[8]: yeɣleḍ"
+  ]
+}

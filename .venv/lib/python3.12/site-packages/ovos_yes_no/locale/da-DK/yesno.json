@@ -1,0 +1,44 @@
+{
+  "yes": [
+    "jah",
+    "jep",
+    "jepper",
+    "bekræfte",
+    "bekræftende",
+    "ja",
+    "bekræftet",
+    "korrekt",
+    "enig",
+    "aftalt",
+    "virkelig"
+  ],
+  "no": [
+    "nix",
+    "ikke",
+    "negativ",
+    "nej",
+    "nah",
+    "være uenig",
+    "uenig"
+  ],
+  "neutral_yes": [
+    "behage",
+    "sikker",
+    "helt sikkert",
+    "sikkert",
+    "passende",
+    "bevilget",
+    "åbenbart",
+    "virkelig"
+  ],
+  "neutral_no": [
+    "uønsket",
+    "uønsket",
+    "upassende",
+    "løgn",
+    "lyver",
+    "fejl",
+    "fejlagtigt",
+    "forkert"
+  ]
+}

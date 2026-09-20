@@ -1,0 +1,449 @@
+{
+  "abd": [
+    "Tamanidect"
+  ],
+  "af": [
+    "Tafrikanst"
+  ],
+  "ak": [
+    "Takanit"
+  ],
+  "am": [
+    "Tamahrict",
+    "Tamharit"
+  ],
+  "ar": [
+    "Taɛrabt",
+    "Tutlayt taɛrabt"
+  ],
+  "arn": [
+    "Tutlayt tamapwchit"
+  ],
+  "arq": [
+    "Taɛrabt tazzayrit"
+  ],
+  "ary": [
+    "Taɛrabt tamerrukit"
+  ],
+  "arz": [
+    "Taɛrabt n Maser"
+  ],
+  "auj": [
+    "Tawilant"
+  ],
+  "be": [
+    "Tabilarusit",
+    "Tabilurusit"
+  ],
+  "ber": [
+    "Tutlayin timaziɣin"
+  ],
+  "bg": [
+    "Tabulgarit",
+    "Tabulgart"
+  ],
+  "bn": [
+    "Tabengalit"
+  ],
+  "br": [
+    "Tabrutunt"
+  ],
+  "bvy": [
+    "Tabaybayanunt"
+  ],
+  "ca": [
+    "Takatalant"
+  ],
+  "cmn": [
+    "Tacinwat Tamandarant"
+  ],
+  "cnu": [
+    "Tacenwit"
+  ],
+  "cs": [
+    "Tačikit",
+    "Tačikiyt",
+    "Tutlayt tačikiyt"
+  ],
+  "da": [
+    "Tadanict"
+  ],
+  "de": [
+    "Talmant",
+    "Tutlayt Talmant",
+    "Talmanit"
+  ],
+  "el": [
+    "Tagrikit",
+    "Tayunanit"
+  ],
+  "en": [
+    "Taglizit"
+  ],
+  "eo": [
+    "Taspirantit"
+  ],
+  "es": [
+    "Taspenyulit",
+    "Taspenyult",
+    "Tutlayt taspenyult"
+  ],
+  "et": [
+    "Tisṭunit"
+  ],
+  "eu": [
+    "Tabaskit",
+    "Tutlayt tabaskit"
+  ],
+  "fa": [
+    "Tafarisit",
+    "Tafursit"
+  ],
+  "fi": [
+    "Tafinit"
+  ],
+  "fia": [
+    "Tanubayt"
+  ],
+  "fo": [
+    "Tafirwanit"
+  ],
+  "fr": [
+    "Tafransist",
+    "Tafṛansist"
+  ],
+  "fy": [
+    "Tafrizunt taɣerbit"
+  ],
+  "ga": [
+    "Tirlandit"
+  ],
+  "gha": [
+    "Taɣdimest"
+  ],
+  "gho": [
+    "Taɣumart"
+  ],
+  "gn": [
+    "Tagwaranit"
+  ],
+  "gnc": [
+    "Tagwanect"
+  ],
+  "ha": [
+    "Tahwasit"
+  ],
+  "he": [
+    "Taɛebrit",
+    "Tutlayt taɛebrit"
+  ],
+  "heb": [
+    "Taɛebrit tamaynut"
+  ],
+  "hi": [
+    "Tahendit"
+  ],
+  "hr": [
+    "Takruwatit"
+  ],
+  "hu": [
+    "Tahungarit"
+  ],
+  "id": [
+    "Tandunisit",
+    "Tandunizit"
+  ],
+  "ifk": [
+    "Tatuwalit"
+  ],
+  "ig": [
+    "Tigbut"
+  ],
+  "is": [
+    "Taslandit"
+  ],
+  "it": [
+    "Taṭalyanit",
+    "Tutlayt Taṭalyanit",
+    "Taṭelyant"
+  ],
+  "ja": [
+    "Tajapunit"
+  ],
+  "jbe": [
+    "Tamaziɣt tudayt"
+  ],
+  "jbn": [
+    "Tanfusit"
+  ],
+  "jv": [
+    "Tajavanit"
+  ],
+  "ka": [
+    "Tajyurjit"
+  ],
+  "kab": [
+    "Taqbaylit",
+    "Tutlayt taqbaylit"
+  ],
+  "kcy": [
+    "Tabelbalit"
+  ],
+  "km": [
+    "Takemrit"
+  ],
+  "ko": [
+    "Takurit"
+  ],
+  "ksn": [
+    "Takasiguranint"
+  ],
+  "ku": [
+    "Takurdit"
+  ],
+  "ky": [
+    "Takirgizit"
+  ],
+  "la": [
+    "Talatint"
+  ],
+  "lb": [
+    "Taluksemburgit"
+  ],
+  "lt": [
+    "Talitwanit"
+  ],
+  "mg": [
+    "Tamalgacit"
+  ],
+  "mk": [
+    "Tutlayt tamasidunt"
+  ],
+  "ms": [
+    "Tamalawit",
+    "Tamalayt"
+  ],
+  "mt": [
+    "Tamalṭit"
+  ],
+  "mtw": [
+    "Tamagahatit"
+  ],
+  "mwl": [
+    "Tamirandit",
+    "Tutlayt tamirandit"
+  ],
+  "my": [
+    "Taburmisit"
+  ],
+  "mzb": [
+    "Tumẓabt"
+  ],
+  "nb": [
+    "Bokmål"
+  ],
+  "ne": [
+    "Tanipalit"
+  ],
+  "nl": [
+    "Tadučit",
+    "Tahulandit"
+  ],
+  "nn": [
+    "Nynorsk"
+  ],
+  "nxm": [
+    "Tutlayt tanumidt"
+  ],
+  "oc": [
+    "Tuksitant",
+    "Tuksiṭanit"
+  ],
+  "oua": [
+    "Teggargrent"
+  ],
+  "pa": [
+    "Tapunjabit"
+  ],
+  "pl": [
+    "Tapulunit"
+  ],
+  "ps": [
+    "Pactu"
+  ],
+  "pt": [
+    "Tapurtugalit",
+    "Tapuṛtugit",
+    "Tutlayt tapuṛtugit",
+    "Tapurtugit"
+  ],
+  "rif": [
+    "Tarifit",
+    "Tutlayt tarifit"
+  ],
+  "rn": [
+    "Takirundit"
+  ],
+  "ro": [
+    "Tarumanit"
+  ],
+  "ru": [
+    "Tarusit",
+    "Tutlayt tarusit"
+  ],
+  "rue": [
+    "Tutlayt tarusint"
+  ],
+  "rw": [
+    "Taruwandit"
+  ],
+  "sds": [
+    "Tasendit"
+  ],
+  "shi": [
+    "Tacelḥit",
+    "Tutlayt tacelḥit"
+  ],
+  "shy": [
+    "Tacawit"
+  ],
+  "siz": [
+    "Tasiwit"
+  ],
+  "sjs": [
+    "Taznagt n Srayer"
+  ],
+  "sk": [
+    "Tasluvakt",
+    "Tutlayt tasluvakt"
+  ],
+  "sl": [
+    "Tasluvinit"
+  ],
+  "so": [
+    "Taṣumalit"
+  ],
+  "sq": [
+    "Talbanit"
+  ],
+  "sr": [
+    "Tasirbit"
+  ],
+  "sv": [
+    "Taswidit",
+    "Taswidt",
+    "Tutlayt taswidt"
+  ],
+  "sw": [
+    "Taswaḥilit"
+  ],
+  "swn": [
+    "Tasuknit"
+  ],
+  "ta": [
+    "Taṭamulit"
+  ],
+  "taq": [
+    "Tutlayt tamaceɣt"
+  ],
+  "tdy": [
+    "Tatadyawanit"
+  ],
+  "tez": [
+    "Tutlayt tetserret"
+  ],
+  "tg": [
+    "Taṭajikt"
+  ],
+  "tgz": [
+    "Tatagalakait"
+  ],
+  "th": [
+    "Taṭaylundit"
+  ],
+  "thv": [
+    "Tutlayt Tamahaq"
+  ],
+  "thz": [
+    "Tutlayt tamajeɣt"
+  ],
+  "tk": [
+    "Taturkmanit"
+  ],
+  "tly": [
+    "Tatalisyit"
+  ],
+  "tmh": [
+    "Tutlayin titergiyin"
+  ],
+  "tok": [
+    "Tatokiponat"
+  ],
+  "tr": [
+    "Taṭurkit",
+    "Taturkit",
+    "Tutlayt taturkit",
+    "Taterkit"
+  ],
+  "tru": [
+    "Taturoyot"
+  ],
+  "tt": [
+    "Taṭaṭarit"
+  ],
+  "ttq": [
+    "Tawellemt"
+  ],
+  "tvl": [
+    "Tatuvalyt"
+  ],
+  "tzm": [
+    "Tamaziɣt n Waṭlas Alemmas",
+    "Tamaziɣt n weṭlas alemmas"
+  ],
+  "ug": [
+    "Tuyɣurt"
+  ],
+  "uk": [
+    "Tukranit",
+    "Tukṛaniyt",
+    "Tutlayt tukṛaniyt",
+    "Takrinit"
+  ],
+  "ur": [
+    "Turdut"
+  ],
+  "uz": [
+    "Tuzbikit"
+  ],
+  "vi": [
+    "Tabyiṭnamit",
+    "Tavietnamit",
+    "Tavyiṭnamit"
+  ],
+  "yi": [
+    "Tayidict"
+  ],
+  "yo": [
+    "Tayurubit"
+  ],
+  "zen": [
+    "Zenaga"
+  ],
+  "zgh": [
+    "Tamaziɣt tameslugent tameṛṛukit",
+    "Tamaziɣt tameslugent tameṛṛukant"
+  ],
+  "zh": [
+    "Tacinwat, Tamundarint"
+  ],
+  "zu": [
+    "Tazulut"
+  ],
+  "zun": [
+    "Tutlayt n Zuñi"
+  ],
+  "zza": [
+    "Tazazat"
+  ]
+}

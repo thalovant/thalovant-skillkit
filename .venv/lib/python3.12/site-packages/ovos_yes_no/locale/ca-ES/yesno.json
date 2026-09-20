@@ -1,0 +1,44 @@
+{
+  "yes": [
+    "sí",
+    "sip",
+    "per descomptat",
+    "(confirmo|confirme|confirm|oi tant|o i tant|oh i tant|oh i tan)",
+    "(afirmatiu|afirmativa|afirmatius|afirmatives|així és)",
+    "(sí|oc)",
+    "(confirmat|confirmada|confirmats|confirmades)",
+    "(correcte|correcta|correctes|bé)",
+    "d'acord",
+    "entès",
+    "prou"
+  ],
+  "no": [
+    "no",
+    "negatiu",
+    "i ara!",
+    "no pas",
+    "(nooo|noooo)",
+    "(en desacord|no hi estic d'acord)",
+    "(disconforme|no hi estic d'acord|disconformes)"
+  ],
+  "neutral_yes": [
+    "(si us plau|si et plau|sisplau)",
+    "segur",
+    "segurament",
+    "sens dubte",
+    "(apropiat|apropiada|apropiats|apropiades)",
+    "(apropiat|apropiada|apropiats|apropiades|escaient|escaients|adient|adients)",
+    "(evidentment|òbviament|obvi|òbvia|obvis|òbvies)",
+    "(prou|de fet)"
+  ],
+  "neutral_no": [
+    "(indesitjable|indestijables|no desitjable|no desitjables)",
+    "(no volgut|no volguda|no vulguts|no volgudes)",
+    "(inadequat|inadequada|inapropiat|inapropiada|inadequats|inadequades|inapropiats|inapropiades)",
+    "(menteix|menteixo|mentix|mentim|mentiu)",
+    "(mentida|mentides|mentint|mentira|mentires)",
+    "(error|errors|errada|errades|equivocació|equivocacions)",
+    "(equivocat|equivocada|equivocats|equivocades|errat|errada|errats|errades)",
+    "(incorrecte|incorrecta|incorrectes)"
+  ]
+}

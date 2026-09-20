@@ -1,0 +1,33 @@
+{
+  "yes": [
+    "sí",
+    "si",
+    "sip"
+  ],
+  "no": [
+    "no",
+    "nop",
+    "nou"
+  ],
+  "neutral_yes": [
+    "por favor",
+    "per favor",
+    "vale",
+    "d'acuerdo",
+    "obvio",
+    "okey",
+    "vienga",
+    "correcto",
+    "afirmativo",
+    "cierto",
+    "verdat",
+    "verdadero",
+    "verdader"
+  ],
+  "neutral_no": [
+    "no verdat",
+    "error",
+    "falso",
+    "entivocau"
+  ]
+}

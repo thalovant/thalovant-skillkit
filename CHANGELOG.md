@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0 (2026-09-20)
+
+- Add `ThalovantConversationalFallbackSkill`: a fallback skill that can also
+  finish what it started. `converse()` on `ThalovantFallbackSkill` was dead
+  code -- the converse plumbing (`activate`, `deactivate`, the
+  `ovos.converse.ping` acknowledgement) lives on ovos-workshop's
+  `ConversationalSkill`, and a skill only answers that ping when its
+  `skill_id` is in `session.converse_handlers`, which a class without
+  `activate()` can never arrange.
+
 ## 0.15.0 (2026-09-19)
 
 - Add `thalovant-skillkit locales [directory] [--write]`: generate complete OVOS
