@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.16.1 (2026-09-21)
+
+- **Hold `tokenizers` below 1.x.** `model2vec` asks for `tokenizers>=0.20` with
+  no upper bound, and `tokenizers` 1.x dropped `Tokenizer.get_vocab()`.
+  `model2vec` 0.9.0 -- the newest there is -- calls it twice
+  (`model.py:54` and `:72`), so any install that resolves to 1.x raises
+  `AttributeError: 'tokenizers.Tokenizer' object has no attribute 'get_vocab'`
+  the moment the fleet check loads a model.
+
+  Only pre-releases of 1.x exist today (`1.0.0rc1`, `rc2`), so it bites
+  anything installed with `--pre` and nothing else -- which is how it was
+  found, in the documentation site's tutorial job. It stops being selective
+  the day 1.0.0 goes stable, and then it is every install, including the hub
+  runtime. Lift the bound when `model2vec` supports 1.x.
+
 ## 0.16.0 (2026-09-20)
 
 - Add `ThalovantConversationalFallbackSkill`: a fallback skill that can also
