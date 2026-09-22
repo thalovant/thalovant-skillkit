@@ -153,6 +153,16 @@ def time_text(value: datetime, lang: str, use_24hour: bool, *, written: bool = F
         return value.strftime("%H:%M" if use_24hour else "%I:%M %p").lstrip("0")
 
 
+def _upstream_date(value: datetime, lang: str, now: datetime) -> str:
+    """What `nice_date` says, or "" when it has nothing for this language."""
+    try:
+        nice_date = _loaded("nice_date", lambda: __import__(
+            "ovos_date_parser", fromlist=["nice_date"]).nice_date)
+        return str(nice_date(value, lang=_parser_lang(lang), now=now) or "").strip()
+    except _FORMATTER_ERRORS:
+        return ""
+
+
 def date_text(value: datetime, lang: str, now: datetime, *, written: bool = False) -> str:
     """A day, said or written.
 
@@ -215,8 +225,15 @@ def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool =
     day = date_text(value, lang, now, written=written)
     clock = time_text(value, lang, uses_24_hour_clock(lang), written=written)
     base = _parser_lang(lang).split("-")[0]
+    # Only compose with upstream's template when upstream can actually phrase
+    # the day. `date_text` now always answers -- it falls back to CLDR rather
+    # than return the empty string -- so without this the template would join
+    # a babel date for a language it has no resources for, and Japanese would
+    # read "2026年5月24日の09:40" where CLDR writes "2026/05/24 9:40:00".
+    upstream_day = day if written else _upstream_date(value, lang, now)
     # es/pt/gl take a different path upstream and never consult lang_config.
-    if day and clock and base not in {"es", "pt", "gl"}:
+    if upstream_day and clock and base not in {"es", "pt", "gl"}:
+        day = upstream_day
         try:
             composer = _loaded("date_time_format", lambda: __import__(
                 "ovos_date_parser", fromlist=["date_time_format"]).date_time_format)
@@ -334,6 +351,12 @@ class WrittenForms:
             getattr(cls._state, "pairs", []) or [], key=lambda pair: len(pair[0]), reverse=True
         ):
             text = text.replace(spoken, written)
+        # A spoken time ends in a full stop of its own -- "nine a.m." -- and
+        # when it lands at the end of a sentence that period is the
+        # sentence's. Swapping in "9:00 AM" takes it away, and the reply
+        # arrives on a screen with no end to it.
+        if spoken_reply.rstrip().endswith(".") and not text.rstrip().endswith("."):
+            text = text.rstrip() + "."
         return text
 
 

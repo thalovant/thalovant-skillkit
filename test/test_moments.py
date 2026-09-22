@@ -144,7 +144,7 @@ def test_say_records_and_returns_the_spoken_half():
     WrittenForms.reset()
 
     assert WrittenForms.say("nine forty a.m.", "9:40 AM") == "nine forty a.m."
-    assert WrittenForms.render("at nine forty a.m.") == "at 9:40 AM"
+    assert WrittenForms.render("Set for nine forty a.m.") == "Set for 9:40 AM."
 
 
 def test_a_skill_with_no_bus_still_speaks():
@@ -197,3 +197,20 @@ def test_a_written_duration_stays_a_clock_without_upstream():
     with patch("thalovant_skillkit.moments._loaded", side_effect=ValueError("no resources")):
         assert duration_text(300, "en-US", written=True) == "5:00"
         assert duration_text(3725, "en-US", written=True) == "1:02:05"
+
+
+def test_the_written_reply_keeps_the_sentence_end():
+    """"nine a.m." at the end of a sentence IS the full stop."""
+    WrittenForms.reset()
+    WrittenForms.say("tomorrow at nine a.m.", "tomorrow at 9:00 AM")
+
+    assert WrittenForms.render("You have one reminder: call mom, tomorrow at nine a.m.") == (
+        "You have one reminder: call mom, tomorrow at 9:00 AM."
+    )
+
+
+def test_a_reply_that_never_ended_in_a_stop_does_not_gain_one():
+    WrittenForms.reset()
+    WrittenForms.say("nine a.m.", "9:00 AM")
+
+    assert WrittenForms.render("at nine a.m. sharp") == "at 9:00 AM sharp"
