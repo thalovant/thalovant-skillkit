@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+from collections import OrderedDict
 from collections.abc import Iterable
 from threading import RLock
 from typing import Generic, TypeVar
@@ -52,3 +53,47 @@ class ShuffleBag(Generic[T]):
             choice = self._remaining.pop()
             self._previous = choice
             return choice
+
+
+class ShuffleBagPool(Generic[T]):
+    """Bounded, thread-safe bags which also avoid repeats when switching pools.
+
+    With an explicit hashable key, changed choices replace that key's bag. This
+    supports dialog overrides reloaded at runtime. Without a key, choices must
+    be hashable and equal pools share a bag. Eviction discards only draw history.
+    """
+
+    def __init__(self, *, max_pools: int = 128, rng: random.Random | None = None):
+        if max_pools < 1:
+            raise ValueError("max_pools must be positive")
+        self._max_pools, self._rng = max_pools, rng
+        self._bags: OrderedDict = OrderedDict()
+        self._previous: T | object = _UNSET
+        self._lock = RLock()
+
+    def remember(self, item: T) -> None:
+        """Remember a delivered item, including an exact replay chosen elsewhere."""
+        with self._lock:
+            self._previous = item
+
+    def draw(self, items: Iterable[T], count: int = 1, *, key=_UNSET,
+             avoid: T | object = _UNSET) -> list[T]:
+        if count < 0:
+            raise ValueError("count must be nonnegative")
+        choices = tuple(items)
+        key = choices if key is _UNSET else key
+        with self._lock:
+            cached = self._bags.get(key)
+            if cached is None or cached[0] != choices:
+                cached = (choices, ShuffleBag(choices, rng=self._rng))
+                self._bags[key] = cached
+            self._bags.move_to_end(key)
+            while len(self._bags) > self._max_pools:
+                self._bags.popitem(last=False)
+            picks = []
+            for index in range(count):
+                previous = avoid if index == 0 and avoid is not _UNSET else self._previous
+                choice = cached[1].draw(avoid=previous)
+                picks.append(choice)
+                self._previous = choice
+            return picks

@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.18.0 (2026-09-22)
+
+- Share bounded network reads, context-local reply deadlines and per-URL failure
+  cooldowns through `RequestBudget` and `JsonServiceClient`. Requests are attempted
+  once; skills choose their unavailable reply. Existing `post_json` is unchanged.
+- Add `PeriodicWorker` for cancellable background refresh, `JsonStateStore` for
+  the household skills' existing Redis/PostgreSQL format, and a conversational
+  Common Play base that preserves native OVOS playback and conversation hooks.
+- Make startup requirements independent of runtime requirements through optional
+  base-class flags, so online skills can load and offer an offline fallback.
+- Add bounded caches for bundled file inventories and combined locale resources,
+  with explicit invalidation. These store filenames and text, never audio bytes
+  or user replies. Add `ShuffleBagPool` and `speak_varied_dialog` for varied sounds
+  and translated replies without copied selection bookkeeping.
+- Document adoption, cache lifetimes, failure behavior and performance measurement.
+  Optional storage drivers remain lazy imports; no new base runtime dependency.
+
 ## 0.17.0 (2026-09-22)
 
 - **A conversational base now answers the converse ping instead of raising.**

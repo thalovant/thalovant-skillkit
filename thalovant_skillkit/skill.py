@@ -63,6 +63,7 @@ from .fallback import register_once, resolve_priority
 from .locale import SkillResources
 from .message import context_of, message_lang, utterance
 from .message import location as _location
+from .selection import ShuffleBagPool
 from .text import fold
 
 
@@ -80,6 +81,15 @@ class _SkillPlumbing:
     REQUIRES_INTERNET: bool = False
     REQUIRES_GUI: bool = False
 
+    # None preserves the historical behavior derived from REQUIRES_*. A skill
+    # can need internet during playback yet load and offer a packaged fallback.
+    NETWORK_BEFORE_LOAD: bool | None = None
+    INTERNET_BEFORE_LOAD: bool | None = None
+    GUI_BEFORE_LOAD: bool | None = None
+    NO_NETWORK_FALLBACK: bool | None = None
+    NO_INTERNET_FALLBACK: bool | None = None
+    NO_GUI_FALLBACK: bool | None = None
+
     _resources: SkillResources | None = None
 
     # -- what the skill is made of --------------------------------------------
@@ -90,16 +100,19 @@ class _SkillPlumbing:
 
         A skill that needs something unusual still overrides this outright.
         """
+        def configured(value, default):
+            return default if value is None else value
+
         return RuntimeRequirements(
-            network_before_load=self.REQUIRES_NETWORK,
-            internet_before_load=self.REQUIRES_INTERNET,
-            gui_before_load=self.REQUIRES_GUI,
+            network_before_load=configured(self.NETWORK_BEFORE_LOAD, self.REQUIRES_NETWORK),
+            internet_before_load=configured(self.INTERNET_BEFORE_LOAD, self.REQUIRES_INTERNET),
+            gui_before_load=configured(self.GUI_BEFORE_LOAD, self.REQUIRES_GUI),
             requires_network=self.REQUIRES_NETWORK,
             requires_internet=self.REQUIRES_INTERNET,
             requires_gui=self.REQUIRES_GUI,
-            no_network_fallback=not self.REQUIRES_NETWORK,
-            no_internet_fallback=not self.REQUIRES_INTERNET,
-            no_gui_fallback=not self.REQUIRES_GUI,
+            no_network_fallback=configured(self.NO_NETWORK_FALLBACK, not self.REQUIRES_NETWORK),
+            no_internet_fallback=configured(self.NO_INTERNET_FALLBACK, not self.REQUIRES_INTERNET),
+            no_gui_fallback=configured(self.NO_GUI_FALLBACK, not self.REQUIRES_GUI),
         )
 
     @property
@@ -228,6 +241,31 @@ class _SkillPlumbing:
         """The message context, or {}."""
         return context_of(message)
 
+    def speak_varied_dialog(self, key: str, data: dict | None = None, *,
+                            expect_response: bool = False, wait: bool = False):
+        """Speak curated lines without repeats, preserving OVOS rendering hooks.
+
+        Framework resource overrides win over packaged lines. Selection history
+        is local to this skill instance and bounded; reloaded choices replace
+        their old bag. Ordinary ``speak_dialog`` remains unchanged.
+        """
+        # OVOS initializes settings before a skill handles messages. setdefault
+        # also makes lazy initialization safe for concurrent first turns.
+        bags = self.__dict__.get("_varied_dialog_bags")
+        if bags is None:
+            bags = self.__dict__.setdefault("_varied_dialog_bags", ShuffleBagPool[str]())
+
+        def choose_line(rendered, lang):
+            lines = (self.resources.load_dialog_file(key)
+                     or self.locale_resources.dialog_lines(key, lang))
+            if not lines:
+                return rendered
+            template = bags.draw(lines, key=(lang, key))[0]
+            return template.format(**(data or {}))
+
+        return self.speak_dialog(key, data, expect_response=expect_response, wait=wait,
+                                 render_callback=choose_line)
+
     # -- the answer -----------------------------------------------------------
 
     def reply(self, utterance: str, lang: str, context: dict) -> str | None:
@@ -324,9 +362,20 @@ if _CommonPlayBase is not None:
         mixin, which is how the news skill found this gap.
         """
 
+    if _ConversationalBase is OVOSSkill:  # pragma: no cover - Workshop 8
+        _ConversationalPlayBases = (_ConverseEligibility, ThalovantCommonPlaySkill)
+    else:
+        _ConversationalPlayBases = (
+            _ConverseEligibility, _ConversationalBase, ThalovantCommonPlaySkill,
+        )
+
+    class ThalovantConversationalCommonPlaySkill(*_ConversationalPlayBases):
+        """OCP search/playback with Workshop 8/9 conversation registration."""
+
 else:  # pragma: no cover - a workshop without OCP
 
     ThalovantCommonPlaySkill = None
+    ThalovantConversationalCommonPlaySkill = None
 
 
 class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):

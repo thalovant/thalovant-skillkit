@@ -2829,7 +2829,7 @@ wheels = [
 
 [[package]]
 name = "thalovant-skillkit"
-version = "0.15.0"
+version = "0.18.0"
 source = { editable = "." }
 dependencies = [
     { name = "langcodes" },
@@ -2842,6 +2842,7 @@ dependencies = [
     { name = "ovos-workshop" },
     { name = "requests" },
     { name = "thalovant-languages" },
+    { name = "tokenizers" },
     { name = "tomli", marker = "python_full_version < '3.11'" },
 ]
 
@@ -2867,6 +2868,7 @@ requires-dist = [
     { name = "pytest-timeout", marker = "extra == 'testing'", specifier = ">=2" },
     { name = "requests", specifier = ">=2.31" },
     { name = "thalovant-languages", specifier = ">=0.3.0" },
+    { name = "tokenizers", specifier = "<1" },
     { name = "tomli", marker = "python_full_version < '3.11'", specifier = ">=2.0" },
 ]
 provides-extras = ["skill", "fleet", "testing"]

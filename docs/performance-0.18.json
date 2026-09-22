@@ -1,0 +1,142 @@
+{
+  "method": "Four fresh processes per revision, alternating order; seven repeats per warm path per process. Same Python/OVOS dependencies. No tests ran concurrently. Network disabled. Microseconds, median of process medians. Not a device or network benchmark.",
+  "python": "Python 3.13.14",
+  "platform": "Linux x86_64",
+  "baselines": {
+    "thalovant-skill-fart": "7a93d653094b5c5630b34ca90278a2aceee0a840",
+    "thalovant-skill-news": "6cf572e6307423155421874635d1a3a6a92d1759",
+    "thalovant-skill-timer": "d528a5562824b1813827c7f363559d9a28214536",
+    "thalovant-skill-weather": "4c34a3be7444b012f2622e49de6b8dce1303bd2a",
+    "thalovant-skillkit": "8986f67da3ea0c573d139f496164808c79080908"
+  },
+  "results": {
+    "module_import": {
+      "baseline_us": 241716.8215,
+      "candidate_us": 247181.885,
+      "baseline_process_medians_us": [
+        247474.385,
+        237933.841,
+        245499.802,
+        234072.108
+      ],
+      "candidate_process_medians_us": [
+        250934.593,
+        251212.627,
+        239926.45,
+        243429.177
+      ]
+    },
+    "news_fart_construction": {
+      "baseline_us": 142189.52850000001,
+      "candidate_us": 145803.68099999998,
+      "baseline_process_medians_us": [
+        142342.692,
+        141943.49,
+        147376.981,
+        142036.365
+      ],
+      "candidate_process_medians_us": [
+        145502.835,
+        145408.307,
+        146104.527,
+        150753.671
+      ]
+    },
+    "news_preview": {
+      "baseline_us": 109.28728,
+      "candidate_us": 111.018716,
+      "baseline_process_medians_us": [
+        110.53622,
+        108.03833999999999,
+        112.375138,
+        107.75041999999999
+      ],
+      "candidate_process_medians_us": [
+        111.83444,
+        107.743106,
+        110.202992,
+        116.371634
+      ]
+    },
+    "news_ocp_search": {
+      "baseline_us": 95.367459,
+      "candidate_us": 96.939606,
+      "baseline_process_medians_us": [
+        95.73862799999999,
+        92.700514,
+        97.275196,
+        94.99628999999999
+      ],
+      "candidate_process_medians_us": [
+        95.597762,
+        96.355728,
+        97.83955800000001,
+        97.523484
+      ]
+    },
+    "news_catalog": {
+      "baseline_us": 2.294481,
+      "candidate_us": 2.225556,
+      "baseline_process_medians_us": [
+        2.3976100000000002,
+        2.3313249999999996,
+        2.2576370000000003,
+        2.177245
+      ],
+      "candidate_process_medians_us": [
+        2.221559,
+        2.212752,
+        2.274318,
+        2.2295529999999997
+      ]
+    },
+    "fart_sound_choice": {
+      "baseline_us": 91.665987,
+      "candidate_us": 3.1358775000000003,
+      "baseline_process_medians_us": [
+        91.79032099999999,
+        92.219539,
+        91.54165300000001,
+        89.79840399999999
+      ],
+      "candidate_process_medians_us": [
+        3.12067,
+        3.127181,
+        3.144574,
+        3.181383
+      ]
+    },
+    "timer_regional_lines": {
+      "baseline_us": 1.4041169,
+      "candidate_us": 0.17032730000000001,
+      "baseline_process_medians_us": [
+        1.4171574,
+        1.4158308,
+        1.392403,
+        1.3814602
+      ],
+      "candidate_process_medians_us": [
+        0.170715,
+        0.1689058,
+        0.1725504,
+        0.16993960000000002
+      ]
+    },
+    "weather_regional_lines": {
+      "baseline_us": 0.0727508,
+      "candidate_us": 0.072786,
+      "baseline_process_medians_us": [
+        0.07296720000000001,
+        0.07244020000000001,
+        0.07447,
+        0.0725344
+      ],
+      "candidate_process_medians_us": [
+        0.0729674,
+        0.0726046,
+        0.0730976,
+        0.0724464
+      ]
+    }
+  }
+}

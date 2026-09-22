@@ -4,7 +4,24 @@ from random import Random
 
 import pytest
 
-from thalovant_skillkit.selection import ShuffleBag
+from thalovant_skillkit.selection import ShuffleBag, ShuffleBagPool
+
+
+def test_pool_switches_avoid_last_sound_and_respect_speaker_history():
+    pools = ShuffleBagPool[str](rng=Random(2))
+    assert pools.draw(["duck"]) == ["duck"]
+    assert pools.draw(["duck", "bear"]) == ["bear"]
+    assert pools.draw(["duck", "bear"], avoid="duck") == ["bear"]
+
+
+def test_reloaded_dialog_replaces_old_choices_and_history_stays_bounded():
+    pools = ShuffleBagPool[str](max_pools=2)
+    assert pools.draw(["old"], key="dialog") == ["old"]
+    assert pools.draw(["new"], key="dialog") == ["new"]
+    pools.draw(["other"], key="other")
+    pools.draw(["third"], key="third")
+    assert len(pools._bags) == 2
+    assert pools.draw(["new"], key="dialog") == ["new"]
 
 
 def test_cycles_cover_every_item_without_boundary_repeats():

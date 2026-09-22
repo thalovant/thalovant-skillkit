@@ -1,4 +1,4 @@
-# SkillKit 0.12.0 reference
+# SkillKit 0.18.0 reference
 
 Practical contracts for the released Python API and CLI. Start with the
 [README](../README.md) for installation, [Writing a Skill](https://docs.thalovant.com/developers/writing-a-skill/)
@@ -106,8 +106,11 @@ See [locale.py](../thalovant_skillkit/locale.py) and
 
 Base flags `REQUIRES_NETWORK`, `REQUIRES_INTERNET` and `REQUIRES_GUI` default to
 `False`. Each sets the corresponding `*_before_load` and `requires_*` values in
-native `runtime_requirements`, with the inverse `no_*_fallback` value. Override
-that property when these coupled defaults do not fit your skill.
+native `runtime_requirements`, with the inverse `no_*_fallback` value. For a skill that loads offline but uses the internet later, set
+`REQUIRES_INTERNET=True`, `INTERNET_BEFORE_LOAD=False` and
+`NO_INTERNET_FALLBACK=True`. The analogous `NETWORK_*` and `GUI_*` flags work the
+same way. Optional flags default to `None`, preserving the original coupled
+behavior. Override the property only for a contract the flags cannot describe.
 `ThalovantCommonPlaySkill` is `None` when the installed workshop cannot provide
 its upstream Open Common Play base.
 
@@ -133,6 +136,7 @@ fallback is not a claim of a new translation or an available ASR/TTS voice.
 | `matching_langs(lang)` | Ordered compatible bundled locales, without an unrelated default. |
 | `candidate_langs(lang)` | Compatible locales, then configured default, without duplicates. |
 | `lines(lang, folder, filename, fallback=False)` | Cached tuple of stripped, nonblank, non-comment lines. Always resolves language; `fallback=True` tries the remaining compatible locales before the default when the file has no usable lines. |
+| `combined_lines(lang, folder, filename, include_regions=True, unique=False)` | Additive union in candidate order, including the default. Use for aliases or blocklists, not spoken dialogs. `include_regions=False` uses only the resolved locale and default; `unique=True` removes case-insensitive duplicates. Cached results are immutable, instance-local and capped at 512 entries. |
 | `vocab(voc_name, lang)` | Lines from `vocab/<name>.voc`, without secondary file fallback. |
 | `dialog_lines(name, lang)` | Lines from `dialog/<name>.dialog`, with regional, same-language and default fallback. |
 | `matches_literal_intent(utterance, name, lang=None)` | Entire concrete `.intent` line, normalized for case, accents, punctuation and spaces. Reads flat and `intents/` layouts across compatible regional locales. Skips lines with `{}` slots or `[]()\|` patterns. Does not merge English into another supported locale or replace the intent engines. |
@@ -141,8 +145,9 @@ fallback is not a claim of a new translation or an available ASR/TTS voice.
 | `voc_match_lang(voc_name, utterance, lang=None)` | Candidate locale whose vocabulary matched, or `""`. |
 
 Caches belong to each `SkillResources` instance. Missing files are cached too;
-there is no public invalidation method or file watcher. Recreate the resource
-object after changing locale files during development.
+call `clear_cache()` between turns after changing locale files or installing
+overrides in place. It clears cached language choices and all resource results.
+There is no file watcher or automatic per-request filesystem scan.
 
 Vocabulary checks flag aliases that appear to contain a whole list or accidental
 repetition. A keyed line uses `canonical|alias|another alias`. Numbers such as
@@ -524,3 +529,116 @@ orthography and Argentine Spanish grammar need contextual review. For Chinese,
 can help prepare Traditional characters and common Taiwan terms. Check spoken
 phrases and regex literals too; conversion does not create a Cantonese translation.
 Ask fluent speakers to review important flows before claiming linguistic quality.
+
+## Shared runtime plumbing
+
+Use these helpers when your skill needs them; they start no network work merely
+by being imported. A skill still owns its topic, record schema, session ownership,
+spoken fallback and freshness policy. OVOS owns dispatch, audio and scheduling.
+
+| Need | Helper | Lifetime and limits |
+|---|---|---|
+| Several calls must fit one reply | `network.RequestBudget` | Context-local deadline; nested limits cannot extend it. Always pass its timeout to the transport. |
+| A small JSON service request | `network.JsonServiceClient` | One POST attempt, identified headers, object-only response, 2 MiB default body cap, 30-second default per-URL failure cooldown, at most 128 cooldown entries. |
+| Refresh data away from the reply path | `workers.PeriodicWorker` | One cooperative daemon thread per instance; immediate pass, then an interruptible interval. No overlapping passes. |
+| Optional household state storage | `storage.JsonStateStore` | Existing Redis/Sentinel cache and PostgreSQL table; drivers load only when configured. No cross-backend transaction. |
+| Find packaged sounds once | `assets.bundled_files` | Immutable tuple of paths, at most 128 directory/pattern entries; never caches audio bytes. |
+| Vary multiple sound or dialog pools | `selection.ShuffleBagPool` | At most 128 bags by default, instance-local history protected by a lock; changed choices replace a keyed bag. |
+| Speak a varied translated reply | `self.speak_varied_dialog` | OVOS renders and speaks, including its overrides; Kit chooses a line. Ordinary `speak_dialog` is unchanged. |
+| OCP playback with follow-up turns | `skill.ThalovantConversationalCommonPlaySkill` | Native Workshop 8/9 behavior with Kit helpers; unavailable (`None`) if upstream OCP is absent. |
+
+### Network work
+
+```python
+from thalovant_skillkit.network import JsonServiceClient, RequestBudget
+
+budget = RequestBudget()
+client = JsonServiceClient("my-skill", "1.0.0", budget=budget)
+
+def fetch_answer(service_url, question):
+    with budget.limit(2.0):
+        result = client.post(service_url, {"question": question}, timeout=1.0)
+    return result  # A dict, or None: the caller decides what to say.
+```
+
+Create the client once per skill instance so cooldown history survives turns.
+`post()` returns `None` for an empty URL, an exhausted budget, an active cooldown,
+network failure, invalid JSON, a non-object result or an oversized response.
+It does not retry a POST: the server might already have performed its action.
+Successful replies are **not cached**, and no response is shared between speakers.
+An exhausted preflight budget does not start a failure cooldown. A failure on one
+URL does not suppress another URL. Use stable, configured service URLs rather
+than putting the utterance into the URL.
+
+`budget.read(response)` returns a complete body or raises `TimeoutError` or
+`ValueError`; it never silently truncates. Deadline checks occur between reads.
+They cannot interrupt a blocked socket, DNS lookup or transport: the budget is
+not hard wall-clock cancellation. Supply finite transport timeouts too. A stalled
+read can overshoot the deadline by one socket timeout. `limit()` restores the
+previous context on exit, including exceptions, and separates concurrent threads.
+
+### Background refresh
+
+```python
+from thalovant_skillkit.workers import PeriodicWorker
+
+# In initialize(): self.refresh = PeriodicWorker(self.refresh_catalog,
+#     interval=600, name="catalog-refresh"); self.refresh.start()
+# refresh_catalog(self, stop_event) must bound each request and check cancellation.
+# In shutdown(): self.refresh.stop(timeout=1.0); super().shutdown()
+```
+
+`start()` returns false if its previous thread is still alive. `stop()` signals
+cancellation, joins for at most the supplied timeout and returns whether it has
+exited. Python cannot forcibly kill the callback. A failed pass is logged and
+retried after the normal interval. Keep credentials and private payloads out of
+callback exception messages. Use OVOS scheduling for alarms or user deadlines;
+this worker is for optional refresh work.
+
+### Optional shared persistence
+
+```python
+from thalovant_skillkit.storage import JsonStateStore
+
+store = JsonStateStore("household", {}, env_prefix="MY_SKILL", default_key="records")
+records = store.load()  # None when unavailable; use the skill's local fallback.
+```
+
+Install `redis` for Redis/Sentinel and `psycopg` for PostgreSQL when used. Settings
+win over the prefixed environment, then generic `REDIS_URL`,
+`REDIS_SENTINEL_URLS`, `REDIS_SENTINEL_SERVICE_NAME` and `DATABASE_URL`.
+`state_key` / `<prefix>_STATE_KEY` selects the key; `default_key` is the fallback.
+Redis uses `thalovant:<scope>:<key>`; PostgreSQL keeps the existing
+`thalovant_skill_state(scope, key, value, updated_at)` table. No data migration is
+needed for Alarm, Timer, Reminder or Stopwatch.
+
+A cache miss reads PostgreSQL and fills Redis. `save(list_of_records)` attempts
+both stores independently, without a success guarantee. Connection setup failures
+disable that backend for this store instance; rebuild the store to retry setup.
+Skills must validate records, enforce speaker ownership and retain their existing
+local recovery path. This helper adds no in-memory copy or TTL that could hide a
+new state write. It is not a transactional database or a replacement for a
+service-owned persistence contract.
+
+### Cache and selection choices
+
+`bundled_files(directory, "*.ogg")` is for immutable package assets. Call
+`bundled_files.cache_clear()` after an in-place asset update; inspect
+`cache_info()` while profiling. Do not use it for user upload directories.
+`SkillResources.clear_cache()` similarly refreshes translations between turns.
+These operations do not atomically coordinate concurrent file edits.
+
+`ShuffleBagPool.draw(items, count=1, key=..., avoid=...)` returns a list.
+Without an explicit key, choices must be hashable and equal pools share history.
+A key such as `(lang, dialog_name)` permits changed choices to replace an old bag.
+`avoid` suppresses a speaker's last choice on the first draw when alternatives
+exist. `remember(item)` records an exact replay delivered outside `draw()`.
+Capacity eviction discards history, not sound files or user state.
+
+Call `self.speak_varied_dialog("quiz.correct", {"name": "Sam"})` from an intent
+handler. Place curated lines in the usual translated `.dialog` files, keep
+placeholder names consistent, and use `expect_response=True` when inviting an
+answer. This preserves native OVOS speech and resource overrides.
+
+See [runtime measurements and reproduction](performance.md) for the measured
+0.18.0 fleet migration, including fresh-process setup and warm request costs.

@@ -12,10 +12,11 @@ argument, never in this module.
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass
 
 import requests
+
+from .service import request_headers as request_headers
 
 AI_AUGMENTATION_DEFAULT = "auto"
 SUPPORTED_AUDIENCE_AGE_BOUNDARIES = (13, 16, 18, 21)
@@ -77,13 +78,6 @@ def parse_age_policy(configured) -> dict | None:
     }
 
 
-def request_headers(skill_name: str, skill_version: str, user_agent: str) -> dict[str, str]:
-    return {
-        "User-Agent": user_agent,
-        "X-Request-ID": f"{skill_name}-{uuid.uuid4().hex}",
-        "X-Thalovant-Skill": skill_name,
-        "X-Thalovant-Skill-Version": skill_version,
-    }
 
 
 PROVENANCE_SKILL = "skill"

@@ -73,6 +73,47 @@ def test_the_locale_tree_is_found_without_the_skill_saying_where(demo):
     assert skill.locale_resources.available_langs() == ("en-US", "fr-FR")
 
 
+def test_internet_playback_can_keep_offline_startup_and_fallback(demo):
+    class Streams(demo):
+        REQUIRES_INTERNET = True
+        INTERNET_BEFORE_LOAD = False
+        NO_INTERNET_FALLBACK = True
+
+    requirements = Streams.runtime_requirements
+    assert requirements.requires_internet
+    assert not requirements.internet_before_load
+    assert requirements.no_internet_fallback
+    assert not requirements.network_before_load
+
+
+def test_varied_dialog_keeps_framework_rendering_and_reloaded_overrides(demo):
+    from types import SimpleNamespace
+
+    skill = demo()
+    override = ["Hello {who}.", "Welcome {who}."]
+    # Use the real public helper with a controlled OVOS rendering callback.
+    skill._resources = SimpleNamespace(dialog_lines=lambda *args: ("Bundled {who}.",))
+    class RenderResources:
+        def load_dialog_file(self, key):
+            return override
+
+    class Speaker:
+        speak_varied_dialog = ThalovantSkill.speak_varied_dialog
+        resources = RenderResources()
+        locale_resources = skill._resources
+
+        def speak_dialog(self, key, data, **kwargs):
+            assert kwargs["expect_response"] is True
+            return kwargs["render_callback"]("fallback", "fr-CA")
+
+    speaker = Speaker()
+    lines = [speaker.speak_varied_dialog("hello", {"who": "Sam"}, expect_response=True)
+             for _ in range(2)]
+    assert set(lines) == {"Hello Sam.", "Welcome Sam."}
+    override[:] = ["New {who}."]
+    assert speaker.speak_varied_dialog("hello", {"who": "Sam"}, expect_response=True) == "New Sam."
+
+
 def test_the_language_is_read_from_wherever_the_message_puts_it(demo):
     """Five skills read only `context["lang"]` and answered in the wrong
     language when it arrived in the data or the session."""
@@ -440,3 +481,19 @@ def test_a_conversational_skill_can_still_narrow_the_probe():
             return False
 
     assert Narrow.can_converse(object(), None) is False
+
+
+def test_conversational_playback_keeps_both_native_interfaces():
+    from thalovant_skillkit.skill import (
+        ThalovantCommonPlaySkill,
+        ThalovantConversationalCommonPlaySkill,
+        ThalovantConversationalSkill,
+    )
+
+    combined = ThalovantConversationalCommonPlaySkill
+    assert issubclass(combined, ThalovantCommonPlaySkill)
+    for name in dir(ThalovantConversationalSkill):
+        if not name.startswith("__"):
+            assert hasattr(combined, name), name
+    assert combined.can_converse(object(), None) is True
+    assert sum(base.__name__ == "OVOSSkill" for base in combined.__mro__) == 1
