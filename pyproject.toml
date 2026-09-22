@@ -35,6 +35,11 @@ dependencies = [
     "ovos-workshop>=8.0.0",
     # The question test the fallback gate reads: the language's own words.
     "thalovant-languages>=0.3.0",
+    # `moments`: the spoken and written forms of a date, a clock and a
+    # duration. Both are imported lazily, so a skill that never formats one
+    # pays nothing for them at boot.
+    "ovos-date-parser>=0.0.9",
+    "babel>=2.12",
     # The fleet check: the fleet's intent classifier and its sentence index.
     "model2vec>=0.9",
     # Not imported here. It is model2vec's, and model2vec asks for
