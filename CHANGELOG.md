@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.17.0 (2026-09-22)
+
+- **A conversational base now answers the converse ping instead of raising.**
+  ovos-workshop 9 made `can_converse` an abstractmethod whose body is
+  `raise NotImplementedError`. Nothing enforces it -- `OVOSSkill` is not an
+  ABC -- so a skill that overrode `converse()` and not `can_converse()`
+  loaded perfectly, answered no `<skill_id>.converse.ping`, and its
+  `converse()` was never called once. From the outside it reads as a skill
+  ignoring the answer to its own question.
+
+  `thalovant-skill-alarm` 0.1.17 shipped exactly that and was caught on a
+  real phone. `thalovant-skill-reminder` and `thalovant-skill-custos-shadow`
+  both inherit these bases and were in the same state; they pick this up
+  with no change of their own, since both allow a newer skillkit.
+
+  True is the honest default: it is what ovos-workshop 8 did, and every
+  skill here is written for it, opening `converse()` with its own guards. A
+  skill should still override with a cheap, pure probe where it can.
+
 ## 0.16.1 (2026-09-21)
 
 - **Hold `tokenizers` below 1.x.** `model2vec` asks for `tokenizers>=0.20` with
