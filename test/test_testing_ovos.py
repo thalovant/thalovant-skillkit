@@ -403,3 +403,26 @@ def test_gc_workaround_preserves_disabled_state_and_is_limited_to_known_versions
     finally:
         if not initially_enabled:
             gc.disable()
+
+
+def test_conversational_ocp_base_registers_both_bus_interfaces(integration_scope, tmp_path):
+    pytest.importorskip("ovos_workshop.skills.converse")
+    from ovos_bus_client.message import Message
+    from ovos_workshop.decorators import ocp_search
+
+    from thalovant_skillkit.skill import ThalovantConversationalCommonPlaySkill
+
+    class Player(ThalovantConversationalCommonPlaySkill):
+        @ocp_search()
+        def search(self, phrase, media_type):
+            return []
+
+    with skill_harness(Player, skill_id="skillkit-player", resources_dir=str(tmp_path)) as harness:
+        assert harness.skill.is_fully_initialized
+        assert harness.bus.ee.listeners("ovos.common_play.query")
+        assert harness.skill.search in harness.skill._search_handlers
+        pong = harness.bus.wait_for_response(
+            Message("skillkit-player.converse.ping"), "skill.converse.pong", timeout=2,
+        )
+        assert pong is not None
+        assert pong.data["can_handle"] is True

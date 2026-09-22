@@ -51,6 +51,18 @@ class SkillResources:
         # for every word someone says.
         self._folded_cache: dict[tuple[str, str], tuple[str, ...]] = {}
         self._literal_intent_cache: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
+        self._combined_cache: dict[tuple, tuple[str, ...]] = {}
+
+    def clear_cache(self) -> None:
+        """Forget resource data after changing files or installing locale overrides.
+
+        Reads cache immutable tuples per resource tree. Reload between turns;
+        this operation is not a transaction with concurrently edited files.
+        """
+        for cache in (self._lang_cache, self._matching_langs_cache,
+                      self._candidate_langs_cache, self._lines_cache,
+                      self._folded_cache, self._literal_intent_cache, self._combined_cache):
+            cache.clear()
 
     # -- which language this skill can actually serve -------------------------
 
@@ -151,6 +163,39 @@ class SkillResources:
             if found:
                 return found
         return ()
+
+    def combined_lines(self, lang: str | None, folder: str, filename: str,
+                       *, include_regions: bool = True, unique: bool = False) -> tuple[str, ...]:
+        """Combine matching resources in preference order instead of stopping early.
+
+        Use for aliases, regexes, or blocklists which accept multiple languages.
+        Dialogs should use ``lines(fallback=True)`` so one language answers.
+        ``include_regions=False`` preserves a resolved-locale-plus-default policy.
+        ``unique=True`` keeps the first spelling of each case-insensitive line.
+        """
+        key = (lang, folder, filename, include_regions, unique)
+        cached = self._combined_cache.get(key)
+        if cached is not None:
+            return cached
+        langs = (self.candidate_langs(lang) if include_regions
+                 else tuple(dict.fromkeys((self.lang(lang), self.default_lang))))
+        lines = tuple(line for candidate in langs
+                      for line in self.lines(candidate, folder, filename))
+        if unique:
+            seen: set[str] = set()
+            result = []
+            for line in lines:
+                folded = line.casefold()
+                if folded not in seen:
+                    seen.add(folded)
+                    result.append(line)
+            lines = tuple(result)
+        # Reads are lock-free and instance-local. Unusual user-supplied locale
+        # tags cannot grow this additional cache without bound.
+        if len(self._combined_cache) >= 512:
+            self._combined_cache.pop(next(iter(self._combined_cache), None), None)
+        self._combined_cache[key] = lines
+        return lines
 
     def vocab(self, voc_name: str, lang: str | None) -> tuple[str, ...]:
         return self.lines(lang, "vocab", f"{voc_name}.voc")

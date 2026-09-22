@@ -32,6 +32,44 @@ def test_comments_and_blank_lines_are_not_vocabulary(resources):
     assert resources.vocab("NewsKeyword", "en-US") == ("news", "headlines", "news briefing")
 
 
+def test_combined_resources_are_additive_but_dialog_fallback_stays_single_language(resources):
+    assert resources.combined_lines("fr-CA", "vocab", "NewsKeyword.voc") == (
+        "nouvelles", "actualites", "news", "headlines", "news briefing",
+    )
+    assert resources.dialog_lines("news", "fr-CA") == ("Les nouvelles : {what}.",)
+    assert resources.combined_lines("en-US", "vocab", "NewsKeyword.voc") == (
+        "news", "headlines", "news briefing",
+    )
+
+
+def test_combined_resources_can_keep_only_the_first_spelling(tmp_path):
+    for lang, content in (("en-US", "News\nother\n"), ("en-GB", "news\nlocal\n")):
+        path = tmp_path / lang / "vocab"
+        path.mkdir(parents=True)
+        (path / "topic.voc").write_text(content)
+    resources = SkillResources(tmp_path)
+    assert resources.combined_lines("en-GB", "vocab", "topic.voc", unique=True) == (
+        "news", "local", "other",
+    )
+
+
+def test_combined_cache_avoids_rebuilding_and_can_be_explicitly_invalidated(resources, monkeypatch):
+    expected = resources.combined_lines("fr-CA", "vocab", "NewsKeyword.voc")
+    original = resources.lines
+    monkeypatch.setattr(resources, "lines", lambda *a, **kw: pytest.fail("cache rebuilt"))
+    assert resources.combined_lines("fr-CA", "vocab", "NewsKeyword.voc") is expected
+    monkeypatch.setattr(resources, "lines", original)
+    (resources.root / "fr-FR/vocab/NewsKeyword.voc").write_text("nouveau\n")
+    resources.clear_cache()
+    assert resources.combined_lines("fr-CA", "vocab", "NewsKeyword.voc")[0] == "nouveau"
+
+
+def test_combined_cache_has_a_fixed_capacity(resources):
+    for index in range(550):
+        resources.combined_lines("en-US", "vocab", f"missing-{index}.voc")
+    assert len(resources._combined_cache) == 512
+
+
 def test_a_missing_translation_falls_back_to_english(resources):
     """Answering in the wrong language beats going silent, so a vocabulary the
     translation has not reached yet still matches through English."""
