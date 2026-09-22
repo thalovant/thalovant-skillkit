@@ -127,7 +127,7 @@ class JsonStateStore:
                         self.redis_url, socket_timeout=0.2, socket_connect_timeout=0.2
                     )
             except Exception as error:
-                LOG.warning("State store Redis state disabled: %s", error)
+                LOG.warning("State store Redis disabled (%s)", type(error).__name__)
                 self.redis_url = ""
                 self.redis_sentinel_urls = []
                 return None
@@ -141,7 +141,7 @@ class JsonStateStore:
             raw = client.get(self._store_key())
             return json.loads(raw) if raw else None
         except Exception as error:
-            LOG.warning("State store Redis state load failed: %s", error)
+            LOG.warning("State store Redis load failed (%s)", type(error).__name__)
             return None
 
     def _save_redis(self, value: list[dict]):
@@ -151,7 +151,7 @@ class JsonStateStore:
         try:
             client.set(self._store_key(), json.dumps(value, separators=(",", ":")))
         except Exception as error:
-            LOG.warning("State store Redis state save failed: %s", error)
+            LOG.warning("State store Redis save failed (%s)", type(error).__name__)
 
     def _postgres(self):
         if not self.database_url:
@@ -163,7 +163,7 @@ class JsonStateStore:
                 self._pg = psycopg.connect(self.database_url, connect_timeout=1)
                 self._pg.autocommit = True
             except Exception as error:
-                LOG.warning("State store Postgres state disabled: %s", error)
+                LOG.warning("State store Postgres disabled (%s)", type(error).__name__)
                 self.database_url = ""
                 return None
         if not self._pg_ready:
@@ -187,7 +187,7 @@ class JsonStateStore:
                 row = cur.fetchone()
             return row[0] if row else None
         except Exception as error:
-            LOG.warning("State store Postgres state load failed: %s", error)
+            LOG.warning("State store Postgres load failed (%s)", type(error).__name__)
             return None
 
     def _save_postgres(self, value: list[dict]):
@@ -203,7 +203,7 @@ class JsonStateStore:
                     (self.scope, self.key, json.dumps(value, separators=(",", ":"))),
                 )
         except Exception as error:
-            LOG.warning("State store Postgres state save failed: %s", error)
+            LOG.warning("State store Postgres save failed (%s)", type(error).__name__)
 
     def _store_key(self) -> str:
         return f"thalovant:{self.scope}:{self.key}"

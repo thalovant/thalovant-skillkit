@@ -77,3 +77,16 @@ def test_postgres_uses_existing_table_and_parameterized_scope(monkeypatch):
     assert "thalovant_skill_state" in sql
     assert values[:2] == ("speaker", "timers")
     assert json.loads(values[2]) == [{"id": "saved"}]
+
+
+def test_backend_error_messages_cannot_leak_credentials(monkeypatch, caplog):
+    store = make_store({"redis_url": "redis://example"})
+
+    class BrokenCache:
+        def get(self, key):
+            raise OSError("password=private-example")
+
+    monkeypatch.setattr(store, "_redis_client", lambda: BrokenCache())
+    assert store.load() is None
+    assert "OSError" in caplog.text
+    assert "private-example" not in caplog.text
