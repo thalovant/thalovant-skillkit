@@ -36,6 +36,7 @@ from typing import Any, Callable
 
 __all__ = [
     "WrittenForms",
+    "tidy_sentence",
     "date_text",
     "date_time_text",
     "duration_text",
@@ -68,6 +69,22 @@ def _babel_locale(lang: str) -> str:
 
 def _parser_lang(lang: str) -> str:
     return str(lang or "en-US").lower()
+
+
+#: Two full stops where a sentence meant one. Three is an ellipsis and
+#: belongs to whoever wrote it.
+_DOUBLED_STOP = re.compile(r"(?<!\.)\.\.(?!\.)")
+
+
+def tidy_sentence(text: str) -> str:
+    """Collapse the full stop a spoken time brings into the one after it.
+
+    "at seven a.m." dropped into a template that ends in a period of its
+    own gives "at seven a.m.." -- which no amount of care in either half
+    prevents, because neither knows about the other. Every skill that
+    renders a time into a sentence hits it, so the rule lives here.
+    """
+    return _DOUBLED_STOP.sub(".", text or "")
 
 
 def uses_24_hour_clock(lang: str) -> bool:
@@ -127,9 +144,13 @@ def time_text(value: datetime, lang: str, use_24hour: bool, *, written: bool = F
     try:
         from babel.core import UnknownLocaleError
         from babel.dates import format_time
-        return str(format_time(value, format="short", locale=_babel_locale(lang)) or "").strip()
+        # `short` is the locale's own preference, which is not what was
+        # asked: a caller that resolved `use_24hour` already has an answer
+        # and the fallback must not quietly overrule it.
+        pattern = "HH:mm" if use_24hour else "h:mm a"
+        return str(format_time(value, format=pattern, locale=_babel_locale(lang)) or "").strip()
     except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
-        return value.strftime("%H:%M")
+        return value.strftime("%H:%M" if use_24hour else "%I:%M %p").lstrip("0")
 
 
 def date_text(value: datetime, lang: str, now: datetime, *, written: bool = False) -> str:
@@ -164,9 +185,23 @@ def date_text(value: datetime, lang: str, now: datetime, *, written: bool = Fals
     try:
         nice_date = _loaded("nice_date", lambda: __import__(
             "ovos_date_parser", fromlist=["nice_date"]).nice_date)
-        return str(nice_date(value, lang=_parser_lang(lang), now=now) or "").strip()
+        text = str(nice_date(value, lang=_parser_lang(lang), now=now) or "").strip()
+        if text:
+            return text
     except _FORMATTER_ERRORS:
-        return ""
+        pass
+    # Never the empty string: a caller drops this straight into a sentence,
+    # and a formatter that failed would take the date out of the reply
+    # rather than announce itself.
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import format_date
+        text = str(format_date(value.date(), format="long", locale=_babel_locale(lang)) or "").strip()
+        if text:
+            return text
+    except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
+        pass
+    return value.date().isoformat()
 
 
 def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool = False) -> str:
@@ -191,13 +226,36 @@ def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool =
                 return template.format(formatted_date=day, formatted_time=clock)
         except (AttributeError, *_FORMATTER_ERRORS):
             pass
+    # Before joining them with a space: a language upstream has no template
+    # for still has a CLDR one, and it knows where the day goes. Japanese
+    # writes "2026/05/24 9:40:00", not "2026-05-24 9:40".
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import format_datetime
+        text = str(format_datetime(value, format="medium", locale=_babel_locale(lang)) or "").strip()
+        if text:
+            return text
+    except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
+        pass
     if day and clock:
         return f"{day} {clock}".strip()
     try:
         nice_date_time = _loaded("nice_date_time", lambda: __import__(
             "ovos_date_parser", fromlist=["nice_date_time"]).nice_date_time)
-        return str(nice_date_time(value, lang=_parser_lang(lang), now=now) or "").strip()
+        text = str(nice_date_time(value, lang=_parser_lang(lang), now=now) or "").strip()
+        if text:
+            return text
     except _FORMATTER_ERRORS:
+        pass
+    # A language upstream has no resources for at all -- Japanese has no
+    # date_time.json -- still has a CLDR date. Reaching the ISO string
+    # instead would print "2026-05-24 09:40" at somebody who writes
+    # "2026/05/24 9:40:00".
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import format_datetime
+        return str(format_datetime(value, format="medium", locale=_babel_locale(lang)) or "").strip()
+    except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
         return value.isoformat(sep=" ", timespec="minutes")
 
 
@@ -210,6 +268,12 @@ def duration_text(seconds: float, lang: str, *, written: bool = False) -> str:
         return str(nice_duration(total, lang=_parser_lang(lang), speech=not written) or "").strip()
     except _FORMATTER_ERRORS:
         pass
+    if written:
+        # `format_timedelta` says "5 minutes", which is the spoken answer
+        # under another name. What was asked for is a clock.
+        hours, rest = divmod(total, 3600)
+        minutes, seconds = divmod(rest, 60)
+        return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
     try:
         from babel.core import UnknownLocaleError
         from babel.dates import format_timedelta
@@ -251,6 +315,16 @@ class WrittenForms:
         pairs.append((spoken, written))
 
     @classmethod
+    def say(cls, spoken: str, written: str) -> str:
+        """Record the pair and hand back the spoken half.
+
+        The shape every caller wants: compose both, keep the one that goes
+        into the sentence, and leave the other where `render` will find it.
+        """
+        cls.remember(spoken, written)
+        return spoken
+
+    @classmethod
     def render(cls, spoken_reply: str) -> str:
         """`spoken_reply` with every recorded fragment written out instead."""
         text = spoken_reply or ""
@@ -288,7 +362,10 @@ def speak_with_written(skill: Any, reply: str, message: Any, lang: str, written:
     except AttributeError:
         speak_message = Message("speak", data)
     speak_message.context["skill_id"] = getattr(skill, "skill_id", "")
-    bus = getattr(skill, "bus", None)
+    # The raw attribute, not the `bus` property: on a skill built for a test
+    # without one, the property raises its way out of `getattr`'s default and
+    # the reply is lost. `date-time` reads it the same way.
+    bus = getattr(skill, "_bus", None) or getattr(skill, "bus", None)
     if bus is None:
         skill.speak(reply)
         return

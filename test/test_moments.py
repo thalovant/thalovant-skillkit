@@ -131,3 +131,69 @@ def test_an_identical_written_form_is_not_sent():
     speak_with_written(skill, "same", None, "en-US", written="same")
 
     assert "utterance_written" not in skill.sent[0].data
+
+
+def test_a_language_upstream_cannot_format_still_gets_its_own_date():
+    """Japanese has no `date_time.json`; CLDR still knows the date."""
+    value = datetime(2026, 5, 24, 9, 40)
+
+    assert date_time_text(value, "ja-JP", datetime(2026, 5, 24, 9, 30)) == "2026/05/24 9:40:00"
+
+
+def test_say_records_and_returns_the_spoken_half():
+    WrittenForms.reset()
+
+    assert WrittenForms.say("nine forty a.m.", "9:40 AM") == "nine forty a.m."
+    assert WrittenForms.render("at nine forty a.m.") == "at 9:40 AM"
+
+
+def test_a_skill_with_no_bus_still_speaks():
+    """A skill built for a test has no `_bus`; the reply must not vanish."""
+    class Bare:
+        skill_id = "bare"
+        def __init__(self): self.said = []
+        def speak(self, text): self.said.append(text)
+
+    skill = Bare()
+    speak_with_written(skill, "said", None, "en-US", written="written")
+
+    assert skill.said == ["said"]
+
+
+def test_a_spoken_time_does_not_end_a_sentence_twice():
+    """"at seven a.m." meeting a template that ends in a period of its own."""
+    from thalovant_skillkit.moments import tidy_sentence
+
+    assert tidy_sentence("Alarm set for tomorrow at seven a.m..") == "Alarm set for tomorrow at seven a.m."
+    # An ellipsis belongs to whoever wrote it.
+    assert tidy_sentence("Wait for it...") == "Wait for it..."
+    assert tidy_sentence("") == ""
+
+
+def test_the_clock_fallback_keeps_the_form_that_was_asked_for():
+    """A locale's own preference is not an answer to `use_24hour`."""
+    from unittest.mock import patch
+
+    value = datetime(2026, 5, 24, 21, 5)
+    with patch("thalovant_skillkit.moments._loaded", side_effect=ValueError("no resources")):
+        assert time_text(value, "en-US", True, written=True) == "21:05"
+        assert time_text(value, "en-US", False, written=True) == "9:05 PM"
+
+
+def test_a_date_that_cannot_be_phrased_is_still_a_date():
+    """Returning "" would take the date out of somebody's sentence."""
+    from unittest.mock import patch
+
+    value = datetime(2026, 5, 24, 9, 40)
+    with patch("thalovant_skillkit.moments._loaded", side_effect=ValueError("no resources")):
+        text = date_text(value, "en-US", value)
+
+    assert text and "2026" in text, text
+
+
+def test_a_written_duration_stays_a_clock_without_upstream():
+    from unittest.mock import patch
+
+    with patch("thalovant_skillkit.moments._loaded", side_effect=ValueError("no resources")):
+        assert duration_text(300, "en-US", written=True) == "5:00"
+        assert duration_text(3725, "en-US", written=True) == "1:02:05"
