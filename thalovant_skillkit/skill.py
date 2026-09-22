@@ -266,11 +266,44 @@ class _SkillPlumbing:
         return default if value is None else value
 
 
+class _ConverseEligibility:
+    """A `can_converse` that answers instead of raising.
+
+    ovos-workshop 9 made `can_converse` an abstractmethod whose body is
+    `raise NotImplementedError`. Nothing enforces it -- `OVOSSkill` is not an
+    ABC, so a subclass without it instantiates and loads perfectly -- and the
+    only thing that ever calls it is the `<skill_id>.converse.ping` handler.
+    So a skill that overrode `converse()` and not `can_converse()` loaded
+    fine, answered no ping, and its `converse()` was never called. It read as
+    a skill ignoring the answer to its own question.
+
+    That is not hypothetical twice over: `thalovant-skill-alarm` 0.1.17
+    shipped a `converse()` that never ran, and `thalovant-skill-reminder`
+    inherits this base today with the abstract method still in place.
+
+    **True is the honest default**, and it is what ovos-workshop 8 did: there
+    was no ping, `converse()` was simply called for every active skill and
+    decided for itself. Every skill here is written that way -- each one
+    opens `converse()` with its own guards and returns False when the turn is
+    not its own -- so answering the ping with True restores exactly the
+    behaviour the code was written against.
+
+    A subclass should still override this with a cheap, **pure** probe where
+    it can: the ping is put to every candidate in a round, including rounds
+    the skill will not win, so a real `converse()` dispatch is more work than
+    a question needs. It must have no side effects and must not raise; a
+    probe that throws takes the whole converse round with it.
+    """
+
+    def can_converse(self, message) -> bool:
+        return True
+
+
 class ThalovantSkill(_SkillPlumbing, OVOSSkill):
     """A skill that answers its own intents."""
 
 
-class ThalovantConversationalSkill(_SkillPlumbing, _ConversationalBase):
+class ThalovantConversationalSkill(_SkillPlumbing, _ConverseEligibility, _ConversationalBase):
     """A skill that keeps a conversation going after its first answer.
 
     `converse()` receives the next thing the person says while the skill is
@@ -377,7 +410,9 @@ class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
         return True
 
 
-class ThalovantConversationalFallbackSkill(ThalovantFallbackSkill, _ConversationalBase):
+class ThalovantConversationalFallbackSkill(
+    ThalovantFallbackSkill, _ConverseEligibility, _ConversationalBase
+):
     """A fallback skill that can also finish what it started.
 
     A skill that asks a question needs `converse()`, and a skill that answers

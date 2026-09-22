@@ -407,3 +407,36 @@ def test_the_combined_base_linearizes_without_a_broken_diamond():
     # here at all is most of the claim; this pins the shape it settled on.
     assert names[1] == "ThalovantFallbackSkill"
     assert names.count("OVOSSkill") == 1
+
+
+def test_conversational_bases_answer_the_converse_ping_instead_of_raising():
+    """A skill that overrides converse() must not be silently unreachable.
+
+    ovos-workshop 9 made `can_converse` an abstractmethod whose body raises.
+    Nothing enforces it -- OVOSSkill is not an ABC -- so a skill missing it
+    loads perfectly, answers no `<skill_id>.converse.ping`, and its
+    `converse()` is never called. thalovant-skill-alarm 0.1.17 shipped
+    exactly that, and thalovant-skill-reminder had it too.
+    """
+    from thalovant_skillkit.skill import (
+        ThalovantConversationalFallbackSkill,
+        ThalovantConversationalSkill,
+    )
+
+    for base in (ThalovantConversationalSkill, ThalovantConversationalFallbackSkill):
+        probe = base.can_converse
+        assert not getattr(probe, "__isabstractmethod__", False), base.__name__
+        # Answers rather than raising: the ping handler calls this directly,
+        # and an exception there kills the whole converse round.
+        assert probe(object(), None) is True, base.__name__
+
+
+def test_a_conversational_skill_can_still_narrow_the_probe():
+    """The default is permissive; a skill is expected to be able to refuse."""
+    from thalovant_skillkit.skill import ThalovantConversationalFallbackSkill
+
+    class Narrow(ThalovantConversationalFallbackSkill):
+        def can_converse(self, message) -> bool:
+            return False
+
+    assert Narrow.can_converse(object(), None) is False
