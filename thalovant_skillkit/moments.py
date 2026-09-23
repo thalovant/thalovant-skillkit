@@ -31,8 +31,9 @@ from __future__ import annotations
 
 import re
 import threading
+from collections.abc import Callable
 from datetime import datetime, timedelta
-from typing import Any, Callable
+from typing import Any
 
 __all__ = [
     "WrittenForms",
@@ -206,7 +207,9 @@ def date_text(value: datetime, lang: str, now: datetime, *, written: bool = Fals
     try:
         from babel.core import UnknownLocaleError
         from babel.dates import format_date
-        text = str(format_date(value.date(), format="long", locale=_babel_locale(lang)) or "").strip()
+        text = str(
+            format_date(value.date(), format="long", locale=_babel_locale(lang)) or ""
+        ).strip()
         if text:
             return text
     except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
@@ -214,7 +217,9 @@ def date_text(value: datetime, lang: str, now: datetime, *, written: bool = Fals
     return value.date().isoformat()
 
 
-def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool = False) -> str:
+def date_time_text(
+    value: datetime, lang: str, now: datetime, *, written: bool = False
+) -> str:
     """A day and a clock together, in the language's own order.
 
     The written form composes the two through upstream's per-language
@@ -249,7 +254,9 @@ def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool =
     try:
         from babel.core import UnknownLocaleError
         from babel.dates import format_datetime
-        text = str(format_datetime(value, format="medium", locale=_babel_locale(lang)) or "").strip()
+        text = str(
+            format_datetime(value, format="medium", locale=_babel_locale(lang)) or ""
+        ).strip()
         if text:
             return text
     except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
@@ -271,7 +278,9 @@ def date_time_text(value: datetime, lang: str, now: datetime, *, written: bool =
     try:
         from babel.core import UnknownLocaleError
         from babel.dates import format_datetime
-        return str(format_datetime(value, format="medium", locale=_babel_locale(lang)) or "").strip()
+        return str(
+            format_datetime(value, format="medium", locale=_babel_locale(lang)) or ""
+        ).strip()
     except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
         return value.isoformat(sep=" ", timespec="minutes")
 
@@ -360,7 +369,9 @@ class WrittenForms:
         return text
 
 
-def speak_with_written(skill: Any, reply: str, message: Any, lang: str, written: str | None = None) -> None:
+def speak_with_written(
+    skill: Any, reply: str, message: Any, lang: str, written: str | None = None
+) -> None:
     """Say `reply`, and carry how it should be read beside it.
 
     `utterance_written` is additive: a device with no screen never looks at

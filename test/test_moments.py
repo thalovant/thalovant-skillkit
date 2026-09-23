@@ -19,7 +19,10 @@ NOW = datetime(2026, 9, 22, 18, 59)
 SPELLED = ("twenty-eighth", "the twenty", "zero zero", "hundred", "o'clock")
 
 
-@pytest.mark.parametrize("lang,expected", [("en-US", False), ("en-CA", False), ("fr-FR", True), ("de-DE", True)])
+@pytest.mark.parametrize(
+    "lang,expected",
+    [("en-US", False), ("en-CA", False), ("fr-FR", True), ("de-DE", True)],
+)
 def test_the_locale_decides_the_clock(lang, expected):
     """CLDR records it; no list of languages is kept here."""
     assert uses_24_hour_clock(lang) is expected
@@ -137,7 +140,9 @@ def test_a_language_upstream_cannot_format_still_gets_its_own_date():
     """Japanese has no `date_time.json`; CLDR still knows the date."""
     value = datetime(2026, 5, 24, 9, 40)
 
-    assert date_time_text(value, "ja-JP", datetime(2026, 5, 24, 9, 30)) == "2026/05/24 9:40:00"
+    assert date_time_text(
+        value, "ja-JP", datetime(2026, 5, 24, 9, 30)
+    ) == "2026/05/24 9:40:00"
 
 
 def test_say_records_and_returns_the_spoken_half():
@@ -164,7 +169,8 @@ def test_a_spoken_time_does_not_end_a_sentence_twice():
     """"at seven a.m." meeting a template that ends in a period of its own."""
     from thalovant_skillkit.moments import tidy_sentence
 
-    assert tidy_sentence("Alarm set for tomorrow at seven a.m..") == "Alarm set for tomorrow at seven a.m."
+    doubled = "Alarm set for tomorrow at seven a.m.."
+    assert tidy_sentence(doubled) == "Alarm set for tomorrow at seven a.m."
     # An ellipsis belongs to whoever wrote it.
     assert tidy_sentence("Wait for it...") == "Wait for it..."
     assert tidy_sentence("") == ""
