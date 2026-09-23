@@ -220,3 +220,47 @@ def test_a_reply_that_never_ended_in_a_stop_does_not_gain_one():
     WrittenForms.say("nine a.m.", "9:00 AM")
 
     assert WrittenForms.render("at nine a.m. sharp") == "at 9:00 AM sharp"
+
+
+KOREAN_RULES = {"time_pattern": "a h:mm", "time_pattern_24": "HH:mm", "am": "오전", "pm": "오후"}
+
+
+def test_a_locale_may_carry_its_own_clock_rules():
+    """Korean puts the marker first. CLDR's default would not."""
+    value = datetime(2026, 8, 27, 22, 18)
+
+    assert time_text(value, "ko-KR", False, written=True) == "10:18 PM"
+    assert time_text(value, "ko-KR", False, written=True, rules=KOREAN_RULES) == "오후 10:18"
+
+
+def test_the_marker_is_substituted_in_place_not_appended():
+    """Placement is part of the locale; appending would move it."""
+    value = datetime(2026, 8, 27, 9, 18)
+
+    assert time_text(value, "ko-KR", False, written=True, rules=KOREAN_RULES) == "오전 9:18"
+
+
+def test_rules_without_a_marker_keep_the_cldr_one():
+    value = datetime(2026, 8, 27, 22, 18)
+    rules = {"time_pattern": "h:mm a", "am": "", "pm": ""}
+
+    assert time_text(value, "en-US", False, written=True, rules=rules) == "10:18 PM"
+
+
+def test_a_caller_can_refuse_the_relative_day():
+    """"today" mid-sentence reads "in 1 day until Today"."""
+    value = datetime(2026, 8, 27, 9, 18)
+
+    assert date_text(value, "en-US", value, written=True) == "today"
+    assert date_text(value, "en-US", value, written=True, relative=False) == "Thursday, 27th"
+
+
+def test_a_locale_may_carry_its_own_date_rules():
+    value = datetime(2026, 8, 27, 9, 18)
+    rules = {"date_pattern": "full", "date_pattern_plain": "long"}
+
+    full = date_text(value, "en-US", value, written=True, rules=rules, relative=False)
+    plain = date_text(value, "en-US", value, written=True, rules=rules, plain=True, relative=False)
+
+    assert full.startswith("Thursday"), full
+    assert not plain.startswith("Thursday"), plain

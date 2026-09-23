@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -120,13 +120,24 @@ def english_ordinal(day: int) -> str:
     return f"{day}{ {1: 'st', 2: 'nd', 3: 'rd'}.get(day % 10, 'th') }"
 
 
-def time_text(value: datetime, lang: str, use_24hour: bool, *, written: bool = False) -> str:
+def time_text(
+    value: datetime,
+    lang: str,
+    use_24hour: bool,
+    *,
+    written: bool = False,
+    rules: Mapping[str, Any] | None = None,
+) -> str:
     """A clock, said or written.
 
     Written is the same upstream function's other form: "00:00", "9:40 AM".
     Spoken is what it says by default -- "nine forty a.m.", "midnight" --
     which is what a voice should say and what TTS reads without stumbling.
     """
+    if written and rules:
+        written_by_rule = _time_by_rule(value, lang, use_24hour, rules)
+        if written_by_rule:
+            return written_by_rule
     try:
         nice_time = _loaded("nice_time", lambda: __import__(
             "ovos_date_parser", fromlist=["nice_time"]).nice_time)
@@ -154,6 +165,56 @@ def time_text(value: datetime, lang: str, use_24hour: bool, *, written: bool = F
         return value.strftime("%H:%M" if use_24hour else "%I:%M %p").lstrip("0")
 
 
+def _time_by_rule(
+    value: datetime, lang: str, use_24hour: bool, rules: Mapping[str, Any]
+) -> str:
+    """A clock written the way this locale writes one.
+
+    CLDR's own pattern is the default, and for most locales it is right.
+    Some carry their own: a pattern that puts the marker first, or a marker
+    CLDR does not use. The marker is substituted **in place** rather than
+    appended, because its position is part of the locale -- Korean writes
+    "오후 10:18", not "10:18 오후".
+    """
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import format_time
+    except ImportError:  # pragma: no cover - babel is a declared dependency
+        return ""
+    locale = _babel_locale(lang)
+    key = "time_pattern_24" if use_24hour else "time_pattern"
+    pattern = str(rules.get(key) or "").strip() or "short"
+    try:
+        rendered = format_time(value, format=pattern, locale=locale)
+    except (UnknownLocaleError, ValueError, KeyError, TypeError):
+        return ""
+    marker = str(rules.get("pm" if value.hour >= 12 else "am") or "").strip()
+    if not marker:
+        return rendered
+    try:
+        cldr_marker = format_time(value, format="a", locale=locale)
+    except (UnknownLocaleError, ValueError, KeyError, TypeError):
+        return rendered
+    return rendered.replace(cldr_marker, marker) if cldr_marker else rendered
+
+
+def _date_by_rule(value: datetime, lang: str, rules: Mapping[str, Any], plain: bool) -> str:
+    """A date written the way this locale writes one."""
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import format_date
+    except ImportError:  # pragma: no cover - babel is a declared dependency
+        return ""
+    key = "date_pattern_plain" if plain else "date_pattern"
+    pattern = str(rules.get(key) or "").strip() or ("long" if plain else "full")
+    try:
+        return str(
+            format_date(value.date(), format=pattern, locale=_babel_locale(lang)) or ""
+        ).strip()
+    except (UnknownLocaleError, ValueError, KeyError, TypeError):
+        return ""
+
+
 def _upstream_date(value: datetime, lang: str, now: datetime) -> str:
     """What `nice_date` says, or "" when it has nothing for this language."""
     try:
@@ -164,7 +225,16 @@ def _upstream_date(value: datetime, lang: str, now: datetime) -> str:
         return ""
 
 
-def date_text(value: datetime, lang: str, now: datetime, *, written: bool = False) -> str:
+def date_text(
+    value: datetime,
+    lang: str,
+    now: datetime,
+    *,
+    written: bool = False,
+    rules: Mapping[str, Any] | None = None,
+    plain: bool = False,
+    relative: bool = True,
+) -> str:
     """A day, said or written.
 
     Both forms keep "today" and "tomorrow" when the date is that near. It
@@ -181,7 +251,16 @@ def date_text(value: datetime, lang: str, now: datetime, *, written: bool = Fals
     English reads wrong bare, so it takes the ordinal it would be read with
     anyway: "Monday, 28th". The other locales use a cardinal there already.
     """
-    if written and abs((value.date() - now.date()).days) > 1:
+    if written and rules:
+        written_by_rule = _date_by_rule(value, lang, rules, plain)
+        if written_by_rule:
+            return written_by_rule
+    # `relative=False` is for a caller whose "today" and "tomorrow" are
+    # sentence-initial words in every locale it ships: reused mid-sentence
+    # they read "in 1 day until Tomorrow", and a reader wants the concrete
+    # date anyway.
+    near = relative and abs((value.date() - now.date()).days) <= 1
+    if written and not near:
         try:
             from babel.core import UnknownLocaleError
             from babel.dates import format_date
