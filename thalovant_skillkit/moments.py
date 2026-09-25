@@ -455,31 +455,14 @@ def speak_with_written(
 
     `utterance_written` is additive: a device with no screen never looks at
     it, and the listener forwards the skill's data dict whole, so it reaches
-    one that does without anything in between having to know.
+    one that does without anything in between having to know. The message
+    itself is built by `speech.speak_to`, the one place a skill's reply is
+    assembled; a skill built for a test without a bus falls back to its own
+    `speak` so the reply does not vanish.
     """
-    data: dict[str, Any] = {
-        "utterance": reply,
-        "expect_response": False,
-        "meta": {"skill": getattr(skill, "skill_id", "")},
-        "lang": lang,
-    }
-    if written and written != reply:
-        data["utterance_written"] = written
-    try:
-        from ovos_bus_client.message import Message
-    except ImportError:  # pragma: no cover - the bus client is always present
+    from .speech import bus_of, speak_to
+
+    if bus_of(skill) is None:
         skill.speak(reply)
         return
-    try:
-        speak_message = message.forward("speak", data)
-    except AttributeError:
-        speak_message = Message("speak", data)
-    speak_message.context["skill_id"] = getattr(skill, "skill_id", "")
-    # The raw attribute, not the `bus` property: on a skill built for a test
-    # without one, the property raises its way out of `getattr`'s default and
-    # the reply is lost. `date-time` reads it the same way.
-    bus = getattr(skill, "_bus", None) or getattr(skill, "bus", None)
-    if bus is None:
-        skill.speak(reply)
-        return
-    bus.emit(speak_message)
+    speak_to(skill, message, reply, lang=lang, written=written)

@@ -497,3 +497,24 @@ def test_conversational_playback_keeps_both_native_interfaces():
             assert hasattr(combined, name), name
     assert combined.can_converse(object(), None) is True
     assert sum(base.__name__ == "OVOSSkill" for base in combined.__mro__) == 1
+
+
+
+def test_speak_to_answers_the_message_it_was_given(demo):
+    """Not `self.speak`: that speaks in `self.lang` to whatever message the
+    call stack turns up, which is the wrong room for a converse turn."""
+    from thalovant_skillkit.speech import speech_topic
+    from thalovant_skillkit.testing import FakeBus, message
+
+    skill = demo()
+    skill._bus = FakeBus()
+    incoming = message("des nouvelles", lang="fr-FR", session={"session_id": "salon"})
+
+    sent = skill.speak_to(incoming, "Les nouvelles sont calmes.", expect_response=True)
+
+    assert sent.msg_type == speech_topic()
+    assert sent.data["lang"] == "fr-FR"
+    assert sent.data["expect_response"] is True
+    assert sent.context["session"]["session_id"] == "salon"
+    assert sent.context["skill_id"] == skill.skill_id
+    assert skill._bus.emitted == [sent]
