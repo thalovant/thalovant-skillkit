@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.21.1 (2026-09-25)
+
+- `speak_to` asks the installed workshop's skill module which topic its own
+  `speak()` emits on, instead of assuming the spec topic whenever the spec
+  package is importable. Workshop 8 forwards on legacy `speak` even with
+  `ovos-spec-tools` installed beside it, and a reply on the other topic is a
+  reply nobody hears. Found by review on 0.21.0.
+- `speak_to` checks for a bus before building the message, so a reply that
+  cannot be sent fails first and builds nothing.
+
 ## 0.21.0 (2026-09-25)
 
 - Add `self.speak_to(message, text, *, lang=None, expect_response=False,

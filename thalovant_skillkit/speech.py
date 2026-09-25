@@ -22,7 +22,24 @@ from .message import message_lang
 
 
 def speech_topic() -> str:
-    """The topic the installed OVOS speaks on: the spec's, or the legacy one."""
+    """The topic the installed workshop's own `speak()` emits on.
+
+    ovos-workshop 9 speaks on the spec topic (`ovos.utterance.speak`) and
+    imports `SpecMessage` into its skill module to do it; workshop 8 speaks
+    on the legacy `speak`, whether or not the spec package happens to be
+    installed beside it. So the module that owns `speak()` is asked, not the
+    spec package: a reply on a topic the installed listeners do not hear is
+    a reply nobody hears.
+    """
+    try:
+        from ovos_workshop.skills import ovos as workshop
+    except Exception:  # noqa: BLE001 - no workshop: fall through to the spec package
+        workshop = None
+    if workshop is not None:
+        spec = getattr(workshop, "SpecMessage", None)
+        if spec is None:
+            return "speak"
+        return str(getattr(spec.SPEAK, "value", spec.SPEAK))
     try:
         from ovos_spec_tools.messages import SpecMessage
     except Exception:  # noqa: BLE001 - older stacks predate the spec package
@@ -68,6 +85,11 @@ def speak_to(
     """
     if not text:
         return None
+    # Fail before building anything: a reply that cannot be sent should not
+    # cost a message, and the reason should be the first thing reported.
+    bus = bus_of(skill)
+    if bus is None:
+        raise RuntimeError("speak_to needs a bus: this skill is not bound to one")
     skill_id = getattr(skill, "skill_id", "") or ""
     data: dict[str, Any] = {
         "utterance": text,
@@ -88,8 +110,5 @@ def speak_to(
 
         speech = Message(topic, data, dict(getattr(message, "context", None) or {}))
     speech.context["skill_id"] = skill_id
-    bus = bus_of(skill)
-    if bus is None:
-        raise RuntimeError("speak_to needs a bus: this skill is not bound to one")
     bus.emit(speech)
     return speech
