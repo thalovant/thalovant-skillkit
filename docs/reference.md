@@ -196,8 +196,8 @@ Use native `self.speak_dialog` for OVOS's speech renderer and delivery behavior.
 meta=None)` speaks `text` to whoever sent `message`: it forwards that message,
 so the reply keeps its session, source and destination, and speaks in the
 message's language unless `lang` is given. It uses the topic the installed
-workshop's own `speak` uses (`ovos.utterance.speak`, or legacy `speak` without
-the spec package) and stamps `skill_id` into the context. It returns the emitted
+workshop's own `speak` uses (`ovos.utterance.speak` on workshop 9, legacy `speak`
+on workshop 8) and stamps `skill_id` into the context. It returns the emitted
 message, or `None` for empty text, and raises `RuntimeError` on a skill with no
 bus. Use it from `converse()`, stop hooks and any handler that answers a room
 other than the one `self.lang` describes; `self.speak` remains the native call

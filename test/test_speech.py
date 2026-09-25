@@ -20,6 +20,7 @@ class _Skill:
 
 
 def test_it_speaks_on_the_topic_the_installed_ovos_listens_on():
+    """The spec topic on workshop 9, legacy `speak` on workshop 8."""
     skill = _Skill()
 
     sent = speak_to(skill, message("bonjour", lang="fr-FR"), "Salut")
@@ -30,6 +31,7 @@ def test_it_speaks_on_the_topic_the_installed_ovos_listens_on():
 
 
 def test_the_reply_keeps_the_callers_session_and_language():
+    """Forwarded, not rebuilt: the session and the message's language travel."""
     skill = _Skill()
     incoming = message("bonjour", lang="fr-FR", session={"session_id": "alice"})
 
@@ -46,6 +48,7 @@ def test_the_reply_keeps_the_callers_session_and_language():
 
 
 def test_an_explicit_language_and_written_form_travel_with_it():
+    """`lang`, `written` and `meta` are additive on the same message."""
     skill = _Skill()
 
     sent = speak_to(skill, message("hi"), "nine forty a.m.", lang="en-GB", written="9:40 AM",
@@ -57,6 +60,7 @@ def test_an_explicit_language_and_written_form_travel_with_it():
 
 
 def test_an_identical_written_form_is_not_sent_twice():
+    """A screen gets nothing extra when the written form is the spoken one."""
     skill = _Skill()
 
     sent = speak_to(skill, message("hi"), "same", written="same")
@@ -65,6 +69,7 @@ def test_an_identical_written_form_is_not_sent_twice():
 
 
 def test_empty_text_says_nothing():
+    """No reply is not an empty reply."""
     skill = _Skill()
 
     assert speak_to(skill, message("hi"), "") is None
@@ -72,8 +77,42 @@ def test_empty_text_says_nothing():
 
 
 def test_a_skill_without_a_bus_is_told_so_instead_of_losing_the_reply():
+    """The one place this happens is a test that forgot to bind a bus."""
     class Unbound:
         skill_id = "unbound"
 
     with pytest.raises(RuntimeError, match="bus"):
         speak_to(Unbound(), message("hi"), "lost?")
+
+
+def test_the_topic_follows_the_workshop_that_will_deliver_it(monkeypatch):
+    """Workshop 8 forwards on `speak`; a spec package beside it changes nothing."""
+    import sys
+    import types
+
+    legacy = types.ModuleType("ovos_workshop.skills.ovos")  # no SpecMessage attribute
+    monkeypatch.setitem(sys.modules, "ovos_workshop", types.ModuleType("ovos_workshop"))
+    skills = types.ModuleType("ovos_workshop.skills")
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills", skills)
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills.ovos", legacy)
+    skills.ovos = legacy
+
+    assert speech_topic() == "speak"
+
+    class _Spec:
+        SPEAK = "ovos.utterance.speak"
+
+    legacy.SpecMessage = _Spec
+    assert speech_topic() == "ovos.utterance.speak"
+
+
+def test_a_failed_reply_leaves_the_question_untouched():
+    """No bus means no message was built, so nothing was stamped anywhere."""
+    class Unbound:
+        skill_id = "unbound"
+
+    incoming = message("hi", session={"session_id": "alice"})
+    with pytest.raises(RuntimeError):
+        speak_to(Unbound(), incoming, "lost?")
+
+    assert "skill_id" not in incoming.context
