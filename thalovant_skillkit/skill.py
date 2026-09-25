@@ -64,6 +64,7 @@ from .locale import SkillResources
 from .message import context_of, message_lang, utterance
 from .message import location as _location
 from .selection import ShuffleBagPool
+from .speech import speak_to as _speak_to
 from .text import fold
 
 
@@ -265,6 +266,21 @@ class _SkillPlumbing:
 
         return self.speak_dialog(key, data, expect_response=expect_response, wait=wait,
                                  render_callback=choose_line)
+
+    def speak_to(self, message: Any, text: str, *, lang: str | None = None,
+                 expect_response: bool = False, written: str | None = None,
+                 meta: dict | None = None):
+        """Say `text` to whoever sent `message`, in their language.
+
+        `self.speak` finds the message it answers by walking the call stack and
+        speaks in `self.lang`, which is wrong for a converse turn or a stop
+        hook, and wrong on a hub answering two rooms in two languages. This
+        forwards the message you were given, so the reply keeps its session
+        and reaches the room that asked. Returns the emitted message, or None
+        for empty text.
+        """
+        return _speak_to(self, message, text, lang=lang or self.lang_of(message),
+                         expect_response=expect_response, written=written, meta=meta)
 
     # -- the answer -----------------------------------------------------------
 

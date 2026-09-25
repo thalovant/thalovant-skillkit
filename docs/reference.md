@@ -192,6 +192,18 @@ the **first** line, does not expand literal `\n`, and catches only missing
 format arguments (`KeyError`/`IndexError`), not malformed braces (`ValueError`).
 Use native `self.speak_dialog` for OVOS's speech renderer and delivery behavior.
 
+`self.speak_to(message, text, *, lang=None, expect_response=False, written=None,
+meta=None)` speaks `text` to whoever sent `message`: it forwards that message,
+so the reply keeps its session, source and destination, and speaks in the
+message's language unless `lang` is given. It uses the topic the installed
+workshop's own `speak` uses (`ovos.utterance.speak`, or legacy `speak` without
+the spec package) and stamps `skill_id` into the context. It returns the emitted
+message, or `None` for empty text, and raises `RuntimeError` on a skill with no
+bus. Use it from `converse()`, stop hooks and any handler that answers a room
+other than the one `self.lang` describes; `self.speak` remains the native call
+for a handler answering the message it was handed. `speech.speak_to(skill,
+message, text, ...)` is the same function for skills on other bases.
+
 `self.setting(key, default=None)` returns the default for unreadable settings,
 missing keys or a stored `None`. `False`, `0` and `""` are retained.
 `preview_reply(utterance="", lang=None, context=None)` calls your text-only

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.21.0 (2026-09-25)
+
+- Add `self.speak_to(message, text, *, lang=None, expect_response=False,
+  written=None, meta=None)` on every SkillKit base, and `speech.speak_to(skill,
+  message, text, ...)` for skills on other bases. It forwards the message you
+  were given, so the reply keeps that message's session and reaches the room
+  that asked, in that message's language. Every game in the fleet and the quiz
+  tutorial were building this message by hand; `self.speak` cannot do it,
+  because it walks the call stack for a message and speaks in `self.lang`.
+- `moments.speak_with_written` now builds its message through the same
+  primitive, which means it speaks on the installed workshop's spec topic
+  (`ovos.utterance.speak`) instead of the legacy `speak` when the spec
+  package is present. The fallback for a test skill without a bus is unchanged.
+
 ## 0.18.0 (2026-09-22)
 
 - Share bounded network reads, context-local reply deadlines and per-URL failure
