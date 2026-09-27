@@ -34,6 +34,16 @@
   inherits the base locale's twin for that dialog.
 - `FakeBus.spoken_ssml()` and `CapturedTurn.spoken_ssml` expose the markup sent
   with each sentence, lined up with `spoken`.
+- Markup written as a whole `<speak xml:lang="...">` document, in a twin or a
+  string, gets one root when it is sent: the language becomes a `<lang>` inside
+  it. It used to be nested in a second `<speak>`, which SSML forbids. Found by
+  review on this release.
+- `speech_topic()`, which `speak_to` and the markup path both use, now calls the
+  installed `OVOSSkill.speak` once on a stand-in skill and uses the topic it
+  emitted. It no longer infers it from what the workshop module imports. Checked
+  on ovos-workshop 8.0.0 (`speak`, with ovos-spec-tools 1.13 installed beside it),
+  9.8.6a2 and 9.8.9a2 (`ovos.utterance.speak`). This closes the review finding on
+  0.21.0.
 
 ## 0.21.1 (2026-09-25)
 

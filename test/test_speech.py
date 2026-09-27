@@ -166,3 +166,48 @@ def test_the_written_form_and_the_markup_travel_together():
     assert sent.data["utterance_written"] == "At 9:40 AM"
     assert sent.data["utterance_ssml"] == (
         '<speak>At <emphasis level="moderate">nine forty</emphasis> a.m.</speak>')
+
+
+def test_the_topic_is_what_the_installed_speak_emits():
+    """Asked of `OVOSSkill.speak` itself: workshop 8 says `speak` even with
+    the spec package installed beside it, workshop 9 the spec topic."""
+    from ovos_workshop.skills.ovos import OVOSSkill
+
+    from thalovant_skillkit import speech
+
+    assert speech.speech_topic() == speech._observed_topic(OVOSSkill.speak)
+
+
+def test_what_speak_emits_beats_what_its_module_imports(monkeypatch):
+    """A workshop that imports SpecMessage but still speaks on `speak` is heard
+    on `speak`; one whose speak() cannot be called is read from its module."""
+    import sys
+    import types
+
+    from ovos_bus_client.message import Message
+
+    from thalovant_skillkit import speech
+
+    class _Spec:
+        SPEAK = "ovos.utterance.speak"
+
+    class LegacySpeaker:
+        def speak(self, utterance, expect_response=False, wait=False, meta=None):
+            self.bus.emit(Message("speak", {"utterance": utterance}))
+
+    class Unprobeable:
+        def speak(self, utterance, expect_response=False, wait=False, meta=None):
+            raise RuntimeError("needs a real skill")
+
+    module = types.ModuleType("ovos_workshop.skills.ovos")
+    module.SpecMessage = _Spec
+    monkeypatch.setitem(sys.modules, "ovos_workshop", types.ModuleType("ovos_workshop"))
+    skills = types.ModuleType("ovos_workshop.skills")
+    skills.ovos = module
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills", skills)
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills.ovos", module)
+
+    module.OVOSSkill = LegacySpeaker
+    assert speech.speech_topic() == "speak"
+    module.OVOSSkill = Unprobeable
+    assert speech.speech_topic() == "ovos.utterance.speak"

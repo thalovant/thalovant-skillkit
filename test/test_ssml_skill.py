@@ -14,7 +14,7 @@ import pytest
 
 from thalovant_skillkit.checks import check_all
 from thalovant_skillkit.speech import speech_topic
-from thalovant_skillkit.ssml import Speech, pause, say
+from thalovant_skillkit.ssml import Speech, pause, say, validate
 from thalovant_skillkit.testing_ovos import skill_harness
 
 FIXTURE = Path(__file__).parent / "fixtures" / "thalovant-skill-punchline"
@@ -298,3 +298,23 @@ def test_a_dialog_without_a_twin_anywhere_costs_one_lookup(punchline, monkeypatc
 
     assert [m.data["utterance"] for m in heard] == ["Hello Ada.", "Hello Ada."]
     assert harness.skill.locale_resources._twin_cache == {"greeting": False}
+
+
+def test_a_twin_written_as_a_whole_document_is_not_wrapped_twice(punchline):
+    """`<speak xml:lang>` around a twin line: one root, the language kept."""
+    with _live(punchline) as harness:
+        heard = _said(harness)
+        _turn(harness, lambda message: harness.skill.cheer())
+        _turn(harness, lambda message: harness.skill.speak(
+            "<speak xml:lang='fr-FR'>Bonjour <break/> toi.</speak>"))
+
+    cheer, guarded = (m.data for m in heard)
+    assert cheer["utterance"] == "Hooray, you did it!"
+    assert cheer["utterance_ssml"] == ('<speak><lang xml:lang="en-US"><emphasis level="strong">'
+                                       "Hooray</emphasis>, you did it!</lang></speak>")
+    assert guarded["utterance"] == "Bonjour toi."
+    assert guarded["utterance_ssml"] == (
+        '<speak><lang xml:lang="fr-FR">Bonjour <break/> toi.</lang></speak>')
+    for data in (cheer, guarded):
+        assert data["utterance_ssml"].count("<speak") == 1
+        assert validate(data["utterance_ssml"]) == []

@@ -6,6 +6,7 @@ a coffee with the French said in French. Each shows one way to add markup:
 * `joke` has a `.ssml` twin in English and none in French, so English
   sessions hear the pause and French ones hear the plain line.
 * `code` has no twin: the value is marked up, in every language.
+* `cheer` has a twin written as a whole `<speak xml:lang>` document.
 * `greeting` has neither, and is spoken exactly as OVOS speaks any dialog.
 * `order_coffee` builds its sentence in Python.
 """
@@ -24,6 +25,9 @@ class PunchlineSkill(ThalovantFallbackSkill):
 
     def tell_code(self, code: str) -> None:
         self.speak_dialog("code", {"code": spell(code)})
+
+    def cheer(self) -> None:
+        self.speak_dialog("cheer")
 
     def greet(self, name: str) -> None:
         self.speak_dialog("greeting", {"name": name})

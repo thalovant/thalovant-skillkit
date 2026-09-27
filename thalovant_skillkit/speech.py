@@ -19,6 +19,8 @@ The same message carries speech markup: `utterance_ssml` beside the plain
 """
 from __future__ import annotations
 
+from functools import lru_cache
+from types import SimpleNamespace
 from typing import Any
 
 from .message import message_lang
@@ -28,18 +30,29 @@ from .ssml import SSML_KEY, speech_parts
 def speech_topic() -> str:
     """The topic the installed workshop's own `speak()` emits on.
 
-    ovos-workshop 9 speaks on the spec topic (`ovos.utterance.speak`) and
-    imports `SpecMessage` into its skill module to do it; workshop 8 speaks
-    on the legacy `speak`, whether or not the spec package happens to be
-    installed beside it. So the module that owns `speak()` is asked, not the
-    spec package: a reply on a topic the installed listeners do not hear is
-    a reply nobody hears.
+    ovos-workshop 9 speaks on the spec topic (`ovos.utterance.speak`);
+    workshop 8 speaks on the legacy `speak`, whether or not the spec package
+    is installed beside it, and hubs run with `OVOS_BUS_EMIT_LEGACY=false`,
+    so nothing mirrors one onto the other. A reply on a topic the installed
+    listeners do not hear is a reply nobody hears.
+
+    So the installed `OVOSSkill.speak` is asked: it is called once, on a
+    stand-in skill whose bus only records, and the topic it emitted is the
+    answer for the life of the process. No version number is compared, and
+    nothing reaches a real bus. If that call cannot be made, the module that
+    owns `speak()` is read instead -- workshop 9 imports `SpecMessage` into
+    it, workshop 8 does not -- and without a workshop, the spec package.
     """
     try:
         from ovos_workshop.skills import ovos as workshop
     except Exception:  # noqa: BLE001 - no workshop: fall through to the spec package
         workshop = None
     if workshop is not None:
+        skill_class = getattr(workshop, "OVOSSkill", None)
+        speak = getattr(skill_class, "speak", None)
+        observed = _observed_topic(speak) if callable(speak) else None
+        if observed:
+            return observed
         spec = getattr(workshop, "SpecMessage", None)
         if spec is None:
             return "speak"
@@ -49,6 +62,30 @@ def speech_topic() -> str:
     except Exception:  # noqa: BLE001 - older stacks predate the spec package
         return "speak"
     return str(getattr(SpecMessage.SPEAK, "value", SpecMessage.SPEAK))
+
+
+class _RecordingBus:
+    def __init__(self):
+        self.emitted: list[Any] = []
+
+    def emit(self, message: Any) -> None:
+        self.emitted.append(message)
+
+
+@lru_cache(maxsize=4)
+def _observed_topic(speak) -> str | None:
+    """The topic `speak` emits on, seen by calling it once, or None."""
+    bus = _RecordingBus()
+    stand_in = SimpleNamespace(skill_id="thalovant-skillkit.topic-probe", lang="en-US", bus=bus)
+    try:
+        speak(stand_in, "topic probe")
+    except Exception:  # noqa: BLE001 - an unexpected workshop: read its module instead
+        return None
+    if len(bus.emitted) != 1:
+        return None
+    topic = getattr(bus.emitted[0], "msg_type", None)
+    topic = getattr(topic, "value", topic)
+    return str(topic) if topic else None
 
 
 def bus_of(skill: Any):

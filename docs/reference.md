@@ -203,7 +203,10 @@ message's language unless `lang` is given. It uses the topic the installed
 workshop's own `speak` uses (`ovos.utterance.speak` on workshop 9, legacy `speak`
 on workshop 8) and stamps `skill_id` into the context. It returns the emitted
 message, or `None` for empty text, and raises `RuntimeError` on a skill with no
-bus. Use it from `converse()`, stop hooks and any handler that answers a room
+bus. The topic is found once per process by calling the installed
+`OVOSSkill.speak` on a stand-in skill whose bus only records, so it is whatever
+that workshop's own `speak` emits; hubs run `OVOS_BUS_EMIT_LEGACY=false`, so
+nothing mirrors one topic onto the other. Use it from `converse()`, stop hooks and any handler that answers a room
 other than the one `self.lang` describes; `self.speak` remains the native call
 for a handler answering the message it was handed. `speech.speak_to(skill,
 message, text, ...)` is the same function for skills on other bases. `wait`
@@ -302,7 +305,7 @@ parse loses its tags and keeps its words.
 
 | Tag | Attributes |
 |---|---|
-| `<speak>` | `xml:lang`, around the whole line only |
+| `<speak>` | `xml:lang`, around the whole line only. It is sent as a `<lang>` inside the one `<speak>` the message gets, since SSML forbids nesting. |
 | `<break>` | `time` (`500ms`, `1s`, at most 10 seconds) or `strength` |
 | `<p>`, `<s>` | none |
 | `<prosody>` | `rate` (named or a percentage), `volume` (named or dB) |

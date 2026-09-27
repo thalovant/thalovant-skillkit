@@ -102,7 +102,8 @@ _TAG = re.compile(
 _ANY_TAG = re.compile(r"<[^<>]*>")
 # `<amazon:effect>` and friends: a namespace prefix nobody declares.
 _PREFIXED = re.compile(r"<\s*/?\s*([A-Za-z][\w.-]*):([\w.-]+)")
-_SPEAK_ONLY = re.compile(r"^\s*<speak\s*>(.*)</speak>\s*$", re.DOTALL)
+_SPEAK_ROOT = re.compile(r"^\s*<speak(\s[^<>]*)?>(.*)</speak>\s*$", re.DOTALL)
+_XML_LANG_ATTRIBUTE = re.compile(r"""\bxml:lang\s*=\s*(["'])(.*?)\1""")
 _DECLARATION = re.compile(r"^\s*<\?xml[^>]*\?>")
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s)\s*$")
 _PERCENT = re.compile(r"^[+-]?\d+(?:\.\d+)?%$")
@@ -132,13 +133,23 @@ def looks_like_ssml(text: Any) -> bool:
 
 
 def _inner(ssml: str) -> str:
-    """The markup without an XML declaration or a bare `<speak>` around it.
+    """The markup without an XML declaration or the `<speak>` around it.
 
-    A `<speak>` that carries attributes is kept: it is read as a container.
+    `utterance_ssml` gets exactly one `<speak>`, added when it is sent, so a
+    root the author or a service wrote is taken off here rather than nested
+    inside it, which SSML forbids. Its `xml:lang` is kept as a `<lang>`
+    around the words, which says the same thing; `version` and `xmlns` have
+    nothing to say once the words are inside the kit's own root.
     """
     source = _DECLARATION.sub("", ssml or "").strip()
-    match = _SPEAK_ONLY.match(source)
-    return match.group(1) if match else source
+    match = _SPEAK_ROOT.match(source)
+    if not match:
+        return source
+    attributes, words = match.group(1) or "", match.group(2)
+    lang = _XML_LANG_ATTRIBUTE.search(attributes)
+    if lang:
+        return f'<lang xml:lang="{escape(lang.group(2))}">{words}</lang>'
+    return words
 
 
 def _parse(fragment: str) -> ET.Element | None:

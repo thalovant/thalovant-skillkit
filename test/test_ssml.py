@@ -327,3 +327,18 @@ def test_a_speech_with_broken_markup_sends_its_words_only():
 
 def test_a_speech_whose_words_hold_tags_has_them_taken_out():
     assert speech_parts(Speech("hi <break/>", "hi <break/>"), "skill")[0] == "hi"
+
+
+@pytest.mark.parametrize("written, expected", [
+    ('<speak xml:lang="en-US">Why? <break/> Because.</speak>',
+     '<speak><lang xml:lang="en-US">Why? <break/> Because.</lang></speak>'),
+    ("<speak xml:lang='fr-FR'>Oui.<break/></speak>",
+     '<speak><lang xml:lang="fr-FR">Oui.<break/></lang></speak>'),
+    ('<?xml version="1.0"?><speak version="1.1" xmlns="http://www.w3.org/2001/10/synthesis">'
+     "Hi <break/> there.</speak>", "<speak>Hi <break/> there.</speak>"),
+])
+def test_a_whole_document_gets_one_root_and_keeps_its_language(written, expected):
+    """SSML forbids a <speak> inside a <speak>; its xml:lang says the same as <lang>."""
+    assert Speech(ssml=written).document == expected
+    assert speech_parts(written, "skill")[1] == expected
+    assert validate(expected) == []
