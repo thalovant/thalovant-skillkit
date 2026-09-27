@@ -248,6 +248,43 @@ def test_captured_speech_exposes_the_markup_of_each_sentence(integration_scope):
     assert legacy.spoken_ssml == ["<speak>Why? <break/> Because.</speak>"]
 
 
+def test_real_core_sends_a_twin_with_the_fallback_reply(integration_scope, monkeypatch):
+    """ovos-core routes an unmatched sentence to the example skill's fallback,
+    and its `.ssml` twin arrives on the spec topic with the hub's legacy
+    mirror off. French has no twin and arrives plain."""
+    import inspect
+
+    import ovoscope
+    from ovos_bus_client.message import Message
+    from ovos_bus_client.session import Session
+
+    if "extra_skills" not in inspect.signature(ovoscope.MiniCroft.__init__).parameters:
+        pytest.skip("this OVOScope cannot load a skill class that is not installed")
+    monkeypatch.setenv("OVOS_BUS_EMIT_LEGACY", "false")
+    fixture = Path(__file__).parent / "fixtures" / "thalovant-skill-punchline"
+    monkeypatch.syspath_prepend(str(fixture))
+    from thalovant_skill_punchline import PunchlineSkill
+
+    try:
+        with managed_minicroft([], extra_skills={"punchline.test": PunchlineSkill}) as croft:
+            turns = {}
+            for lang, text in (("en-US", "tell me a joke"), ("fr-FR", "raconte une blague")):
+                session = Session(f"room-{lang}")
+                session.lang = lang
+                source = Message("recognizer_loop:utterance", {"utterances": [text], "lang": lang},
+                                 {"session": session.serialize()})
+                turns[lang] = capture_turn(croft, source, timeout=60)
+    finally:
+        sys.modules.pop("thalovant_skill_punchline", None)
+
+    english, french = turns["en-US"], turns["fr-FR"]
+    assert not english.of_type("speak")
+    [ssml] = english.spoken_ssml
+    assert ssml.startswith("<speak>") and '<break time="700ms"/>' in ssml
+    assert "<" not in english.spoken[0]
+    assert french.spoken and french.spoken_ssml == [None]
+
+
 def test_native_audio_and_stop_keep_two_speakers_separate(integration_scope, tmp_path):
     """Inspect real OVOS play_audio bytes and Stop dispatch without starting a player."""
     from ovos_bus_client.message import Message, dig_for_message
