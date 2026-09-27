@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.21.1"
+python -m pip install --pre "thalovant-skillkit==0.22.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.21.1. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.22.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -45,6 +45,52 @@ Regional tags such as `en-CA`, `en-GB`, and `fr-CA` reuse compatible translation
 while retaining the speaker's language. For regional wording, keep only the differences
 in `locale/regional.json`; `thalovant-skillkit locales --write` builds complete OVOS
 resources. See the [regional guide](https://docs.thalovant.com/developers/writing-a-skill/#support-regional-variations).
+
+## Speech markup
+
+A reply can carry SSML beside its plain words: a pause, a code read one
+character at a time, a word in another language. The Thalovant voice app reads
+the markup. Clients that only read the plain words, such as the Android app,
+say the same sentence without it. SkillKit never puts a tag in the plain words.
+
+**A pause before a punchline.** Put a twin beside the dialog, one line for each
+line of the dialog, with the same `{placeholders}`. For
+`locale/en-US/dialog/joke.dialog`:
+
+```text
+Why did the scarecrow win an award? Because he was outstanding in his field.
+```
+
+write `locale/en-US/dialog/joke.ssml`:
+
+```text
+Why did the scarecrow win an award? <break time="700ms"/> Because he was outstanding in his field.
+```
+
+`self.speak_dialog("joke")` and `self.dialog("joke", lang)` pick a line and send
+both forms of that line. A language without a twin says its plain line.
+
+**Spelling a code.** Mark up the value instead of the dialog. This works in every
+language the skill ships, with no locale file to change:
+
+```python
+from thalovant_skillkit.ssml import spell
+
+self.speak_dialog("code", {"code": spell("XK7")})
+```
+
+**A word in another language.** Build the sentence in Python:
+
+```python
+from thalovant_skillkit.ssml import foreign, say
+
+self.speak_to(message, say("One", foreign("café au lait", "fr-FR"), "coming up."))
+```
+
+A plain string passed to these helpers is escaped, so what a user said can never
+become markup. `thalovant-skillkit check` checks every twin, and so does
+`check --fleet-only`. The [reference](docs/reference.md#speech-markup) lists the
+helpers, the tags a voice renders and the rules.
 
 ## Continue building
 

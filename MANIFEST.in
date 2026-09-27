@@ -1,0 +1,4 @@
+# The example skill the SSML tests drive. The sdist carries the test suite,
+# so it carries what the suite reads.
+recursive-include test/fixtures *
+global-exclude __pycache__ *.py[cod]

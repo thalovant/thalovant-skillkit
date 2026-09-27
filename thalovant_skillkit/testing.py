@@ -130,3 +130,14 @@ class FakeBus:
             for m in self.emitted
             if getattr(m, "msg_type", None) in self.SPEAK_TYPES
         ]
+
+    def spoken_ssml(self) -> list[str | None]:
+        """The `utterance_ssml` sent with each sentence, None where there was none.
+
+        Lined up with `spoken()`: entry N is the markup for sentence N.
+        """
+        return [
+            (getattr(m, "data", None) or {}).get("utterance_ssml")
+            for m in self.emitted
+            if getattr(m, "msg_type", None) in self.SPEAK_TYPES
+        ]

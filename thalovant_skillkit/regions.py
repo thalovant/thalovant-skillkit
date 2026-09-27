@@ -12,6 +12,9 @@ from pathlib import Path, PurePosixPath
 
 TAG = re.compile(r"[a-z]{2,3}(?:-[A-Za-z0-9]{2,8})+")
 SLOT = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}|<[A-Za-z_][A-Za-z0-9_.-]*>")
+# In an SSML twin, `<s>` and `<emphasis>` are markup a region may change, not
+# OVOS `<vocabulary>` slots, so only its `{placeholders}` must stay the same.
+FIELD = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}")
 
 
 def _files(root: Path) -> dict[str, str]:
@@ -76,9 +79,19 @@ def regional_plan(locale_root: Path) -> dict[str, dict[str, str]]:
         for name in overrides:
             if name not in shared:
                 raise ValueError(f"regional.json: {target}/{name} has no source file in {source}")
-            if set(SLOT.findall(shared[name])) != set(SLOT.findall(overrides[name])):
+            slots = FIELD if name.endswith(".ssml") else SLOT
+            if set(slots.findall(shared[name])) != set(slots.findall(overrides[name])):
                 raise ValueError(f"regional.json: {target}/{name} changes source placeholders")
         plan[target] = shared | overrides
+        # A region that rewords a dialog and not its SSML twin would send the
+        # base locale's markup with the region's words. Without the twin the
+        # region says its own line plainly, which is right; an override for
+        # the twin as well keeps the markup.
+        for name in overrides:
+            if name.endswith(".dialog"):
+                twin = name[:-len(".dialog")] + ".ssml"
+                if twin in shared and twin not in overrides:
+                    del plan[target][twin]
         destination = locale_root / target
         if destination.exists() or destination.is_symlink():
             existing = _files(destination)

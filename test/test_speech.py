@@ -116,3 +116,98 @@ def test_a_failed_reply_leaves_the_question_untouched():
         speak_to(Unbound(), incoming, "lost?")
 
     assert "skill_id" not in incoming.context
+
+
+def test_a_built_sentence_sends_its_words_and_its_markup():
+    """The words are the utterance; the markup travels beside them."""
+    from thalovant_skillkit.ssml import pause, say
+
+    skill = _Skill()
+
+    sent = speak_to(skill, message("joke", session={"session_id": "alice"}),
+                    say("Why?", pause("1s"), "Because."))
+
+    assert sent.data["utterance"] == "Why? Because."
+    assert type(sent.data["utterance"]) is str
+    assert sent.data["utterance_ssml"] == '<speak>Why? <break time="1s"/> Because.</speak>'
+    assert sent.context["session"]["session_id"] == "alice"
+
+
+def test_markup_in_the_text_never_reaches_the_utterance():
+    """A tag in `utterance` is shown and said as a tag by the Android app."""
+    skill = _Skill()
+
+    sent = speak_to(skill, message("hi"), "Wait <break time='1s'/> for it.")
+
+    assert sent.data["utterance"] == "Wait for it."
+    assert sent.data["utterance_ssml"] == "<speak>Wait <break time='1s'/> for it.</speak>"
+
+
+def test_a_pause_alone_says_nothing():
+    """No words, no message: a pause is not a reply."""
+    from thalovant_skillkit.ssml import pause
+
+    skill = _Skill()
+
+    assert speak_to(skill, message("hi"), pause("1s")) is None
+    assert skill._bus.emitted == []
+
+
+def test_the_written_form_and_the_markup_travel_together():
+    """A screen reads `utterance_written`, a voice reads `utterance_ssml`."""
+    from thalovant_skillkit.ssml import emphasis, say
+
+    skill = _Skill()
+
+    sent = speak_to(skill, message("when"), say("At", emphasis("nine forty"), "a.m."),
+                    written="At 9:40 AM")
+
+    assert sent.data["utterance"] == "At nine forty a.m."
+    assert sent.data["utterance_written"] == "At 9:40 AM"
+    assert sent.data["utterance_ssml"] == (
+        '<speak>At <emphasis level="moderate">nine forty</emphasis> a.m.</speak>')
+
+
+def test_the_topic_is_what_the_installed_speak_emits():
+    """Asked of `OVOSSkill.speak` itself: workshop 8 says `speak` even with
+    the spec package installed beside it, workshop 9 the spec topic."""
+    from ovos_workshop.skills.ovos import OVOSSkill
+
+    from thalovant_skillkit import speech
+
+    assert speech.speech_topic() == speech._observed_topic(OVOSSkill.speak)
+
+
+def test_what_speak_emits_beats_what_its_module_imports(monkeypatch):
+    """A workshop that imports SpecMessage but still speaks on `speak` is heard
+    on `speak`; one whose speak() cannot be called is read from its module."""
+    import sys
+    import types
+
+    from ovos_bus_client.message import Message
+
+    from thalovant_skillkit import speech
+
+    class _Spec:
+        SPEAK = "ovos.utterance.speak"
+
+    class LegacySpeaker:
+        def speak(self, utterance, expect_response=False, wait=False, meta=None):
+            self.bus.emit(Message("speak", {"utterance": utterance}))
+
+    class Unprobeable:
+        def speak(self, utterance, expect_response=False, wait=False, meta=None):
+            raise RuntimeError("needs a real skill")
+
+    module = types.ModuleType("ovos_workshop.skills.ovos")
+    module.SpecMessage = _Spec
+    monkeypatch.setitem(sys.modules, "ovos_workshop", types.ModuleType("ovos_workshop"))
+    skills = types.ModuleType("ovos_workshop.skills")
+    skills.ovos = module
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills", skills)
+    monkeypatch.setitem(sys.modules, "ovos_workshop.skills.ovos", module)
+
+    module.OVOSSkill = LegacySpeaker
+    assert speech.speech_topic() == "speak"
+    module.OVOSSkill = Unprobeable
+    assert speech.speech_topic() == "ovos.utterance.speak"

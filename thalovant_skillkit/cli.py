@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from .checks import check_all, find_package
+from .checks import check_all, check_ssml, find_package
 from .fleet import MODEL_ID
 from .version import __version__
 
@@ -288,7 +288,12 @@ def _has_intents(root: Path) -> bool:
 
 def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.directory or ".").resolve()
-    problems = [] if args.fleet_only else check_all(root)
+    # The speech-markup check runs even with --fleet-only: that is the one
+    # kit gate every skill's CI runs against the newest release, and a twin
+    # that breaks, or a tag written into a plain dialog, is heard (or shown
+    # as a tag on a phone) the day it ships. It reads files only and passes
+    # untouched on a skill with no markup.
+    problems = check_ssml(root) if args.fleet_only else check_all(root)
     if problems:
         print(f"{len(problems)} problem(s) in {root.name}:")
         for problem in problems:
@@ -420,7 +425,8 @@ def main(argv: list[str] | None = None) -> int:
     check.add_argument("--no-fleet", action="store_true",
                        help="only the skill's own contracts; do not fetch the fleet's model")
     check.add_argument("--fleet-only", action="store_true",
-                       help="only the fleet comparison; skip the skill's own contracts")
+                       help="only the fleet comparison and the speech-markup check; "
+                            "skip the skill's other contracts")
     check.add_argument("--model", metavar="ID|DIR",
                        help=f"the fleet's model to compare with (default {MODEL_ID})")
     check.add_argument("--fleet", metavar="DIR",

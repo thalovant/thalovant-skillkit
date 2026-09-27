@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.22.0 (2026-09-26)
+
+- **Speech markup.** A reply can carry SSML as `utterance_ssml` beside the plain
+  `utterance`, which keeps plain words and never a tag. thalovant-voice 0.7.3
+  reads it; the Android app and the Kotlin SDK say the plain words.
+- A dialog gets markup from a twin: `locale/<lang>/dialog/<name>.ssml` beside
+  `<name>.dialog`, line for line, with the same `{placeholders}`.
+  `speak_dialog`, `speak_varied_dialog`, `dialog` and the fallback base draw one
+  line and send both forms of it, with the values escaped in the SSML. A twin is
+  optional in every locale and never borrowed from another one. The name is
+  `.ssml` and not `.ssml.dialog` because OVOS reads every `.dialog` as a plain
+  template and raises on a `<break/>` in one.
+- `thalovant_skillkit.ssml` builds markup in Python: `say`, `pause`, `spell`,
+  `digits`, `telephone`, `foreign`, `emphasis`, `sub` and `markup`. Each returns
+  a `Speech`, a `str` of the plain words that also carries the SSML. Passed as a
+  dialog value, a `Speech` marks up that value in a dialog with no twin, in every
+  language. Plain strings are escaped, so text from a user or a service never
+  becomes markup.
+- The kit's bases override `speak` and `speak_dialog` with OVOS's own signatures.
+  Without markup they hand the call to OVOS unchanged. With markup they send the
+  message OVOS would send, with the same context, meta, language and wait, and
+  `utterance_ssml` added. `speak_to` sends a `Speech` the same way and gains
+  `wait`.
+- SSML written into a plain string is moved to `utterance_ssml` before it is sent,
+  and logged once per skill, so no tag reaches a client that shows `utterance`.
+- `check` validates every twin: well-formed, only the tags Thalovant voices
+  render, the same placeholders and the same words as its plain line, and as many
+  lines. A plain `.dialog` may not hold SSML tags. The rule also runs under
+  `check --fleet-only`, the gate every skill's CI runs. The fleet's 24 skills
+  have no twins and no tags in their dialogs, so all of them pass unchanged.
+- A region in `regional.json` that rewords a dialog without its twin no longer
+  inherits the base locale's twin for that dialog.
+- `FakeBus.spoken_ssml()` and `CapturedTurn.spoken_ssml` expose the markup sent
+  with each sentence, lined up with `spoken`.
+- Markup written as a whole `<speak xml:lang="...">` document, in a twin or a
+  string, gets one root when it is sent: the language becomes a `<lang>` inside
+  it. It used to be nested in a second `<speak>`, which SSML forbids. Found by
+  review on this release.
+- `speech_topic()`, which `speak_to` and the markup path both use, now calls the
+  installed `OVOSSkill.speak` once on a stand-in skill and uses the topic it
+  emitted. It no longer infers it from what the workshop module imports. Checked
+  on ovos-workshop 8.0.0 (`speak`, with ovos-spec-tools 1.13 installed beside it),
+  9.8.6a2 and 9.8.9a2 (`ovos.utterance.speak`). This closes the review finding on
+  0.21.0.
+
 ## 0.21.1 (2026-09-25)
 
 - `speak_to` asks the installed workshop's skill module which topic its own
