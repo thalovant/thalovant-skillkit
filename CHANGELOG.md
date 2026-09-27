@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- `new` no longer writes a CI step that dispatches `skill-merged` to the
+  intent corpus. It needed a personal access token that no skill repository
+  holds, so it only ever printed a warning; the corpus rebuilds hourly on its
+  own.
+
 ## 0.22.0 (2026-09-26)
 
 - **Speech markup.** A reply can carry SSML as `utterance_ssml` beside the plain

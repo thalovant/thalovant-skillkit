@@ -212,20 +212,6 @@ jobs:
       # Build the wheel from the sdist, so missing build inputs fail too.
       - run: python -m build
       - run: thalovant-skillkit check-artifacts --wheel dist/*.whl --sdist dist/*.tar.gz
-
-      # After a merge, ask the corpus to pick up this skill's sentences, so the
-      # next skill is checked against this one. CROSS_REPO_TOKEN is the org
-      # secret for private repositories; without it this step only says so.
-      - name: Tell the corpus a skill changed
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        env:
-          GH_TOKEN: ${{{{ secrets.CROSS_REPO_TOKEN }}}}
-        run: |
-          if [ -z "$GH_TOKEN" ]; then
-            echo "::warning::CROSS_REPO_TOKEN is not exposed here; the corpus was not told"
-            exit 0
-          fi
-          gh api repos/thalovant/intent-corpus/dispatches -f event_type=skill-merged
 ''')
 
     put("README.md", f'''
