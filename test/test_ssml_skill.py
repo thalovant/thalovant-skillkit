@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from thalovant_skillkit.checks import check_all
+from thalovant_skillkit.speech import speech_topic
 from thalovant_skillkit.ssml import Speech, pause, say
 from thalovant_skillkit.testing_ovos import skill_harness
 
@@ -80,7 +81,9 @@ def test_a_twin_is_sent_with_the_line_it_belongs_to(punchline):
     for message in heard:
         index = plain.index(message.data["utterance"])
         assert message.data["utterance_ssml"] == f"<speak>{twins[index]}</speak>"
-        assert message.msg_type == "ovos.utterance.speak"
+        # The spec topic on workshop 9, legacy `speak` on workshop 8: the
+        # topic the workshop's own speak() uses, whichever that is.
+        assert message.msg_type == speech_topic()
         assert message.context["session"]["session_id"] == "alice"
         assert message.context["skill_id"] == "punchline.test"
         assert message.data["meta"] == {"dialog": "joke", "data": {}, "skill": "punchline.test"}
@@ -164,6 +167,8 @@ def test_a_built_sentence_reaches_the_room_that_asked(punchline):
 def test_the_legacy_mirror_carries_the_markup_too(punchline):
     """With OVOS_BUS_EMIT_LEGACY on, `speak` listeners get the same SSML."""
     with _live(punchline, emit_legacy=True) as harness:
+        if getattr(harness.bus, "_translator", None) is None:
+            pytest.skip("this ovos-utils FakeBus does not mirror the two namespaces")
         heard = _said(harness)
         _turn(harness, lambda message: harness.skill.tell_code("A1"))
 
