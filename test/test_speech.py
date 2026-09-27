@@ -151,3 +151,18 @@ def test_a_pause_alone_says_nothing():
 
     assert speak_to(skill, message("hi"), pause("1s")) is None
     assert skill._bus.emitted == []
+
+
+def test_the_written_form_and_the_markup_travel_together():
+    """A screen reads `utterance_written`, a voice reads `utterance_ssml`."""
+    from thalovant_skillkit.ssml import emphasis, say
+
+    skill = _Skill()
+
+    sent = speak_to(skill, message("when"), say("At", emphasis("nine forty"), "a.m."),
+                    written="At 9:40 AM")
+
+    assert sent.data["utterance"] == "At nine forty a.m."
+    assert sent.data["utterance_written"] == "At 9:40 AM"
+    assert sent.data["utterance_ssml"] == (
+        '<speak>At <emphasis level="moderate">nine forty</emphasis> a.m.</speak>')
