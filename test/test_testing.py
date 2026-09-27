@@ -76,3 +76,15 @@ def test_the_bus_hears_what_a_current_core_actually_emits():
     bus.emit(message("new style", msg_type="ovos.utterance.speak"))
 
     assert bus.spoken() == ["old style", "new style"]
+
+
+def test_the_bus_shows_the_markup_sent_with_each_sentence():
+    """Entry N of spoken_ssml belongs to entry N of spoken, None where plain."""
+    bus = FakeBus()
+    bus.emit(message(msg_type="speak", utterance="plain"))
+    bus.emit(message(msg_type="ovos.utterance.speak", utterance="Wait. Now.",
+                     utterance_ssml="<speak>Wait. <break/> Now.</speak>"))
+    bus.emit(message(msg_type="not.speech", utterance_ssml="<speak>x</speak>"))
+
+    assert bus.spoken() == ["plain", "Wait. Now."]
+    assert bus.spoken_ssml() == [None, "<speak>Wait. <break/> Now.</speak>"]

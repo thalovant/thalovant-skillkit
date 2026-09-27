@@ -248,6 +248,28 @@ def test_a_broken_translation_is_spoken_rather_than_raised(demo, tmp_path, templ
     assert skill.dialog("broken", "en-US") == expected
 
 
+#: The OVOSSkill methods the kit overrides so a `.ssml` twin needs no code.
+SPEECH_OVERRIDES = {"speak", "speak_dialog"}
+
+
+def test_the_speech_overrides_keep_the_framework_signatures():
+    """Every skill already calls `speak` and `speak_dialog`, positionally and
+    by keyword. The overrides take exactly OVOS's parameters, in its order,
+    with its defaults, so no existing call changes meaning."""
+    import inspect
+
+    from ovos_workshop.skills import OVOSSkill
+
+    from thalovant_skillkit import skill as module
+
+    for name in SPEECH_OVERRIDES:
+        ours = inspect.signature(getattr(module._SkillPlumbing, name)).parameters
+        theirs = inspect.signature(getattr(OVOSSkill, name)).parameters
+        assert list(ours) == list(theirs), name
+        assert [p.default for p in ours.values()] == [p.default for p in theirs.values()], name
+        assert [p.kind for p in ours.values()] == [p.kind for p in theirs.values()], name
+
+
 def test_nothing_here_shadows_the_framework():
     """The base classes must not take a name OVOSSkill already uses.
 
@@ -271,6 +293,9 @@ def test_nothing_here_shadows_the_framework():
     # What a fallback skill is *supposed* to define: the framework declares
     # these and expects a skill to fill them in.
     expected = {"initialize", "can_answer", "handle_fallback", "runtime_requirements"}
+    # Overridden on purpose, with OVOS's own signatures (checked below), so
+    # every existing call sends a dialog's SSML twin without being changed.
+    expected |= SPEECH_OVERRIDES
 
     from thalovant_skillkit.skill import _ConversationalBase
 
@@ -389,7 +414,7 @@ def test_common_play_base_carries_the_plumbing_without_touching_ocp():
     assert mro.index(_SkillPlumbing) < mro.index(OVOSCommonPlaybackSkill)
     shared = {n for n in vars(_SkillPlumbing) if not n.startswith("__")} & set(
         dir(OVOSCommonPlaybackSkill))
-    assert shared == {"runtime_requirements"}, shared
+    assert shared == {"runtime_requirements"} | SPEECH_OVERRIDES, shared
     for helper in ("utterance", "lang_of", "dialog", "mentions", "locale_resources"):
         assert hasattr(ThalovantCommonPlaySkill, helper)
 

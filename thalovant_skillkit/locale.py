@@ -52,6 +52,7 @@ class SkillResources:
         self._folded_cache: dict[tuple[str, str], tuple[str, ...]] = {}
         self._literal_intent_cache: dict[tuple[tuple[str, ...], str], frozenset[str]] = {}
         self._combined_cache: dict[tuple, tuple[str, ...]] = {}
+        self._twin_cache: dict[str, bool] = {}
 
     def clear_cache(self) -> None:
         """Forget resource data after changing files or installing locale overrides.
@@ -61,7 +62,8 @@ class SkillResources:
         """
         for cache in (self._lang_cache, self._matching_langs_cache,
                       self._candidate_langs_cache, self._lines_cache,
-                      self._folded_cache, self._literal_intent_cache, self._combined_cache):
+                      self._folded_cache, self._literal_intent_cache, self._combined_cache,
+                      self._twin_cache):
             cache.clear()
 
     # -- which language this skill can actually serve -------------------------
@@ -216,6 +218,37 @@ class SkillResources:
     def dialog_lines(self, name: str, lang: str | None) -> tuple[str, ...]:
         """Read dialog through compatible regional locales, then the default."""
         return self.lines(lang, "dialog", f"{name}.dialog", fallback=True)
+
+    def has_ssml(self, name: str) -> bool:
+        """Whether any locale has a `.ssml` twin for this dialog.
+
+        Asked before anything else on every spoken dialog, so a skill without
+        twins pays one dictionary lookup for them and never resolves a
+        language to find out.
+        """
+        found = self._twin_cache.get(name)
+        if found is None:
+            found = any((self.root / lang / "dialog" / f"{name}.ssml").is_file()
+                        for lang in self.available_langs())
+            self._twin_cache[name] = found
+        return found
+
+    def dialog_twins(self, name: str,
+                     lang: str | None) -> tuple[tuple[str, ...], tuple[str, ...] | None]:
+        """The dialog's lines, and its `.ssml` twin's lines from the same locale.
+
+        The lines are exactly what `dialog_lines` returns. The twin comes only
+        from the locale that supplied them, so a French line is never paired
+        with English markup; it is None when that locale has no twin, or when
+        the twin's line count differs and line N could not be trusted to
+        say line N's words. `thalovant-skillkit check` reports both.
+        """
+        for candidate in self.candidate_langs(lang):
+            lines = self._lines(candidate, "dialog", f"{name}.dialog")
+            if lines:
+                twins = self._lines(candidate, "dialog", f"{name}.ssml")
+                return lines, (twins if len(twins) == len(lines) else None)
+        return (), None
 
     def dialog(self, name: str, lang: str | None, data: dict | None = None) -> str:
         """One rendered dialog line, or the name itself if the file is missing.

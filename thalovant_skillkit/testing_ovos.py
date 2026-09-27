@@ -154,11 +154,18 @@ class CapturedTurn:
     def of_type(self, topic: str) -> list[Any]:
         return [message for message in self.messages if message.msg_type == topic]
 
+    def _speech(self) -> list[Any]:
+        return self.of_type("ovos.utterance.speak") or self.of_type("speak")
+
     @property
     def spoken(self) -> list[str]:
         """Canonical speech, falling back to legacy-only stacks without doubling twins."""
-        messages = self.of_type("ovos.utterance.speak") or self.of_type("speak")
-        return [str(message.data.get("utterance", "")) for message in messages]
+        return [str(message.data.get("utterance", "")) for message in self._speech()]
+
+    @property
+    def spoken_ssml(self) -> list[str | None]:
+        """The `utterance_ssml` of each sentence in `spoken`, None where there was none."""
+        return [message.data.get("utterance_ssml") for message in self._speech()]
 
     def for_session(self, session_id: str) -> CapturedTurn:
         """Select only messages carrying this explicit session ID.

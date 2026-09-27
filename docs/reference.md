@@ -139,6 +139,8 @@ fallback is not a claim of a new translation or an available ASR/TTS voice.
 | `combined_lines(lang, folder, filename, include_regions=True, unique=False)` | Additive union in candidate order, including the default. Use for aliases or blocklists, not spoken dialogs. `include_regions=False` uses only the resolved locale and default; `unique=True` removes case-insensitive duplicates. Cached results are immutable, instance-local and capped at 512 entries. |
 | `vocab(voc_name, lang)` | Lines from `vocab/<name>.voc`, without secondary file fallback. |
 | `dialog_lines(name, lang)` | Lines from `dialog/<name>.dialog`, with regional, same-language and default fallback. |
+| `dialog_twins(name, lang)` | `dialog_lines`, and the lines of `<name>.ssml` from the same locale (or `None`). |
+| `has_ssml(name)` | Whether any locale has `dialog/<name>.ssml`; cached. |
 | `matches_literal_intent(utterance, name, lang=None)` | Entire concrete `.intent` line, normalized for case, accents, punctuation and spaces. Reads flat and `intents/` layouts across compatible regional locales. Skips lines with `{}` slots or `[]()\|` patterns. Does not merge English into another supported locale or replace the intent engines. |
 | `voc_match(voc_name, utterance, lang=None)` | Containment match against compatible regional then default vocabulary; returns a boolean. |
 | `voc_term(voc_name, utterance, lang=None)` | Longest matching folded term in the first matching candidate locale, or `""`. |
@@ -186,6 +188,8 @@ Their argument order differs from `SkillResources.voc_match`. Native
 
 `self.dialog(name, lang=None, data=None)` returns text: it chooses a random
 line, formats `{placeholders}`, and expands literal `\n`. Choices can repeat.
+When the dialog has a `.ssml` twin, or a value is marked up, the text is a
+`Speech` that also carries the SSML (see [Speech markup](#speech-markup)).
 Missing files return the dialog name; missing arguments or malformed formatting
 return the raw chosen template. In contrast, `SkillResources.dialog` chooses
 the **first** line, does not expand literal `\n`, and catches only missing
@@ -193,7 +197,7 @@ format arguments (`KeyError`/`IndexError`), not malformed braces (`ValueError`).
 Use native `self.speak_dialog` for OVOS's speech renderer and delivery behavior.
 
 `self.speak_to(message, text, *, lang=None, expect_response=False, written=None,
-meta=None)` speaks `text` to whoever sent `message`: it forwards that message,
+meta=None, wait=False)` speaks `text` to whoever sent `message`: it forwards that message,
 so the reply keeps its session, source and destination, and speaks in the
 message's language unless `lang` is given. It uses the topic the installed
 workshop's own `speak` uses (`ovos.utterance.speak` on workshop 9, legacy `speak`
@@ -202,13 +206,145 @@ message, or `None` for empty text, and raises `RuntimeError` on a skill with no
 bus. Use it from `converse()`, stop hooks and any handler that answers a room
 other than the one `self.lang` describes; `self.speak` remains the native call
 for a handler answering the message it was handed. `speech.speak_to(skill,
-message, text, ...)` is the same function for skills on other bases.
+message, text, ...)` is the same function for skills on other bases. `wait`
+blocks as `speak(wait=...)` does: `True` for up to 15 seconds, a number for that
+many seconds. A `Speech` sends its SSML as `utterance_ssml`.
 
 `self.setting(key, default=None)` returns the default for unreadable settings,
 missing keys or a stored `None`. `False`, `0` and `""` are retained.
 `preview_reply(utterance="", lang=None, context=None)` calls your text-only
 `reply`; it returns `""` for an empty answer or `NotImplementedError`. It does
 not replay a skill's audio or simulate its intent handler.
+
+## Speech markup
+
+A speak message keeps `utterance` as plain words and may carry `utterance_ssml`
+beside it: a `<speak>` document that says the same words with markup. Clients
+that do not read it ignore it. The Android app and the Kotlin SDK show and say
+`utterance` as written, so SkillKit never puts a tag there. The field travels on
+whichever topic the workshop speaks on, and the bus's legacy `speak` mirror
+copies it. Import the helpers from
+[`thalovant_skillkit.ssml`](../thalovant_skillkit/ssml.py).
+
+### Twins
+
+`locale/<lang>/dialog/<name>.ssml` is the SSML twin of `<name>.dialog`. Line N
+of the twin goes with line N of the dialog; blank lines and `#` comments are
+skipped in both. Each line uses the same `{placeholders}` and says the same
+words. Values are escaped in the SSML and left as they are in the plain line.
+
+A twin is optional in every locale. A locale without one says its plain line,
+and a twin is never borrowed from another locale. A region in `regional.json`
+that rewords a dialog without also giving its twin gets no twin for it.
+
+`speak_dialog`, `speak_varied_dialog` and `dialog` draw one line and render both
+forms from it. The fallback base speaks what `reply` returns, twin included.
+A skill that picks its own line can use `SkillResources.dialog_twins(name, lang)`,
+which returns the lines and the twin's lines from the same locale, and
+`ssml.render_line(plain, twin, data)`.
+
+The twin is left out, and OVOS renders the dialog exactly as before, when:
+
+- OVOS would render other lines than the skill's own, such as an operator's
+  override or a different language;
+- the dialog uses `(a|b)` or `[optional]`, which OVOS expands at random;
+- a `render_callback` changes the words;
+- the twin's line count differs from the dialog's, or a filled-in line does not
+  parse. That is logged once.
+
+Why `.ssml` and not `.ssml.dialog`: OVOS reads every `.dialog` file as a plain
+template in which `<name>` names a vocabulary. It would load
+`joke.ssml.dialog` as a dialog called `joke.ssml` and raise on the first
+`<break/>`, and `ovos-spec-lint` reports it. OVOS ignores a `.ssml` file.
+
+### Markup from Python
+
+Each helper returns a `Speech`: a `str` whose text is the plain words, with the
+markup in `.ssml` (a fragment, or `None`) and `.document` (for `utterance_ssml`).
+It goes wherever a string goes. `+` keeps the markup on either side; f-strings,
+`str.format` and string methods return a plain `str` without it.
+
+| Helper | SSML | Plain words |
+|---|---|---|
+| `say(*parts, sep=" ")` | Parts joined; a plain string is escaped | Parts joined |
+| `pause("1s")`, `pause("750ms")`, `pause(strength="strong")`, `pause()` | `<break>` | Nothing |
+| `spell(text)` | `<say-as interpret-as="characters">` | `text` |
+| `digits(text)`, `telephone(text)` | `<say-as interpret-as="digits">`, `"telephone"` | `text` |
+| `foreign(text, "fr-FR")` | `<lang xml:lang="fr-FR">` | `text` |
+| `emphasis(text, level="moderate")` | `<emphasis>` | `text` |
+| `sub(written, spoken)` | `<sub alias="spoken">written</sub>` | `spoken` |
+| `markup(template, **values)` | The template, values escaped | Read from the SSML |
+
+A `Speech` passed as a dialog value marks up that value even when the dialog has
+no twin: the SSML is the plain line, escaped, with the value's markup in place.
+`self.speak_dialog("code", {"code": spell(code)})` works in every language.
+
+`markup` is for SSML written in the skill's own code. Its values are escaped, and
+a `Speech` value keeps its markup. It raises `ValueError` for markup a voice does
+not read. Never pass text from a user or a service as the template.
+
+`pause` refuses a number without a unit, since SSML has none by default.
+
+### The plain words
+
+When the plain words are read out of SSML, `<sub>` gives its alias, since the
+plain words are what a client without SSML says aloud. `<say-as>` and
+`<phoneme>` keep the text as written: how "XK7" is spelled aloud depends on the
+language and the voice, and a screen shows the same words. A `<break>`, `<p>` or
+`<s>` becomes a single space. Entities are read.
+
+If a skill passes SSML as a plain string to `speak`, `speak_to` or
+`speak_dialog`, the markup is moved to `utterance_ssml`, the plain words are sent
+as `utterance`, and a warning is logged once per skill. Markup that does not
+parse loses its tags and keeps its words.
+
+### Supported tags
+
+| Tag | Attributes |
+|---|---|
+| `<speak>` | `xml:lang`, around the whole line only |
+| `<break>` | `time` (`500ms`, `1s`, at most 10 seconds) or `strength` |
+| `<p>`, `<s>` | none |
+| `<prosody>` | `rate` (named or a percentage), `volume` (named or dB) |
+| `<emphasis>` | `level`: `strong`, `moderate`, `reduced` or `none` |
+| `<lang>`, `<voice>` | `xml:lang` |
+| `<say-as>` | `interpret-as`: `characters`, `spell-out`, `digits` or `telephone` |
+| `<sub>` | `alias` |
+| `<phoneme>` | `ph`, and `alphabet="ipa"` |
+
+Thalovant voices read `pitch`, `<audio>`, `<mark>` and `amazon:*` as plain
+words, so the check reports them.
+
+### What the check reports
+
+`check_ssml(skill_root)` is part of `check_all` and runs under both
+`thalovant-skillkit check` and `check --fleet-only`. Every error fails the check:
+
+- a plain `.dialog` line that holds an SSML tag;
+- a `.ssml` file with no `.dialog` beside it, or a different number of lines;
+- a twin line that is not well-formed XML, or uses an unsupported tag,
+  attribute or value;
+- a twin line whose `{placeholders}` differ from its plain line;
+- `(a|b)` or `[optional]` in a dialog that has a twin;
+- a twin line that does not say the same words as its plain line. Punctuation,
+  case and accents are ignored, and a `<sub>` may match either form.
+
+A skill without `.ssml` files and without tags in its dialogs passes unchanged.
+
+### Testing
+
+`testing.FakeBus.spoken_ssml()` and `testing_ovos.CapturedTurn.spoken_ssml`
+return the `utterance_ssml` of each sentence, in the same order as `spoken`, with
+`None` for a sentence sent without markup.
+
+```python
+from thalovant_skillkit.ssml import pause, say, spell
+
+joke = say("Why?", pause("1s"), "Because.")
+assert joke == "Why? Because."
+assert joke.document == '<speak>Why? <break time="1s"/> Because.</speak>'
+assert spell("XK7").ssml == '<say-as interpret-as="characters">XK7</say-as>'
+```
 
 ## Non-repeating choices
 
@@ -312,7 +448,8 @@ assert states.get("room-a") is None
 Optional `session`, `location`, `site_id` populate context; an explicit context
 key wins over these defaults. Extra keywords populate message data.
 `testing.FakeBus` records emissions and registrations; it does **not** dispatch
-callbacks or produce replies for `wait_for_response`. Use it for small unit
+callbacks or produce replies for `wait_for_response`. `spoken()` and
+`spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
 Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.12.0"`;
@@ -343,6 +480,7 @@ final collection; do not invoke it inside a bus callback.
 `CapturedTurn.messages` is the full captured message list, not a session-filtered
 list. `of_type(topic)` selects an exact topic. `spoken` returns canonical
 `ovos.utterance.speak` text when present, otherwise legacy `speak` text.
+`spoken_ssml` returns the `utterance_ssml` of the same messages, `None` where absent.
 `session` is the latest captured carrier matching the source's declared session
 ID, deserialized to an OVOS Session; it is `None` when the source declares no ID.
 Completion alone does not prove correct routing, replies or session isolation:
@@ -375,7 +513,7 @@ Passing these checks does not establish translation quality or intent accuracy.
 |---|---|
 | `check [directory]` | Local contracts plus the default published fleet model when the skill has intents. Directory defaults to the current directory. |
 | `--no-fleet` | Disable the published model. Without `--fleet`, only local contracts run. |
-| `--fleet-only` | Skip local contracts; incompatible with `--no-fleet`. |
+| `--fleet-only` | Skip local contracts, except the [speech markup check](#what-the-check-reports); incompatible with `--no-fleet`. |
 | `--model ID\|DIR` | Override `thalovant/thalovant-m2v-intents` with a Hub model or local model directory. |
 | `--fleet DIR` | Add corpus files `<lang>.json`; report source lines and near paraphrases. The model comparison still runs unless disabled. |
 | `--no-near`, `--threshold 0.85` | Disable corpus paraphrase comparison, or set its similarity threshold. These do not disable/configure the trained classifier comparison. |

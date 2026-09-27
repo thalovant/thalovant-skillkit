@@ -22,10 +22,13 @@ from __future__ import annotations
 import ast
 import json
 import re
+import string
 from collections import Counter
 from pathlib import Path
 
 from .regions import regional_sources, sync_regions
+from .ssml import looks_like_ssml, to_plain, validate
+from .text import fold_words
 
 PLACEHOLDER = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}|<[A-Za-z_][A-Za-z0-9_.-]*>")
 # skill.json keys that describe the package rather than the language, and so
@@ -180,7 +183,11 @@ def check_locale_contract(skill_root: Path) -> list[str]:
         return problems + [
             f"locale/{SOURCE_LOCALE} is missing; every other locale is checked against it"
         ]
-    source_files = _files_under(source_root)
+    # An SSML twin is optional in every locale: without one a language says
+    # the plain line, as it always has. So it is not "missing" anywhere, and
+    # its placeholders are held to its own plain twin by check_ssml rather
+    # than to English -- its tags differ between languages by design.
+    source_files = {path for path in _files_under(source_root) if path.suffix != SSML_SUFFIX}
 
     for locale in sorted(supported & present):
         target_root = locale_root / locale
@@ -382,6 +389,105 @@ def check_package_data(skill_root: Path) -> list[str]:
             "the installed skill will have no dialog or vocabulary files"]
 
 
+SSML_SUFFIX = ".ssml"
+_FORMAT = string.Formatter()
+_MUSTACHE = re.compile(r"\{\{+\s*(.*?)\s*\}\}+")
+# `(a|b)` and `[optional]`: OVOS picks one expansion at random, and the same
+# choice cannot be made in the SSML line, so the pair could say different words.
+_ALTERNATIVES = re.compile(r"\([^()]*\|[^()]*\)|\[[^\[\]]*\]")
+
+
+def _resource_lines(path: Path) -> list[tuple[int, str]]:
+    """(line number, text) for each line a dialog renders: no blanks, no comments."""
+    return [(number, line.strip())
+            for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1)
+            if line.strip() and not line.strip().startswith("#")]
+
+
+def _fields(template: str) -> set[str] | None:
+    """The `{placeholders}` a line fills, or None when its braces do not parse."""
+    template = _MUSTACHE.sub(r"{\1}", template)
+    try:
+        return {name.split(".")[0].split("[")[0]
+                for _, name, _, _ in _FORMAT.parse(template) if name is not None}
+    except ValueError:
+        return None
+
+
+def _ssml_line_problems(where: str, plain: str, ssml: str) -> list[str]:
+    problems = [f"{where}: {problem}" for problem in validate(ssml)]
+    if problems:
+        return problems
+    want, got = _fields(plain), _fields(ssml)
+    if got is None:
+        return [f"{where}: its braces do not parse as {{placeholders}}"]
+    if want is not None and want != got:
+        detail = []
+        if want - got:
+            detail.append(f"missing {sorted(want - got)}")
+        if got - want:
+            detail.append(f"unexpected {sorted(got - want)}")
+        problems.append(f"{where}: placeholders differ from the plain line "
+                        f"({'; '.join(detail)})")
+    if _ALTERNATIVES.search(plain) or _ALTERNATIVES.search(ssml):
+        problems.append(f"{where}: (a|b) and [optional] cannot be paired with markup; "
+                        "write each variant on its own line in both files")
+    if problems:
+        return problems  # the words cannot match either; one reason is enough
+    said = fold_words(plain)
+    if said not in (fold_words(to_plain(ssml)), fold_words(to_plain(ssml, alias=False))):
+        problems.append(f"{where}: does not say the same words as the plain line "
+                        f"({to_plain(ssml, alias=False)!r} against {plain!r})")
+    return problems
+
+
+def check_ssml(skill_root: Path) -> list[str]:
+    """Every `.ssml` twin can be sent beside its dialog, and no dialog holds markup.
+
+    A twin sits beside its plain dialog -- `dialog/joke.ssml` beside
+    `dialog/joke.dialog` -- with as many lines, and line N is line N: well-formed,
+    only the tags Thalovant voices render, the same `{placeholders}`, and the
+    same words once the markup is read out. A plain `.dialog` holds no SSML
+    tags at all: it is what the Android app shows and says as written, and
+    OVOS's renderer raises on a `<break/>` in one. Every locale directory is
+    read, whether or not supported.json lists it.
+    """
+    package = find_package(Path(skill_root))
+    if package is None or not (package / "locale").is_dir():
+        return []
+    locale_root = package / "locale"
+    problems: list[str] = []
+    for path in sorted(locale_root.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(locale_root)
+        if path.suffix == ".dialog":
+            for number, line in _resource_lines(path):
+                if looks_like_ssml(line):
+                    hint = (f"; name the twin {path.name[:-len('.ssml.dialog')]}.ssml, since "
+                            "OVOS reads every .dialog as a plain template"
+                            if path.name.endswith(".ssml.dialog")
+                            else f"; put the markup in {path.stem}.ssml beside it")
+                    problems.append(f"locale/{relative}:{number} holds SSML markup, which "
+                                    f"clients without SSML say and show as written{hint}")
+        elif path.suffix == SSML_SUFFIX:
+            plain_path = path.with_suffix(".dialog")
+            if not plain_path.is_file():
+                problems.append(f"locale/{relative} has no {plain_path.name} beside it; "
+                                "a twin is only sent with its plain dialog")
+                continue
+            plain, twins = _resource_lines(plain_path), _resource_lines(path)
+            if len(plain) != len(twins):
+                problems.append(f"locale/{relative} has {len(twins)} line(s) and "
+                                f"{plain_path.name} has {len(plain)}; line N is sent with "
+                                "line N, so both need one line per variant")
+                continue
+            for (_, plain_line), (number, ssml_line) in zip(plain, twins, strict=True):
+                problems.extend(_ssml_line_problems(f"locale/{relative}:{number}",
+                                                    plain_line, ssml_line))
+    return problems
+
+
 def check_all(skill_root: Path) -> list[str]:
     """Every check, in the order a person would want to read them."""
     root = Path(skill_root)
@@ -391,5 +497,6 @@ def check_all(skill_root: Path) -> list[str]:
         + check_package_data(root)
         + check_fallback_priority(root)
         + check_locale_contract(root)
+        + check_ssml(root)
         + (sync_regions(package / "locale") if package else [])
     )

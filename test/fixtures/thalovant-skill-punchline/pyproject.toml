@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "thalovant-skill-punchline"
+version = "0.1.0"
+description = "Punchline: SkillKit's example of speech markup, used by its tests"
+requires-python = ">=3.10"
+dependencies = ["thalovant-skillkit"]
+
+[project.entry-points."opm.skill"]
+"thalovant-skill-punchline.thalovant" = "thalovant_skill_punchline:PunchlineSkill"
+
+[tool.setuptools]
+packages = ["thalovant_skill_punchline"]
+
+[tool.setuptools.package-data]
+thalovant_skill_punchline = ["locale/*.json", "locale/*/*", "locale/*/*/*"]

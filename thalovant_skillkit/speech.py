@@ -13,12 +13,16 @@ context and stamp the skill id, and that a first-time author was shown as
 message so the reply keeps its session, source and destination, speaks in
 that message's language unless told otherwise, and uses the topic the
 installed workshop's own `speak` uses.
+
+The same message carries speech markup: `utterance_ssml` beside the plain
+`utterance` when the text is an `ssml.Speech` with markup. See `ssml`.
 """
 from __future__ import annotations
 
 from typing import Any
 
 from .message import message_lang
+from .ssml import SSML_KEY, speech_parts
 
 
 def speech_topic() -> str:
@@ -62,6 +66,70 @@ def bus_of(skill: Any):
         return None
 
 
+def emit_speech(
+    skill: Any,
+    message: Any,
+    text: str,
+    *,
+    lang: str,
+    expect_response: bool = False,
+    written: str | None = None,
+    meta: dict | None = None,
+    wait: bool | int = False,
+    ssml: str | None = None,
+):
+    """Build one speak message, emit it, and wait on it if asked; return it.
+
+    The message `OVOSSkill.speak` builds, with room for the forms a client may
+    use beside the words: `utterance_written` for a screen and
+    `utterance_ssml` for a voice that reads markup. `message` is the message
+    being answered, forwarded so the reply keeps its session; None sends a
+    fresh one, as `speak` does when it finds nothing to answer. `wait` is
+    `speak`'s: True waits up to 15 seconds for the words to be heard, a
+    number that many seconds.
+    """
+    bus = bus_of(skill)
+    if bus is None:
+        raise RuntimeError("this skill is not bound to a bus, so it cannot speak")
+    skill_id = getattr(skill, "skill_id", "") or ""
+    meta = {**(meta or {}), "skill": skill_id}
+    data: dict[str, Any] = {
+        "utterance": text,
+        "expect_response": bool(expect_response),
+        "meta": meta,
+        "lang": lang,
+    }
+    if written and written != text:
+        data["utterance_written"] = written
+    if ssml:
+        data[SSML_KEY] = ssml
+    topic = speech_topic()
+    forward = getattr(message, "forward", None)
+    if callable(forward):
+        speech = forward(topic, data)
+    else:
+        # No message, or a test double without `forward`: build the message
+        # ourselves and carry any context across, which is the whole point.
+        from ovos_bus_client.message import Message
+
+        speech = Message(topic, data, dict(getattr(message, "context", None) or {}))
+    speech.context["skill_id"] = skill_id
+    if "translation_data" in meta:
+        # As `speak` does: auto-translation metadata rides on the context.
+        from ovos_utils.json_helper import merge_dict
+
+        speech.context["translation_data"] = merge_dict(
+            speech.context.get("translation_data", {}), meta["translation_data"])
+    bus.emit(speech)
+    if wait:
+        from ovos_bus_client.session import SessionManager
+
+        session = SessionManager.get(speech)
+        session.is_speaking = True
+        SessionManager.wait_while_speaking(15 if isinstance(wait, bool) else wait, session)
+    return speech
+
+
 def speak_to(
     skill: Any,
     message: Any,
@@ -71,44 +139,31 @@ def speak_to(
     expect_response: bool = False,
     written: str | None = None,
     meta: dict | None = None,
+    wait: bool | int = False,
 ):
     """Emit `text` as speech for whoever sent `message`, and return that message.
 
     `lang` defaults to the incoming message's language. `expect_response=True`
-    asks the device to listen again, as OVOS's own `speak` does. `written` is
+    asks the device to listen again, as OVOS's own `speak` does, and `wait`
+    blocks until it has been heard, as `speak(wait=...)` does. `written` is
     an optional form for a screen (see `moments`); it travels beside the
     spoken text and a speaker without a screen never looks at it.
+
+    `text` may be a `ssml.Speech`: its words are the utterance and its markup
+    travels as `utterance_ssml`. A plain string holding SSML tags is moved
+    the same way, so the tags never reach a client that shows `utterance`.
 
     Empty text emits nothing and returns None. A skill with no bus cannot
     speak; that raises rather than losing the reply quietly, because the only
     place it happens is a test that forgot to bind one.
     """
+    text, ssml = speech_parts(text, getattr(skill, "skill_id", None))
     if not text:
         return None
     # Fail before building anything: a reply that cannot be sent should not
     # cost a message, and the reason should be the first thing reported.
-    bus = bus_of(skill)
-    if bus is None:
+    if bus_of(skill) is None:
         raise RuntimeError("speak_to needs a bus: this skill is not bound to one")
-    skill_id = getattr(skill, "skill_id", "") or ""
-    data: dict[str, Any] = {
-        "utterance": text,
-        "expect_response": bool(expect_response),
-        "meta": {**(meta or {}), "skill": skill_id},
-        "lang": lang or message_lang(message),
-    }
-    if written and written != text:
-        data["utterance_written"] = written
-    topic = speech_topic()
-    forward = getattr(message, "forward", None)
-    if callable(forward):
-        speech = forward(topic, data)
-    else:
-        # A test double without `forward`: build the message ourselves and
-        # carry the context across, which is the whole point of forwarding.
-        from ovos_bus_client.message import Message
-
-        speech = Message(topic, data, dict(getattr(message, "context", None) or {}))
-    speech.context["skill_id"] = skill_id
-    bus.emit(speech)
-    return speech
+    return emit_speech(skill, message, text, lang=lang or message_lang(message),
+                       expect_response=expect_response, written=written, meta=meta,
+                       wait=wait, ssml=ssml)

@@ -116,3 +116,38 @@ def test_a_failed_reply_leaves_the_question_untouched():
         speak_to(Unbound(), incoming, "lost?")
 
     assert "skill_id" not in incoming.context
+
+
+def test_a_built_sentence_sends_its_words_and_its_markup():
+    """The words are the utterance; the markup travels beside them."""
+    from thalovant_skillkit.ssml import pause, say
+
+    skill = _Skill()
+
+    sent = speak_to(skill, message("joke", session={"session_id": "alice"}),
+                    say("Why?", pause("1s"), "Because."))
+
+    assert sent.data["utterance"] == "Why? Because."
+    assert type(sent.data["utterance"]) is str
+    assert sent.data["utterance_ssml"] == '<speak>Why? <break time="1s"/> Because.</speak>'
+    assert sent.context["session"]["session_id"] == "alice"
+
+
+def test_markup_in_the_text_never_reaches_the_utterance():
+    """A tag in `utterance` is shown and said as a tag by the Android app."""
+    skill = _Skill()
+
+    sent = speak_to(skill, message("hi"), "Wait <break time='1s'/> for it.")
+
+    assert sent.data["utterance"] == "Wait for it."
+    assert sent.data["utterance_ssml"] == "<speak>Wait <break time='1s'/> for it.</speak>"
+
+
+def test_a_pause_alone_says_nothing():
+    """No words, no message: a pause is not a reply."""
+    from thalovant_skillkit.ssml import pause
+
+    skill = _Skill()
+
+    assert speak_to(skill, message("hi"), pause("1s")) is None
+    assert skill._bus.emitted == []

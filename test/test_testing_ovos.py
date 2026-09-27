@@ -226,6 +226,28 @@ def test_session_view_excludes_unscoped_and_malformed_carriers(integration_scope
             capture.for_session(invalid)
 
 
+def test_captured_speech_exposes_the_markup_of_each_sentence(integration_scope):
+    """`spoken_ssml` lines up with `spoken`, and prefers canonical speech as it does."""
+    from ovos_bus_client.message import Message
+    from ovos_bus_client.session import Session
+
+    alice = Session("alice")
+    context = {"session": alice.serialize()}
+    marked = {"utterance": "Why? Because.",
+              "utterance_ssml": "<speak>Why? <break/> Because.</speak>"}
+    capture = CapturedTurn([
+        Message("speak", marked, context),  # the legacy mirror of the next one
+        Message("ovos.utterance.speak", marked, context),
+        Message("ovos.utterance.speak", {"utterance": "plain"}, context),
+    ], alice)
+
+    assert capture.spoken == ["Why? Because.", "plain"]
+    assert capture.spoken_ssml == ["<speak>Why? <break/> Because.</speak>", None]
+    assert capture.for_session("alice").spoken_ssml == capture.spoken_ssml
+    legacy = CapturedTurn([Message("speak", marked, context)], alice)
+    assert legacy.spoken_ssml == ["<speak>Why? <break/> Because.</speak>"]
+
+
 def test_native_audio_and_stop_keep_two_speakers_separate(integration_scope, tmp_path):
     """Inspect real OVOS play_audio bytes and Stop dispatch without starting a player."""
     from ovos_bus_client.message import Message, dig_for_message

@@ -35,9 +35,11 @@ from __future__ import annotations
 
 import inspect
 import random
+import re
 from pathlib import Path
 from typing import Any
 
+from ovos_bus_client.message import dig_for_message
 from ovos_utils import classproperty
 from ovos_utils.process_utils import RuntimeRequirements
 from ovos_workshop.decorators import skill_api_method
@@ -64,8 +66,50 @@ from .locale import SkillResources
 from .message import context_of, message_lang, utterance
 from .message import location as _location
 from .selection import ShuffleBagPool
+from .speech import emit_speech
 from .speech import speak_to as _speak_to
+from .ssml import carries_markup, render_line, speech_parts
 from .text import fold
+
+# OVOS's renderer turns `{{name}}` into `{name}` before formatting a dialog.
+_MUSTACHE = re.compile(r"\{\{+\s*(.*?)\s*\}\}+")
+# `(a|b)` and `[optional]`: OVOS expands these after formatting and picks one
+# expansion at random. The same choice cannot be made in an SSML twin, so a
+# dialog written this way is left to OVOS and speaks without markup.
+_ALTERNATIVES = re.compile(r"\([^()]*\|[^()]*\)|\[[^\[\]]*\]")
+
+
+def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw):
+    """The dialog line and its SSML twin, rendered from one variant, or None.
+
+    None means "let OVOS speak it exactly as it always has": no twin and no
+    marked-up value, a dialog OVOS would render from different lines (a user
+    override, another language), alternatives OVOS expands at random, or any
+    failure at all. Markup is an addition to a reply and must never cost one.
+
+    `framework_lines()` returns the lines OVOS would render from; `draw(lines,
+    lang)` picks one of them.
+    """
+    try:
+        values = data or {}
+        resources = skill.locale_resources
+        if not carries_markup(values) and not resources.has_ssml(key):
+            return None  # the common case, answered before asking for a language
+        lang = skill.lang
+        lines, twins = resources.dialog_twins(key, lang)
+        if not lines or (twins is None and not carries_markup(values)):
+            return None
+        if any(_ALTERNATIVES.search(line) for line in lines):
+            return None
+        lines = tuple(_MUSTACHE.sub(r"{\1}", line) for line in lines)
+        framework = framework_lines()
+        if framework is None or tuple(framework) != lines:
+            return None
+        index = lines.index(draw(lines, lang))
+        twin = _MUSTACHE.sub(r"{\1}", twins[index]) if twins else None
+        return render_line(lines[index], twin, values)
+    except Exception:  # noqa: BLE001 - OVOS's own path is the fallback
+        return None
 
 
 class _SkillPlumbing:
@@ -221,20 +265,33 @@ class _SkillPlumbing:
         Uses the locale resource fallback chain and returns the name itself
         if no dialog is found. Missing formatting values leave the template
         visible instead of raising during an answer.
+
+        When `<name>.ssml` sits beside the dialog, or a value in `data` is an
+        `ssml.Speech` with markup, the result is a `Speech`: the same line,
+        plus its SSML rendered from the same variant and the same data.
+        Speaking it sends both; anything else sees the plain line.
         """
-        lines = self.locale_resources.dialog_lines(name, lang or self._own_lang())
+        lines, twins = self.locale_resources.dialog_twins(name, lang or self._own_lang())
         if not lines:
             return name
-        template = random.choice(lines)  # noqa: S311 - variety, not secrecy
+        index = random.randrange(len(lines))  # noqa: S311 - variety, not secrecy
+        template = lines[index]
+        values = data or {}
+        if twins is None and not carries_markup(values):
+            try:
+                return template.format(**values).replace("\\n", "\n")
+            except (KeyError, IndexError, ValueError):
+                # KeyError and IndexError are a placeholder the caller did not
+                # supply; ValueError is a malformed template, which `str.format`
+                # raises for something as small as an unmatched brace. All three
+                # are a translation that needs fixing, and none of them is worth
+                # crashing a spoken reply over -- the skill says the raw line and
+                # the mistake is audible.
+                return template.replace("\\n", "\n")
+        twin = twins[index].replace("\\n", "\n") if twins else None
         try:
-            return template.format(**(data or {})).replace("\\n", "\n")
+            return render_line(template.replace("\\n", "\n"), twin, values)
         except (KeyError, IndexError, ValueError):
-            # KeyError and IndexError are a placeholder the caller did not
-            # supply; ValueError is a malformed template, which `str.format`
-            # raises for something as small as an unmatched brace. All three
-            # are a translation that needs fixing, and none of them is worth
-            # crashing a spoken reply over -- the skill says the raw line and
-            # the mistake is audible.
             return template.replace("\\n", "\n")
 
     @staticmethod
@@ -248,13 +305,22 @@ class _SkillPlumbing:
 
         Framework resource overrides win over packaged lines. Selection history
         is local to this skill instance and bounded; reloaded choices replace
-        their old bag. Ordinary ``speak_dialog`` remains unchanged.
+        their old bag. Ordinary ``speak_dialog`` remains unchanged. A `.ssml`
+        twin is sent with the line drawn, as `speak_dialog` does.
         """
         # OVOS initializes settings before a skill handles messages. setdefault
         # also makes lazy initialization safe for concurrent first turns.
         bags = self.__dict__.get("_varied_dialog_bags")
         if bags is None:
             bags = self.__dict__.setdefault("_varied_dialog_bags", ShuffleBagPool[str]())
+
+        speech = _twin_speech(
+            self, key, data, lambda: self.resources.load_dialog_file(key),
+            lambda lines, lang: bags.draw(lines, key=(lang, key))[0],
+        )
+        if speech is not None:
+            return self.speak(speech, expect_response, wait,
+                              meta={"dialog": key, "data": data or {}})
 
         def choose_line(rendered, lang):
             lines = (self.resources.load_dialog_file(key)
@@ -267,20 +333,85 @@ class _SkillPlumbing:
         return self.speak_dialog(key, data, expect_response=expect_response, wait=wait,
                                  render_callback=choose_line)
 
+    # -- speaking, with markup beside the words ---------------------------------
+    #
+    # These two keep OVOSSkill's names and signatures on purpose: every skill
+    # already calls them, so a skill gets SSML by adding a `.ssml` twin and
+    # changes no code. Without markup they hand the call to OVOS unchanged.
+
+    def speak(self, utterance: str, expect_response: bool = False,
+              wait: bool | int = False, meta: dict | None = None):
+        """OVOS's `speak`, which also sends the markup of an `ssml.Speech`.
+
+        Plain text goes to OVOS exactly as before. A Speech with markup is
+        sent the way OVOS sends a sentence -- the message being answered,
+        forwarded; the skill's language; `meta`; `wait` -- with
+        `utterance_ssml` beside the words. A plain string holding SSML tags
+        is moved into `utterance_ssml` and logged once, so a tag never
+        reaches a client that shows or says `utterance` as written.
+        """
+        text, ssml = speech_parts(utterance, getattr(self, "skill_id", None))
+        if ssml is None:
+            return super().speak(text, expect_response, wait, meta)
+        return emit_speech(self, dig_for_message(), text, lang=self.lang,
+                           expect_response=expect_response, meta=meta, wait=wait, ssml=ssml)
+
+    def speak_dialog(self, key: str, data: dict | None = None,
+                     expect_response: bool = False, wait: bool | int = False,
+                     render_callback=None):
+        """OVOS's `speak_dialog`, which also sends the dialog's `.ssml` twin.
+
+        With a twin, or a value in `data` that is an `ssml.Speech` with
+        markup, one variant is drawn and both forms are rendered from it
+        with the same data; the SSML's values are escaped. Otherwise --
+        including when OVOS would render from other lines than the skill's
+        own, such as an operator's override -- OVOS renders and speaks the
+        dialog exactly as before. A `render_callback` that changes the line
+        drops the markup, since it no longer says the same words.
+        """
+        speech = _twin_speech(
+            self, key, data, lambda: self._framework_dialog_lines(key),
+            self._draw_dialog_line,
+        )
+        if speech is None:
+            return super().speak_dialog(key, data, expect_response, wait, render_callback)
+        if render_callback is not None:
+            rendered = render_callback(str(speech), self.lang)
+            if rendered != str(speech):
+                speech = rendered
+        return self.speak(speech, expect_response, wait,
+                          meta={"dialog": key, "data": data or {}})
+
+    def _framework_dialog_lines(self, key: str):
+        """The lines OVOS's renderer holds for `key`, or None if it cannot say."""
+        templates = getattr(self.dialog_renderer, "templates", None)
+        if not isinstance(templates, dict):
+            return None
+        return tuple(templates.get(key) or ())
+
+    def _draw_dialog_line(self, lines: tuple[str, ...], lang: str) -> str:
+        """A line not said last time, as OVOS's renderer avoids repeats."""
+        bags = self.__dict__.get("_dialog_twin_bags")
+        if bags is None:
+            bags = self.__dict__.setdefault("_dialog_twin_bags", ShuffleBagPool[str]())
+        return bags.draw(lines, key=(lang, lines))[0]
+
     def speak_to(self, message: Any, text: str, *, lang: str | None = None,
                  expect_response: bool = False, written: str | None = None,
-                 meta: dict | None = None):
+                 meta: dict | None = None, wait: bool | int = False):
         """Say `text` to whoever sent `message`, in their language.
 
         `self.speak` finds the message it answers by walking the call stack and
         speaks in `self.lang`, which is wrong for a converse turn or a stop
         hook, and wrong on a hub answering two rooms in two languages. This
         forwards the message you were given, so the reply keeps its session
-        and reaches the room that asked. Returns the emitted message, or None
-        for empty text.
+        and reaches the room that asked. `text` may be an `ssml.Speech`, whose
+        markup is sent beside the words. `wait` blocks as `speak(wait=...)`
+        does. Returns the emitted message, or None for empty text.
         """
         return _speak_to(self, message, text, lang=lang or self.lang_of(message),
-                         expect_response=expect_response, written=written, meta=meta)
+                         expect_response=expect_response, written=written, meta=meta,
+                         wait=wait)
 
     # -- the answer -----------------------------------------------------------
 
