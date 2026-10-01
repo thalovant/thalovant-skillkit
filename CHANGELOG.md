@@ -1,7 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.23.0 (2026-10-01)
 
+- **Tables move out of `vocab/`.** A `canonical|alias|alias` line in a `.voc`
+  no longer loads: ovos-spec-tools 1.14 expands every `.voc` line by
+  OVOS-INTENT-1, where a `|` outside `(a|b)` is an error, and ovos-workshop
+  9.8.9 expands every `.voc` under the locale tree when a skill registers an
+  intent with a vocabulary blacklist, so one such line stops the skill
+  loading. A table the skill parses itself now lives in
+  `locale/<lang>/tables/<name>.table`. The locale check reports any `.voc`
+  line with a pipe outside a group, and runs the collapsed-alias check on
+  `.table` files as it did on `.voc` ones.
 - `new` no longer writes a CI step that dispatches `skill-merged` to the
   intent corpus. It needed a personal access token that no skill repository
   holds, so it only ever printed a warning; the corpus rebuilds hourly on its
