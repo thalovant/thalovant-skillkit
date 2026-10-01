@@ -151,10 +151,17 @@ call `clear_cache()` between turns after changing locale files or installing
 overrides in place. It clears cached language choices and all resource results.
 There is no file watcher or automatic per-request filesystem scan.
 
-Vocabulary checks flag aliases that appear to contain a whole list or accidental
-repetition. A keyed line uses `canonical|alias|another alias`. Numbers such as
-`11` are valid. If a language naturally repeats a word or syllable, document the
-reason and exempt only that exact alias in its `.voc` file:
+A table a skill parses itself -- `canonical|alias|another alias` per line --
+lives in `locale/<lang>/tables/<name>.table`, read with
+`combined_lines(lang, "tables", "<name>.table")`. It must not be a `.voc`: OVOS
+expands every `.voc` under the locale tree by OVOS-INTENT-1, where a `|` outside
+`(a|b)` is an error, and from ovos-spec-tools 1.14 one such line stops the skill
+loading. The locale check reports any `.voc` line that has one.
+
+Table checks flag aliases that appear to contain a whole list or accidental
+repetition. Numbers such as `11` are valid. If a language naturally repeats a
+word or syllable, document the reason and exempt only that exact alias in its
+`.table` file:
 
 ```text
 # Swahili: sasa is one word meaning now.

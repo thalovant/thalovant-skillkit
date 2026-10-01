@@ -13,6 +13,7 @@ from thalovant_skillkit.checks import (
     check_locale_contract,
     check_package_data,
     collapsed_alias,
+    pipe_outside_group,
     vocab_problems,
 )
 
@@ -277,3 +278,61 @@ def test_every_bad_alias_on_a_line_is_reported():
         "Joka päivä joka päivä",
     ]
     assert {number for number, _, _ in found} == {1}
+
+
+def _put_everywhere(skill: Path, relative: str, body: str) -> None:
+    for lang in ("en-US", "fr-FR", "de-DE"):
+        path = skill / "thalovant_skill_demo" / "locale" / lang / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(body, encoding="utf-8")
+
+
+def test_a_pipe_outside_a_group_is_found():
+    assert pipe_outside_group("current|this year")
+    assert pipe_outside_group("(this|that) year|current")
+    assert not pipe_outside_group("(this|current) year")
+    assert not pipe_outside_group("next [week|month]")
+    assert not pipe_outside_group("this year")
+
+
+def test_a_keyed_table_in_vocab_is_named_with_where_it_belongs(skill):
+    """ovos-spec-tools 1.14 refuses `key|alias` in a .voc, and ovos-workshop
+    then fails the whole skill's load."""
+    _put_everywhere(skill, "vocab/relative_year.voc", "current|this year\n")
+
+    problems = check_locale_contract(skill)
+
+    assert len(problems) == 3
+    assert all("tables/relative_year.table" in problem for problem in problems)
+
+
+def test_a_keyed_voc_only_one_language_ships_is_still_named(skill):
+    """OVOS reads every .voc under the tree, whether or not en-US has it."""
+    path = skill / "thalovant_skill_demo/locale/de-DE/vocab/local.voc"
+    path.parent.mkdir(parents=True)
+    path.write_text("current|dieses Jahr\n", encoding="utf-8")
+
+    problems = check_locale_contract(skill)
+
+    assert problems == [
+        "locale/de-DE/vocab/local.voc:1 has a | outside a group, which OVOS refuses "
+        "to load; write (a|b), or move a key|alias table to tables/local.table"
+    ]
+
+
+def test_a_grouped_voc_line_and_a_table_are_both_fine(skill):
+    _put_everywhere(skill, "vocab/year.voc", "(this|current) year\n")
+    _put_everywhere(skill, "tables/relative_year.table", "current|this year|current year\n")
+
+    assert check_locale_contract(skill) == []
+
+
+def test_a_table_gets_the_collapsed_alias_check(skill):
+    _put_everywhere(skill, "tables/cadence.table", "daily|every day\n")
+    (skill / "thalovant_skill_demo/locale/de-DE/tables/cadence.table").write_text(
+        "daily|jeden Tag, täglich\n", encoding="utf-8")
+
+    problems = check_locale_contract(skill)
+
+    assert len(problems) == 1
+    assert "de-DE/tables/cadence.table:1" in problems[0]
