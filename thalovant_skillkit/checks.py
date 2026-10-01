@@ -252,11 +252,12 @@ def check_locale_contract(skill_root: Path) -> list[str]:
                 if relative.suffix == ".voc":
                     for number, line in enumerate(text.splitlines(), 1):
                         stripped = line.strip()
-                        if stripped and not stripped.startswith("#") and pipe_outside_group(stripped):
-                            problems.append(
-                                f"locale/{locale}/{relative}:{number} has a | outside a group, "
-                                "which OVOS refuses to load; write (a|b), or move a key|alias "
-                                f"table to tables/{relative.stem}.table")
+                        if stripped.startswith("#") or not pipe_outside_group(stripped):
+                            continue
+                        problems.append(
+                            f"locale/{locale}/{relative}:{number} has a | outside a group, "
+                            "which OVOS refuses to load; write (a|b), or move a key|alias "
+                            f"table to tables/{relative.stem}.table")
             elif relative.suffix == ".rx":
                 lines = target.read_text(encoding="utf-8").splitlines()
                 for number, pattern in enumerate(lines, 1):
