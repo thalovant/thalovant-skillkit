@@ -249,15 +249,6 @@ def check_locale_contract(skill_root: Path) -> list[str]:
                 for number, alias, reason in vocab_problems(text):
                     problems.append(f"locale/{locale}/{relative}:{number} "
                                     f"alias {alias!r} {reason}")
-                if relative.suffix == ".voc":
-                    for number, line in enumerate(text.splitlines(), 1):
-                        stripped = line.strip()
-                        if stripped.startswith("#") or not pipe_outside_group(stripped):
-                            continue
-                        problems.append(
-                            f"locale/{locale}/{relative}:{number} has a | outside a group, "
-                            "which OVOS refuses to load; write (a|b), or move a key|alias "
-                            f"table to tables/{relative.stem}.table")
             elif relative.suffix == ".rx":
                 lines = target.read_text(encoding="utf-8").splitlines()
                 for number, pattern in enumerate(lines, 1):
@@ -279,6 +270,19 @@ def check_locale_contract(skill_root: Path) -> list[str]:
                 if target_data[key] != source_data[key]:
                     problems.append(f"locale/{locale}/skill.json: {key} differs from "
                                     f"{SOURCE_LOCALE} but is not a translatable field")
+
+    # Every .voc OVOS will read, not only those en-US also ships: workshop
+    # walks the whole locale tree, so a file one language alone carries
+    # stops the skill loading just the same.
+    for voc in sorted(locale_root.rglob("*.voc")):
+        where = voc.relative_to(locale_root).as_posix()
+        for number, line in enumerate(voc.read_text(encoding="utf-8").splitlines(), 1):
+            stripped = line.strip()
+            if stripped.startswith("#") or not pipe_outside_group(stripped):
+                continue
+            problems.append(
+                f"locale/{where}:{number} has a | outside a group, which OVOS refuses "
+                f"to load; write (a|b), or move a key|alias table to tables/{voc.stem}.table")
     return problems
 
 

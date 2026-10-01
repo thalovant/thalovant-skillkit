@@ -306,6 +306,20 @@ def test_a_keyed_table_in_vocab_is_named_with_where_it_belongs(skill):
     assert all("tables/relative_year.table" in problem for problem in problems)
 
 
+def test_a_keyed_voc_only_one_language_ships_is_still_named(skill):
+    """OVOS reads every .voc under the tree, whether or not en-US has it."""
+    path = skill / "thalovant_skill_demo/locale/de-DE/vocab/local.voc"
+    path.parent.mkdir(parents=True)
+    path.write_text("current|dieses Jahr\n", encoding="utf-8")
+
+    problems = check_locale_contract(skill)
+
+    assert problems == [
+        "locale/de-DE/vocab/local.voc:1 has a | outside a group, which OVOS refuses "
+        "to load; write (a|b), or move a key|alias table to tables/local.table"
+    ]
+
+
 def test_a_grouped_voc_line_and_a_table_are_both_fine(skill):
     _put_everywhere(skill, "vocab/year.voc", "(this|current) year\n")
     _put_everywhere(skill, "tables/relative_year.table", "current|this year|current year\n")
