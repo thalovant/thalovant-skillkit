@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -62,6 +63,15 @@ def test_a_vocabulary_reference_without_its_voc_is_malformed():
         intents.expand("volume to <level>")
     with pytest.raises(intents.MalformedTemplate, match="undefined vocabulary"):
         intents.expand("volume to <level>", {"volume": ["volume"]})
+
+
+def test_a_single_word_group_is_that_word_and_says_nothing(caplog):
+    """OVOS folds `(word)` to `word`. spec-tools logs each one; the kit keeps
+    that out of `check`, and leaves the logger as it found it."""
+    with caplog.at_level("WARNING", logger="ovos_spec_tools.expansion"):
+        assert intents.expand("what time is it in (Paris)") == ["what time is it in Paris"]
+    assert caplog.records == []
+    assert not logging.getLogger("ovos_spec_tools.expansion").filters
 
 
 @pytest.mark.parametrize("line", [

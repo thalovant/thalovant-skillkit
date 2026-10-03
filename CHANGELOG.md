@@ -26,6 +26,9 @@
   ko-KR); each has a pull request that fixes the lines.
 - A pipe outside a group is refused on ovos-spec-tools 1.13, which the hubs
   pin, as it is on 1.14, which refuses it itself, so both read the same lines.
+- ovos-spec-tools logs a warning for each `(word)` group it folds to `word`.
+  The kit filters that one warning out while it expands, so `check` does not
+  print one for each such line in the fleet.
 
 ## 0.23.0 (2026-10-01)
 

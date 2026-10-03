@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -83,6 +84,19 @@ def _bare_pipe(line: str) -> bool:
     return False
 
 
+class _QuietDegenerateGroups(logging.Filter):
+    """ovos-spec-tools logs a warning for every `(word)` it folds to `word`.
+    OVOS accepts the form, the fleet writes it often, and `check` read as a
+    wall of those warnings around the findings that matter."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        return "single-branch group" not in str(record.msg)
+
+
+_SPEC_LOG = logging.getLogger("ovos_spec_tools.expansion")
+_QUIET = _QuietDegenerateGroups()
+
+
 def expand(line: str, vocabularies: Mapping[str, Sequence[str]] | None = None) -> list[str]:
     """Every sentence an intent line stands for, as OVOS expands it.
 
@@ -97,7 +111,11 @@ def expand(line: str, vocabularies: Mapping[str, Sequence[str]] | None = None) -
         raise MalformedTemplate(
             f"{line!r}: a pipe outside a group is not a branch separator and "
             f"cannot be literal input")
-    return list(islice(iter_expand(line, dict(vocabularies or {})), EXPANSIONS_PER_LINE))
+    _SPEC_LOG.addFilter(_QUIET)
+    try:
+        return list(islice(iter_expand(line, dict(vocabularies or {})), EXPANSIONS_PER_LINE))
+    finally:
+        _SPEC_LOG.removeFilter(_QUIET)
 
 
 def vocabularies(locale_dir: Path, lang: str) -> dict[str, list[str]]:
