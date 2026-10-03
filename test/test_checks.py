@@ -10,6 +10,7 @@ from thalovant_skillkit.checks import (
     check_all,
     check_entry_point,
     check_fallback_priority,
+    check_intent_templates,
     check_locale_contract,
     check_package_data,
     collapsed_alias,
@@ -336,3 +337,49 @@ def test_a_table_gets_the_collapsed_alias_check(skill):
 
     assert len(problems) == 1
     assert "de-DE/tables/cadence.table:1" in problems[0]
+
+
+def test_intent_lines_ovos_refuses_are_named_with_file_line_and_what_to_write(skill):
+    """The fleet shipped each of these: OVOS skips the line and logs it, so the
+    skill quietly stops answering that wording."""
+    locale = skill / "thalovant_skill_demo" / "locale"
+    (locale / "fr-FR/intents/hello.intent").write_text(
+        "bonjour {who}\n{who}\n", encoding="utf-8")
+    (locale / "de-DE/intents/hello.intent").write_text(
+        "hallo {who}\n\n# comment\nwie spät ist es in {who}:n]\n", encoding="utf-8")
+    (locale / "en-US/intents/level.intent").write_text(
+        "volume to <level>\n", encoding="utf-8")
+
+    problems = check_intent_templates(skill)
+
+    assert len(problems) == 3
+    unbalanced, undefined, slot_only = problems
+    assert unbalanced.startswith("locale/de-DE/intents/hello.intent:4: OVOS skips this line, ")
+    assert "unbalanced" in unbalanced and "close every ( with )" in unbalanced
+    assert undefined.startswith("locale/en-US/intents/level.intent:1: ")
+    assert "<level>" in undefined and "add that .voc to this language" in undefined
+    assert slot_only.startswith("locale/fr-FR/intents/hello.intent:2: ")
+    assert "slot-only" in slot_only and "write the words around it" in slot_only
+    assert set(problems) <= set(check_all(skill))
+
+
+def test_a_vocabulary_reference_with_its_voc_is_fine(skill):
+    for lang in ("en-US", "fr-FR", "de-DE"):
+        (skill / "thalovant_skill_demo/locale" / lang / "intents/level.intent").write_text(
+            "[set] [the] volume [level] to <level>\n<level> volume\n", encoding="utf-8")
+        (skill / "thalovant_skill_demo/locale" / lang / "level.voc").write_text(
+            "(maximum|max|quiet)\n", encoding="utf-8")
+
+    assert check_intent_templates(skill) == []
+    assert check_all(skill) == []
+
+
+def test_a_pipe_outside_a_group_in_an_intent_is_named(skill):
+    (skill / "thalovant_skill_demo/locale/en-US/intents/hello.intent").write_text(
+        "hello {who}\nhi|hey {who}\n", encoding="utf-8")
+
+    problems = check_intent_templates(skill)
+
+    assert len(problems) == 1
+    assert problems[0].startswith("locale/en-US/intents/hello.intent:2: ")
+    assert "write the choice as (a|b)" in problems[0]

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -19,9 +20,70 @@ def test_nested_groups_expand():
         "set a timer", "create a timer", "make a timer"}
 
 
-def test_plain_and_unbalanced_lines_pass_through():
+def test_plain_lines_pass_through():
     assert intents.expand("what time is it") == ["what time is it"]
-    assert intents.expand("what (time is it") == ["what (time is it"]
+
+
+def test_square_brackets_are_optional_and_may_hold_a_choice():
+    """`[x]` is `(x|)`, and `[a|b]` is "a, b or nothing" (OVOS-INTENT-1 3.3).
+    The kit used to keep both brackets as literal text, so the fleet index
+    carried "lock [the] doors" and never "lock the doors"."""
+    assert set(intents.expand("lock up [the house]")) == {"lock up the house", "lock up"}
+    assert set(intents.expand("turn [on|off] the light")) == {
+        "turn on the light", "turn off the light", "turn the light"}
+
+
+def test_optional_groups_nest_in_choices_and_choices_in_optional_groups():
+    assert set(intents.expand("(set|(create|make)) [a [new]] timer")) == {
+        "set a new timer", "set a timer", "set timer",
+        "create a new timer", "create a timer", "create timer",
+        "make a new timer", "make a timer", "make timer"}
+
+
+def test_home_lines_expand_as_ovos_reads_them():
+    assert set(intents.expand("lock [the] (door|doors|front door)")) == {
+        "lock the door", "lock the doors", "lock the front door",
+        "lock door", "lock doors", "lock front door"}
+    assert set(intents.expand("schalte [das|die|den] {device} aus")) == {
+        "schalte das {device} aus", "schalte die {device} aus",
+        "schalte den {device} aus", "schalte {device} aus"}
+
+
+def test_a_vocabulary_reference_stands_for_every_line_of_its_voc():
+    level = ["(maximum|max|top)", "quiet"]
+    assert set(intents.expand("[set] [the] volume to <level>", {"level": level})) == {
+        f"{verb}{article}volume to {word}"
+        for verb in ("set ", "") for article in ("the ", "")
+        for word in ("maximum", "max", "top", "quiet")}
+    assert intents.expand("<level> volume", {"level": ["quiet"]}) == ["quiet volume"]
+
+
+def test_a_vocabulary_reference_without_its_voc_is_malformed():
+    with pytest.raises(intents.MalformedTemplate, match="undefined vocabulary"):
+        intents.expand("volume to <level>")
+    with pytest.raises(intents.MalformedTemplate, match="undefined vocabulary"):
+        intents.expand("volume to <level>", {"volume": ["volume"]})
+
+
+def test_a_single_word_group_is_that_word_and_says_nothing(caplog):
+    """OVOS folds `(word)` to `word`. spec-tools logs each one; the kit keeps
+    that out of `check`, and leaves the logger as it found it."""
+    with caplog.at_level("WARNING", logger="ovos_spec_tools.expansion"):
+        assert intents.expand("what time is it in (Paris)") == ["what time is it in Paris"]
+    assert caplog.records == []
+    assert not logging.getLogger("ovos_spec_tools.expansion").filters
+
+
+@pytest.mark.parametrize("line", [
+    "what (time is it",                 # an unclosed group
+    "Mikä aika on {location}:n]",       # date-time fi-FI: a ] with no [
+    "{location}",                       # weather et-EE: a line that is only a slot
+    "current|this year",                # a pipe outside a group, on 1.13 as on 1.14
+    "set {a}{b}",                       # two slots with no word between them
+])
+def test_lines_ovos_refuses_raise(line):
+    with pytest.raises(intents.MalformedTemplate):
+        intents.expand(line)
 
 
 def test_expansion_is_capped(monkeypatch):
@@ -102,6 +164,28 @@ def test_intent_lines_read_both_layouts_with_line_numbers(fleet_dir: Path):
     assert lines[0].file.endswith("locale/en-US/intents/rain.intent")
     fr = intents.intent_lines(root, locale_dir, "fr-FR", skill_id)
     assert [line.text for line in fr] == ["va-t-il pleuvoir"]
+
+
+def test_intent_lines_resolve_vocabularies_and_skip_what_ovos_skips(tmp_path: Path):
+    """The volume skill's shape: `<level>` read from `level.voc` beside the
+    intent, a `.voc` in a subdirectory counted too, and a line OVOS refuses
+    publishing no sentence at all."""
+    root = _skill(tmp_path, "volume", {
+        "en-US/volume_level.intent": "[set] [the] volume to <level>\n{location}\n",
+        "en-US/level.voc": "# the words\n(Max|top)\n",
+        "en-US/vocab/unit.voc": "percent\n",
+        "en-US/unit.intent": "ten <unit>\nvolume (up\n",
+    })
+    skill_id, locale_dir = fleet.skill_identity(root)
+    assert intents.vocabularies(locale_dir, "en-US") == {
+        "level": ["(max|top)"], "unit": ["percent"]}
+    lines = intents.intent_lines(root, locale_dir, "en-US", skill_id)
+    assert {(line.intent, line.line, line.text) for line in lines} == {
+        ("unit", 1, "ten percent"),
+        *{("volume_level", 1, f"{verb}{article}volume to {word}")
+          for verb in ("set ", "") for article in ("the ", "") for word in ("max", "top")},
+    }
+    assert intents.vocabularies(locale_dir, "fr-FR") == {}
 
 
 def test_corpus_reads_back_what_the_builder_writes(fleet_dir: Path, tmp_path: Path):

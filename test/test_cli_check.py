@@ -77,3 +77,16 @@ def test_a_model_directory_with_an_index_fails_a_duplicate(tmp_path: Path, monke
     out = capsys.readouterr().out
     assert "x.intent:1" in out and "thalovant-skill-garden.thalovant's water" in out
     assert "1 sentence(s) this change claims already belong to another skill" in out
+
+
+def test_fleet_only_still_fails_an_intent_line_ovos_refuses(tmp_path: Path, monkeypatch, capsys):
+    """`check --fleet-only` is the kit gate every skill's CI runs; a line OVOS
+    skips has to fail there, not only under the full `check`."""
+    root = _skill(tmp_path, intents=True)
+    (root / "thalovant_skill_x/locale/en-US/x.intent").write_text(
+        "water the garden\n{plant}\n")
+    monkeypatch.setattr(fleet, "resolve_model", _unavailable)
+    monkeypatch.delenv("GITHUB_ACTIONS", raising=False)
+    assert cli.main(["check", "--fleet-only", str(root)]) == 1
+    out = capsys.readouterr().out
+    assert "locale/en-US/x.intent:2: OVOS skips this line, slot-only" in out

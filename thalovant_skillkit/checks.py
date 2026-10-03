@@ -26,6 +26,7 @@ import string
 from collections import Counter
 from pathlib import Path
 
+from .intents import MalformedTemplate, expand, vocabularies
 from .regions import regional_sources, sync_regions
 from .ssml import looks_like_ssml, to_plain, validate
 from .text import fold_words
@@ -286,6 +287,79 @@ def check_locale_contract(skill_root: Path) -> list[str]:
     return problems
 
 
+#: What to write instead, by the fault ovos-spec-tools names. Its message
+#: says what is wrong; this says what to do about it.
+_TEMPLATE_HINTS = (
+    ("pipe outside a group",
+     "write the choice as (a|b), or put each wording on its own line"),
+    ("slot-only",
+     "a line that is only a slot matches any sentence at all; write the words "
+     "around it, as the en-US file does, or remove the line"),
+    ("undefined vocabulary reference",
+     "add that .voc to this language, or write the words in place of <name>"),
+    ("unbalanced",
+     "close every ( with ) and every [ with ], or remove the stray bracket"),
+    ("invalid slot name",
+     "a slot name is lower-case letters, digits and _ only, as in {city_name}"),
+    ("invalid vocabulary name",
+     "a vocabulary name is lower-case letters, digits and _ only, as in <level>"),
+    ("adjacent slots",
+     "put at least one word between two slots"),
+    ("repeated slot name",
+     "use each slot once per sentence"),
+    ("empty",
+     "every sentence needs a word: an optional or empty choice cannot be the whole line"),
+    ("cyclic vocabulary reference",
+     "a vocabulary cannot name itself, even through another one"),
+    ("not slot-free",
+     "a .voc that <name> reads cannot hold a {slot}"),
+)
+
+
+def _template_hint(reason: str) -> str:
+    for marker, hint in _TEMPLATE_HINTS:
+        if marker in reason:
+            return hint
+    return "rewrite it so ovos-spec-tools expands it"
+
+
+def check_intent_templates(skill_root: Path) -> list[str]:
+    """Every `.intent` line is a template OVOS will train on.
+
+    OVOS expands each line by OVOS-INTENT-1 and skips, with a log line nobody
+    reads, any it refuses: brackets that do not pair, a pipe outside a group,
+    a `<name>` with no `<name>.voc` in that language, a line that is nothing
+    but a `{slot}`. A skipped line is a sentence the skill never answers, and
+    a slot-only line, where an older engine did read it, answered everything.
+    The verdict is ovos-spec-tools' own, through `intents.expand`, so this and
+    the engine agree. Every locale directory is read, listed or not: OVOS
+    loads whatever is there.
+    """
+    package = find_package(Path(skill_root))
+    if package is None or not (package / "locale").is_dir():
+        return []
+    locale_root = package / "locale"
+    problems: list[str] = []
+    vocab_by_lang: dict[str, dict[str, list[str]]] = {}
+    for path in sorted(locale_root.rglob("*.intent")):
+        relative = path.relative_to(locale_root)
+        lang = relative.parts[0]
+        if lang not in vocab_by_lang:
+            vocab_by_lang[lang] = vocabularies(locale_root, lang)
+        lines = path.read_text(encoding="utf-8-sig").splitlines()
+        for number, line in enumerate(lines, 1):
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                expand(line, vocab_by_lang[lang])
+            except MalformedTemplate as failure:
+                reason = str(failure)
+                problems.append(f"locale/{relative.as_posix()}:{number}: OVOS skips this line, "
+                                f"{reason}; {_template_hint(reason)}")
+    return problems
+
+
 def check_fallback_priority(skill_root: Path) -> list[str]:
     """A FALLBACK_PRIORITY, wherever it is declared, sits in the low band.
 
@@ -530,6 +604,7 @@ def check_all(skill_root: Path) -> list[str]:
         + check_package_data(root)
         + check_fallback_priority(root)
         + check_locale_contract(root)
+        + check_intent_templates(root)
         + check_ssml(root)
         + (sync_regions(package / "locale") if package else [])
     )
