@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.24.1 (2026-10-03)
+
+- **The classifier check reads the model's own threshold per language.**
+  intent-corpus now measures, per language, the confidence at which no more
+  than 1 % of held-out sentences would be reported as another skill's, and
+  publishes it in the model's `training.json` (`thresholds`). `check
+  --fleet-only` uses it: French and German come out at 0.96, so a French
+  sentence the model gives another skill at 0.95 is no longer reported. A
+  model without the key keeps the shared 0.9, and an explicit threshold still
+  applies to every language.
+
 ## 0.24.0 (2026-10-03)
 
 - **Intent lines expand the way OVOS expands them.** `intents.expand` now

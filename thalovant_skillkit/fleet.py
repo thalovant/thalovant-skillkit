@@ -213,12 +213,44 @@ def resolve_model(model: str) -> Path:
                                f"this machine can fetch: {failure}") from failure
 
 
+def predicted_thresholds(model_dir: Path) -> tuple[float, dict[str, float]]:
+    """The confidence at which the classifier's guess is reported, per language.
+
+    intent-corpus measures it on held-out sentences and publishes it in the
+    model's `training.json` (`thresholds`): a shared default, and the
+    languages that need a higher one to keep false warnings under its target
+    (French and German came out at 0.96 on 2026-10-03). A model without the
+    key, or a file that does not parse, gives the shared one everywhere.
+    """
+    try:
+        data = json.loads((Path(model_dir) / "training.json").read_text(encoding="utf-8"))
+        table = data.get("thresholds") or {}
+        default = float(table.get("default", PREDICTED_THRESHOLD))
+        per_language = {str(k).lower(): float(v)
+                        for k, v in (table.get("per_language") or {}).items()}
+    except (OSError, ValueError, TypeError, AttributeError):
+        return PREDICTED_THRESHOLD, {}
+    return default, per_language
+
+
+def _threshold_for(lang: str, default: float, per_language: dict[str, float]) -> float:
+    tag = str(lang or "").lower()
+    if tag in per_language:
+        return per_language[tag]
+    return per_language.get(tag.split("-")[0], default)
+
+
 def find_predicted(mine: list[IntentLine], model_dir: Path, skill_id: str,
-                   threshold: float = PREDICTED_THRESHOLD, *,
+                   threshold: float | None = None, *,
                    _model_cache: dict | None = None) -> list[Collision]:
-    """What the fleet's trained classifier makes of each of my sentences."""
+    """What the fleet's trained classifier makes of each of my sentences.
+
+    Reported at the model's published threshold for the sentence's language
+    (see `predicted_thresholds`), unless `threshold` is given, which then
+    applies to every language."""
     if not mine:
         return []
+    default, per_language = predicted_thresholds(model_dir)
     import numpy as np
     from model2vec.inference import StaticModelPipeline
 
@@ -230,7 +262,9 @@ def find_predicted(mine: list[IntentLine], model_dir: Path, skill_id: str,
         j = int(np.argmax(row))
         label, score = str(classes[j]), float(row[j])
         owner, _, intent = label.partition(":")
-        if owner != skill_id and score >= threshold:
+        cutoff = threshold if threshold is not None else _threshold_for(
+            line.lang, default, per_language)
+        if owner != skill_id and score >= cutoff:
             theirs = IntentLine(owner, intent, line.lang, "", 0, "", "")
             out.append(Collision("predicted", line, theirs, score))
     return out
