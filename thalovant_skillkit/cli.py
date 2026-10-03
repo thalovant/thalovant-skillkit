@@ -16,7 +16,7 @@ import re
 import sys
 from pathlib import Path
 
-from .checks import check_all, check_ssml, find_package
+from .checks import check_all, check_intent_templates, check_ssml, find_package
 from .fleet import MODEL_ID
 from .version import __version__
 
@@ -274,12 +274,14 @@ def _has_intents(root: Path) -> bool:
 
 def cmd_check(args: argparse.Namespace) -> int:
     root = Path(args.directory or ".").resolve()
-    # The speech-markup check runs even with --fleet-only: that is the one
-    # kit gate every skill's CI runs against the newest release, and a twin
-    # that breaks, or a tag written into a plain dialog, is heard (or shown
-    # as a tag on a phone) the day it ships. It reads files only and passes
-    # untouched on a skill with no markup.
-    problems = check_ssml(root) if args.fleet_only else check_all(root)
+    # The speech-markup and intent-template checks run even with --fleet-only:
+    # that is the one kit gate every skill's CI runs against the newest
+    # release. A twin that breaks, or a tag written into a plain dialog, is
+    # heard (or shown as a tag on a phone) the day it ships, and an intent
+    # line OVOS refuses is a sentence the skill silently stops answering.
+    # Both read files only and pass untouched on a skill without either.
+    problems = ((check_intent_templates(root) + check_ssml(root)) if args.fleet_only
+                else check_all(root))
     if problems:
         print(f"{len(problems)} problem(s) in {root.name}:")
         for problem in problems:

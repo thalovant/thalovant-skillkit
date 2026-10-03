@@ -519,11 +519,23 @@ syntax and shared technical metadata. Placeholder **sets**, not occurrence
 counts, must match; `fr-FR` retains the existing placeholder-parity exemption.
 Passing these checks does not establish translation quality or intent accuracy.
 
+`check_intent_templates(source_root)` reads every `.intent` line under every
+locale directory, listed in `supported.json` or not, the way OVOS reads it: as
+an OVOS-INTENT-1 template, expanded by ovos-spec-tools. `(a|b)` is a choice,
+`[x]` and `[a|b]` are optional, `<name>` stands for the lines of `<name>.voc`
+anywhere under that language's directory, and `{name}` is a slot. OVOS skips a
+line it cannot expand, with a log line and nothing else, so each of these is an
+error naming `file:line` and what to write instead: brackets that do not pair,
+a line that is only a `{slot}`, a `<name>` with no `.voc` in that language, a
+`|` outside a group, two slots with no word between them. The check runs under
+`check` and `check --fleet-only`. The fleet comparison expands lines the same
+way, through `intents.expand`, and a line OVOS skips publishes no sentence.
+
 | CLI option | Effect |
 |---|---|
 | `check [directory]` | Local contracts plus the default published fleet model when the skill has intents. Directory defaults to the current directory. |
 | `--no-fleet` | Disable the published model. Without `--fleet`, only local contracts run. |
-| `--fleet-only` | Skip local contracts, except the [speech markup check](#what-the-check-reports); incompatible with `--no-fleet`. |
+| `--fleet-only` | Skip local contracts, except the [speech markup check](#what-the-check-reports) and the intent template check; incompatible with `--no-fleet`. |
 | `--model ID\|DIR` | Override `thalovant/thalovant-m2v-intents` with a Hub model or local model directory. |
 | `--fleet DIR` | Add corpus files `<lang>.json`; report source lines and near paraphrases. The model comparison still runs unless disabled. |
 | `--no-near`, `--threshold 0.85` | Disable corpus paraphrase comparison, or set its similarity threshold. These do not disable/configure the trained classifier comparison. |

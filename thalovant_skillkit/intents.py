@@ -3,8 +3,8 @@
 Padatious trains one classifier per language on every skill's `.intent` files
 together, so a sentence two skills both publish has one owner the authors never
 chose. This module turns a skill's intent files into the plain sentences the
-classifier sees -- alternations expanded, slots neutralised -- and reads the
-fleet corpus. The corpus itself is built by `thalovant/intent-corpus`, which
+classifier sees -- expanded the way OVOS expands them, slots neutralised --
+and reads the fleet corpus. The corpus itself is built by `thalovant/intent-corpus`, which
 imports these same functions, so the two cannot drift.
 
 The corpus is one JSON file per language::
@@ -19,8 +19,12 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
+
+from ovos_spec_tools import MalformedTemplate, iter_expand
 
 CORPUS_VERSION = 1
 
@@ -51,55 +55,73 @@ class IntentLine:
     text: str
 
 
-# -- padatious syntax ---------------------------------------------------------
+# -- the template grammar ------------------------------------------------------
+#
+# OVOS reads an intent line as an OVOS-INTENT-1 template: `(a|b)` is a choice,
+# `[x]` is optional, `<name>` is the vocabulary in `<name>.voc`, `{name}` is a
+# slot. ovos-spec-tools is the reference expander, and the engines call it, so
+# the kit calls it too instead of keeping a second grammar that can disagree.
 
-def _split_top_level(text: str, sep: str) -> list[str]:
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in text:
-        if ch == "(":
+
+def _bare_pipe(line: str) -> bool:
+    """A `|` inside no `(...)` or `[...]`, and not inside a `{slot}` or a
+    `<name>`: OVOS-INTENT-1 section 3.6 calls it malformed. ovos-spec-tools
+    raises for it from 1.14 only; checked here so a 1.13 install (what the
+    hubs pin) reads the same lines as a newer one."""
+    depth = in_name = 0
+    for char in line:
+        if char in "([":
             depth += 1
-        elif ch == ")":
-            depth -= 1
-        if ch == sep and depth == 0:
-            parts.append("".join(current))
-            current = []
-        else:
-            current.append(ch)
-    parts.append("".join(current))
-    return parts
+        elif char in ")]":
+            depth = max(depth - 1, 0)
+        elif char in "{<":
+            in_name += 1
+        elif char in "}>":
+            in_name = max(in_name - 1, 0)
+        elif char == "|" and depth == 0 and in_name == 0:
+            return True
+    return False
 
 
-def expand(line: str) -> list[str]:
-    """Every sentence a padatious line stands for.
+def expand(line: str, vocabularies: Mapping[str, Sequence[str]] | None = None) -> list[str]:
+    """Every sentence an intent line stands for, as OVOS expands it.
 
-    `(a|b)` is a choice, `(a|)` makes `a` optional, groups nest. Unbalanced
-    parentheses are passed through: padatious would not read them either.
+    `(a|b)` is a choice, `[x]` and `(x|)` are optional, groups nest, and
+    `<name>` stands for every line of `vocabularies[name]`. `{slot}` is kept.
+    A line OVOS refuses -- unbalanced brackets, a line that is only a slot, a
+    `<name>` with no vocabulary, a pipe outside a group, and the rest of
+    OVOS-INTENT-1 section 3.6 -- raises `MalformedTemplate`: OVOS logs it and
+    trains nothing from it.
     """
-    start = line.find("(")
-    if start < 0:
-        return [line]
-    depth, end = 0, -1
-    for i in range(start, len(line)):
-        if line[i] == "(":
-            depth += 1
-        elif line[i] == ")":
-            depth -= 1
-            if depth == 0:
-                end = i
-                break
-    if end < 0:
-        return [line]
-    head, choices, tail = line[:start], line[start + 1:end], line[end + 1:]
-    out: list[str] = []
-    for choice in _split_top_level(choices, "|"):
-        for inner in expand(choice):
-            for rest in expand(tail):
-                out.append(head + inner + rest)
-                if len(out) >= EXPANSIONS_PER_LINE:
-                    return out
-    return out
+    if _bare_pipe(line):
+        raise MalformedTemplate(
+            f"{line!r}: a pipe outside a group is not a branch separator and "
+            f"cannot be literal input")
+    return list(islice(iter_expand(line, dict(vocabularies or {})), EXPANSIONS_PER_LINE))
+
+
+def vocabularies(locale_dir: Path, lang: str) -> dict[str, list[str]]:
+    """The vocabularies a `<name>` in this language's intent files reads.
+
+    What ovos-workshop gives the engine: every `.voc` anywhere under
+    `locale/<lang>/`, keyed by its lower-cased file name, the first one found
+    winning, each line lower-cased, blank and `#` lines dropped. The lines
+    stay templates; `expand` expands them where they are used.
+    """
+    found: dict[str, list[str]] = {}
+    root = Path(locale_dir) / lang
+    if not root.is_dir():
+        return found
+    for path in sorted(root.rglob("*.voc")):
+        name = path.stem.lower()
+        if name in found:
+            continue
+        members = [line.strip().lower()
+                   for line in path.read_text(encoding="utf-8-sig").splitlines()
+                   if line.strip() and not line.strip().startswith("#")]
+        if members:
+            found[name] = members
+    return found
 
 
 def clean(text: str) -> str:
@@ -118,16 +140,25 @@ def intent_files(locale_dir: Path, lang: str) -> list[Path]:
 
 
 def intent_lines(skill_root: Path, locale_dir: Path, lang: str, skill: str) -> list[IntentLine]:
-    """Every sentence the skill publishes for `lang`, with file and line."""
+    """Every sentence the skill publishes for `lang`, with file and line.
+
+    A line OVOS refuses publishes nothing: the engine skips it, so the fleet
+    does not hear it either. `checks.check_intent_templates` reports it.
+    """
     out: list[IntentLine] = []
+    vocab = vocabularies(locale_dir, lang)
     for path in intent_files(locale_dir, lang):
         relative = str(path.relative_to(skill_root))
-        for number, raw in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+        for number, raw in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), 1):
             raw = raw.strip()
             if not raw or raw.startswith("#"):
                 continue
+            try:
+                sentences = expand(raw, vocab)
+            except MalformedTemplate:
+                continue
             seen: set[str] = set()
-            for sentence in expand(raw):
+            for sentence in sentences:
                 text = clean(sentence)
                 if text and text not in seen:
                     seen.add(text)

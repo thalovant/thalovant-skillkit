@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.24.0 (2026-10-03)
+
+- **Intent lines expand the way OVOS expands them.** `intents.expand` now
+  hands the line to ovos-spec-tools, the expander the engines call, instead of
+  a parser of its own that knew `(a|b)` and nothing else. `[x]` and `[a|b]`
+  are optional, and `<name>` stands for the lines of `<name>.voc` in that
+  language (`intents.vocabularies`). The fleet corpus is built with these
+  functions, and it carried 3,513 sentences with a literal `[` in them (home
+  3,263, volume 249) and 266 volume sentences with a literal `<level>`, so the
+  duplicate check never compared home's or volume's real sentences. Rebuilt
+  with this release, home publishes 18,161 sentences instead of 13,442 and
+  volume 6,903 instead of 1,926, and one cross-skill duplicate appears: oc-FR
+  "mai fòrt", in joke-garden and volume.
+- A line OVOS refuses now raises `MalformedTemplate` from `expand` (it used to
+  pass through unexpanded), and publishes no sentence from `intent_lines`:
+  OVOS skips it, so the fleet does not hear it either.
+- **`check` fails an intent line OVOS skips**, with `file:line` and what to
+  write instead: brackets that do not pair, a line that is only a `{slot}`, a
+  `<name>` with no `.voc`, a `|` outside a group, and the other malformed forms
+  of OVOS-INTENT-1 section 3.6. The verdict is ovos-spec-tools' own. Every
+  locale directory is read, and the check also runs under `check --fleet-only`,
+  the gate every skill's CI runs. On the fleet today it fails date-time (fi-FI,
+  hu-HU), weather (et-EE, lt-LT, vi-VN) and source-scout (az-AZ, eu-ES, ja-JP,
+  ko-KR); each has a pull request that fixes the lines.
+- A pipe outside a group is refused on ovos-spec-tools 1.13, which the hubs
+  pin, as it is on 1.14, which refuses it itself, so both read the same lines.
+
 ## 0.23.0 (2026-10-01)
 
 - **Tables move out of `vocab/`.** A `canonical|alias|alias` line in a `.voc`
