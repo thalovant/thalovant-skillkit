@@ -298,6 +298,42 @@ def test_predicted_reports_only_confident_other_skill_labels(monkeypatch, tmp_pa
     assert "joke's fact" in found[1].describe()
 
 
+def test_predicted_uses_the_threshold_the_model_publishes_per_language(monkeypatch, tmp_path: Path):
+    """intent-corpus measures where false warnings stay under target, per
+    language, and puts it in training.json: a French 0.95 is not reported
+    where French needs 0.96, while the same score in English is."""
+    np = pytest.importorskip("numpy")
+    inference = pytest.importorskip("model2vec.inference")
+
+    class FakePipeline:
+        classes_ = np.array(["weather:rain", "mine:garden"])
+
+        @classmethod
+        def from_pretrained(cls, path):
+            return cls()
+
+        def predict_proba(self, texts):
+            return np.array([[0.95, 0.05] for _ in texts])
+
+    monkeypatch.setattr(inference, "StaticModelPipeline", FakePipeline)
+    (tmp_path / "training.json").write_text(json.dumps(
+        {"thresholds": {"default": 0.9, "per_language": {"fr": 0.96}}}), encoding="utf-8")
+    mine = [intents.IntentLine("mine", "garden", lang, "f.intent", 1, t, t)
+            for lang, t in (("en-US", "will it rain"), ("fr-FR", "va-t-il pleuvoir"),
+                            ("fr-CA", "va-tu pleuvoir"))]
+
+    found = fleet.find_predicted(mine, tmp_path, "mine")
+    assert [f.mine.lang for f in found] == ["en-US"]
+    # An explicit threshold still applies to every language.
+    assert len(fleet.find_predicted(mine, tmp_path, "mine", 0.9)) == 3
+
+
+def test_a_model_without_published_thresholds_keeps_the_shared_one(tmp_path: Path):
+    assert fleet.predicted_thresholds(tmp_path) == (fleet.PREDICTED_THRESHOLD, {})
+    (tmp_path / "training.json").write_text("not json", encoding="utf-8")
+    assert fleet.predicted_thresholds(tmp_path) == (fleet.PREDICTED_THRESHOLD, {})
+
+
 def test_locale_langs_drops_bad_tags_and_missing_trees(tmp_path: Path):
     assert intents.locale_langs(tmp_path / "nowhere") == []
     locale = tmp_path / "locale"
