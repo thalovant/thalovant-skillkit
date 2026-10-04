@@ -207,7 +207,10 @@ def resolve_model(model: str) -> Path:
     from huggingface_hub.errors import HfHubHTTPError, RepositoryNotFoundError
 
     try:
-        return Path(snapshot_download(repo_id=model))
+        # The classifier lives at the repository root. intent-corpus also
+        # publishes the hubs' prototype encoder under encoder/ (about 120 MB
+        # the check never reads), so leave it out of every download.
+        return Path(snapshot_download(repo_id=model, ignore_patterns=["encoder/*"]))
     except (RepositoryNotFoundError, HfHubHTTPError, OSError) as failure:
         raise ModelUnavailable(f"model {model!r} is neither a directory nor a Hub repository "
                                f"this machine can fetch: {failure}") from failure
