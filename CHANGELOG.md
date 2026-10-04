@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.2 (2026-10-03)
+
+- **The model download skips the hubs' encoder.** intent-corpus now publishes
+  the prototype encoder the hubs match with under `encoder/` in the same Hub
+  repository as the fleet classifier. The check reads only the classifier at
+  the root, so `resolve_model` leaves `encoder/` out and every skill's CI keeps
+  downloading what it did before, not another 120 MB.
+
 ## 0.24.1 (2026-10-03)
 
 - **The classifier check reads the model's own threshold per language.**

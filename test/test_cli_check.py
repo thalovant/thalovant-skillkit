@@ -90,3 +90,20 @@ def test_fleet_only_still_fails_an_intent_line_ovos_refuses(tmp_path: Path, monk
     assert cli.main(["check", "--fleet-only", str(root)]) == 1
     out = capsys.readouterr().out
     assert "locale/en-US/x.intent:2: OVOS skips this line, slot-only" in out
+
+
+def test_resolve_model_leaves_the_hub_encoder_out(monkeypatch, tmp_path):
+    """The classifier is at the repo root; encoder/ is the hubs', not ours."""
+    import huggingface_hub
+
+    calls = []
+
+    def fake_snapshot_download(**kwargs):
+        calls.append(kwargs)
+        return str(tmp_path)
+
+    monkeypatch.setattr(huggingface_hub, "snapshot_download", fake_snapshot_download)
+    assert fleet.resolve_model("thalovant/thalovant-m2v-intents") == tmp_path
+    assert calls == [
+        {"repo_id": "thalovant/thalovant-m2v-intents", "ignore_patterns": ["encoder/*"]}
+    ]
