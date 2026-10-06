@@ -55,7 +55,7 @@ from thalovant_skillkit.intents import (
 #: The fleet's model on the Hugging Face Hub: what a skill compares itself with.
 MODEL_ID = "thalovant/thalovant-m2v-intents"
 #: The embedding model behind the paraphrase check (corpus checkouts only).
-MODEL = "Jarbas/ovos-model2vec-intents-distiluse-base-multilingual-cased-v2"
+MODEL = "minishlab/potion-multilingual-128M"
 NEAR_THRESHOLD = 0.85
 PREDICTED_THRESHOLD = 0.9
 
