@@ -65,3 +65,16 @@ def test_the_longest_matching_term_wins():
     assert first_match("play the news briefing", ["news", "news briefing"]) == "news briefing"
     assert first_match("nothing here", ["news"]) == ""
     assert matches_any("explain these logs", ["nope", "log"])
+
+
+def test_a_hindi_term_respects_the_word_its_vowel_signs_belong_to():
+    """`\\w` does not match a Hindi vowel sign, so a term used to start or end
+    in the middle of a word: "क" claimed "किताब" and "कना" began inside
+    "बिकना"."""
+    from thalovant_skillkit import fold
+
+    assert not contains_term(fold("किताब"), fold("क"), "hi-IN")
+    assert not contains_term(fold("बिकना"), fold("कना"), "hi-IN")
+    assert contains_term(fold("खेल समाचार"), fold("खेल"), "hi-IN")
+    assert contains_term(fold("खेलों की खबर"), fold("खेल"), "hi-IN")
+    assert contains_term(fold("क्रिकेट का स्कोर"), fold("क्रिकेट"), "hi-IN")

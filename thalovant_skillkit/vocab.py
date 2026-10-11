@@ -25,6 +25,8 @@ import re
 from functools import lru_cache
 from pathlib import Path
 
+from .text import WORD_CHAR
+
 LOCALE_DIR = Path(__file__).parent / "locale"
 DEFAULT_LANG = "en-US"
 
@@ -82,8 +84,15 @@ def matching_rules(lang: str | None) -> tuple[bool, int]:
 
 @lru_cache(maxsize=8192)
 def term_pattern(term: str, inflection_max: int = 3) -> re.Pattern:
-    """A term as it may appear in speech: beginning a word, plus an inflection."""
-    return re.compile(rf"(?<!\w){re.escape(term)}\w{{0,{inflection_max}}}(?!\w)")
+    """A term as it may appear in speech: beginning a word, plus an inflection.
+
+    A word character is `WORD_CHAR`, not `\\w`: a Hindi vowel sign is part of
+    the word, so "कना" must not start inside "बिकना" and "क" must not claim
+    "किताब".
+    """
+    return re.compile(
+        rf"(?<!{WORD_CHAR}){re.escape(term)}{WORD_CHAR}{{0,{inflection_max}}}(?!{WORD_CHAR})"
+    )
 
 
 def is_wordless(lang: str | None) -> bool:

@@ -50,7 +50,12 @@ assert context_value(msg, "enabled", default=True) is False
 ```
 
 [`text.py`](../thalovant_skillkit/text.py) supplies `fold`, `fold_spaces`,
-`fold_tight`, `fold_words` and `strip_accents`. Use
+`fold_tight`, `fold_words` and `strip_accents`. An accent goes (Latin,
+Greek and Cyrillic diacritics, Arabic harakat, Hebrew niqqud); a mark that
+spells a letter stays (the Brahmic and South-East Asian scripts, the kana
+voicing marks), except the nukta. A pattern over folded text says
+`text.WORD_CHAR` where it would say `\w`, so a Hindi vowel sign counts as part
+of its word. Use
 [`contains_term(text, term, lang)`](../thalovant_skillkit/vocab.py) or
 `matches_any` for language-aware vocabulary containment. This is not exact
 whole-utterance matching: a follow-up handler must still decline unrelated
