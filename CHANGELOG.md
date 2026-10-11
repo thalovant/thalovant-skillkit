@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.25.0 (unreleased)
+
+- **Folding keeps the marks that spell a letter.** `strip_accents`, and with
+  it `fold`, `fold_spaces` and `fold_words`, dropped every combining mark. That
+  is right for an accent and wrong where the mark is the letter: the Hindi
+  virama went ("क्रिकेट" folded to "करिकेट"), the Thai tone marks went ("โป้"
+  and "โป๊" folded to one word) and so did the kana voicing marks ("何かある"
+  and "何がある"). `fold_words` then cut every Hindi and Thai word at its
+  vowel signs, which `\w` does not match: "खेल समाचार" became "ख ल सम च र", so
+  no Hindi news topic matched. Marks in the Brahmic and South-East Asian
+  scripts (Devanagari, Bengali, Gurmukhi, Gujarati, Oriya, Tamil, Telugu,
+  Kannada, Malayalam, Sinhala, Thai, Lao, Tibetan, Myanmar, Khmer and their
+  neighbours) and the kana voicing marks now stay, on both sides of every
+  comparison. The nukta still folds: Hindi writes "दरवाज़ा" and "दरवाजा" for one
+  word, and the fleet lists both. Latin, Greek and Cyrillic diacritics, Arabic
+  harakat and Hebrew niqqud fold as before.
+- Over the fleet's 217,587 vocabulary, intent and entity lines, the three
+  functions return the same bytes as 0.24.2 in 64 of 68 languages. The four
+  that change are hi-IN, th-TH, ja-JP and one ko-KR line that contains Gurmukhi.
+  Lines that folded identical without being the same line: hi-IN 217 to 90
+  under `fold_words` (what is left differs only by a nukta or by punctuation),
+  th-TH 20 to 10, ja-JP 14 to 12 (punctuation only).
+- **`contains_term` treats a kept mark as part of the word.** The word-start
+  rule used `\w`, so a Hindi term could start or end beside a vowel sign in the
+  middle of a word: "क" claimed "किताब". `text.WORD_CHAR` is the character class
+  to use instead of `\w` over folded text, and `text.KEPT_MARKS` the marks it
+  adds.
+
 ## 0.24.2 (2026-10-03)
 
 - **The model download skips the hubs' encoder.** intent-corpus now publishes
