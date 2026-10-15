@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.26.0
+
+- **A slow lookup says where it is looking.** A question put to the knowledge
+  service takes a few seconds, because the service asks its providers in
+  parallel and waits for the good ones, and the chat stayed blank (a voice
+  device, silent) for all of it. A skill now opens `lookup_notice(speak)` where
+  it has the message to answer, and when a knowledge call under it takes longer
+  than `NOTICE_DELAY` (0.6 s) the visitor is told "Checking Wikipedia and
+  DuckDuckGo…" while the request carries on. A quicker lookup says nothing, and a
+  turn says it once however many lookups it makes. Research mode names the
+  paper sources too (OpenAlex, Crossref, arXiv).
+- `knowledge_reply` does this on its own request, so a skill that already
+  calls it only has to open the notice. A skill with its own request wraps it
+  in `run_noticing(work, lang=..., mode=...)`. With no notice open, neither
+  changes anything.
+- The notice has a line in each of the eleven languages the public hubs serve
+  (`shared_dialog/<lang>/dialog/knowledge.notice.dialog`; any other language
+  reads the English one, joined with English punctuation). It sits beside
+  `locale/`, not in it: every folder there is a matching language and must
+  declare a matching rule.
+- `LookupNotice.names(provider)` says whether the notice already named a
+  source, for a skill that cites where its answer came from and would otherwise
+  say it twice. The service's `web-search` counts as DuckDuckGo.
+
 ## 0.25.0 (unreleased)
 
 - **Folding keeps the marks that spell a letter.** `strip_accents`, and with

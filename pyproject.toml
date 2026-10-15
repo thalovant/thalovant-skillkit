@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.25.0"
+version = "0.26.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -86,7 +86,7 @@ include = ["thalovant_skillkit*"]
 # the wheel -- the runtime installs from a baked wheelhouse, not from a
 # checkout.
 [tool.setuptools.package-data]
-thalovant_skillkit = ["locale/*/*.json"]
+thalovant_skillkit = ["locale/*/*.json", "shared_dialog/*/dialog/*.dialog"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
