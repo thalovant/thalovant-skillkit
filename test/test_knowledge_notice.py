@@ -111,3 +111,21 @@ def test_a_skill_can_read_the_turns_notice_and_there_is_none_outside_a_turn():
     with lookup_notice([].append) as notice:
         assert knowledge.current_notice() is notice
     assert knowledge.current_notice() is None
+
+
+def test_the_lookup_sees_the_notice_it_runs_under():
+    seen = []
+    with lookup_notice([].append) as notice:
+        run_noticing(lambda: seen.append(knowledge.current_notice()), lang="en-US", mode="answer")
+    assert seen == [notice]
+
+
+def test_a_notice_that_cannot_be_said_does_not_cost_the_answer(caplog):
+    def broken(text):
+        raise RuntimeError("the client went away")
+
+    with lookup_notice(broken):
+        result = run_noticing(slow(0.3), lang="en-US", mode="answer", delay=0.05)
+
+    assert result == "answer"
+    assert "Could not say where the lookup is looking" in caplog.text

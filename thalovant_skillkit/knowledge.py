@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import logging
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -246,6 +247,7 @@ _ASKED_FOR_RESEARCH = {"openalex": "OpenAlex", "crossref": "Crossref", "arxiv": 
 _SAME_SOURCE = {"web-search": "duckduckgo"}
 
 T = TypeVar("T")
+_LOG = logging.getLogger(__name__)
 
 
 @dataclass
@@ -309,11 +311,17 @@ def run_noticing(work: Callable[[], T], *, lang: str | None, mode: str,
     if notice is None or notice.named:
         return work()
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="knowledge-lookup") as pool:
-        future = pool.submit(work)
+        # In the turn's context, so `work` can still see the notice it runs under.
+        future = pool.submit(contextvars.copy_context().run, work)
         try:
             return future.result(timeout=NOTICE_DELAY if delay is None else delay)
         except FutureTimeout:
             text, named = notice_text(lang, mode)
             notice.named = named
-            notice.speak(text)
+            try:
+                notice.speak(text)
+            except Exception:  # noqa: BLE001 - the notice is a courtesy; the answer is the job
+                # A client that cannot take the line must not lose a good answer. Said
+                # and logged once, and the lookup's own result is returned as usual.
+                _LOG.warning("Could not say where the lookup is looking", exc_info=True)
             return future.result()
