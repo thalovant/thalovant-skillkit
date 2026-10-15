@@ -294,7 +294,8 @@ def notice_text(lang: str | None, mode: str) -> tuple[str, frozenset[str]]:
                    if _NOTICE_RESOURCES.lines(candidate, "dialog", "knowledge.notice.dialog")),
                   _NOTICE_RESOURCES.default_lang)
     sources = format_list(list(asked.values()), locale=Locale.parse(spoken, sep="-"))
-    return _NOTICE_RESOURCES.dialog("knowledge.notice", lang, {"sources": sources}), frozenset(asked)
+    line = _NOTICE_RESOURCES.dialog("knowledge.notice", lang, {"sources": sources})
+    return line, frozenset(asked)
 
 
 def run_noticing(work: Callable[[], T], *, lang: str | None, mode: str,
