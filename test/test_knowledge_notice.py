@@ -104,3 +104,10 @@ def test_the_shared_client_notices_a_slow_service(monkeypatch):
             headers={}, timeout=5)
     assert reply.answer == "Ada Lovelace was a mathematician."
     assert said == ["Checking Wikipedia and DuckDuckGo…"]
+
+
+def test_a_skill_can_read_the_turns_notice_and_there_is_none_outside_a_turn():
+    assert knowledge.current_notice() is None
+    with lookup_notice([].append) as notice:
+        assert knowledge.current_notice() is notice
+    assert knowledge.current_notice() is None

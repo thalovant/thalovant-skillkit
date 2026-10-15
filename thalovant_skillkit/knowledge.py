@@ -277,6 +277,11 @@ def lookup_notice(speak: Callable[[str], None]) -> Iterator[LookupNotice]:
         _CURRENT.reset(token)
 
 
+def current_notice() -> LookupNotice | None:
+    """The notice open for this turn, if any."""
+    return _CURRENT.get()
+
+
 def notice_text(lang: str | None, mode: str) -> tuple[str, frozenset[str]]:
     """The localized line for a lookup in this mode, and the providers it names."""
     asked = dict(_ASKED)
