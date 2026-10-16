@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+
+- **A malformed stream event is a failed request, not a crash; an unknown one is
+  skipped.** 0.27.0 checked each line's shape but let an `event` it did not know
+  through, and the reader then took it for an error and raised `KeyError` on its
+  missing `detail`, which `knowledge_reply` does not catch, so the turn failed. An
+  event of a kind the kit does not know (`progress`, or `Answer` in another case) is
+  now skipped and the answer that follows is still read, so a service that adds an
+  event never costs an older kit its answers. A source, answer or error without the
+  fields it needs, an error whose `status` is `true` or `false`, a line that is not
+  an event and a stream that ends without an answer are a `ValueError`, which
+  `knowledge_reply` turns into an unavailable answer.
+
 ## 0.28.0
 
 - **No more silent seconds, and no guessing how long to wait.** 0.27.0 named the
