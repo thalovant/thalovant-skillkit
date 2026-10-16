@@ -285,11 +285,26 @@ class Lines:
     '{"event":"answer"}', '{"event":"answer","answer":"text"}', '{"event":"answer","answer":[1]}',
     '{"event":"error"}', '{"event":"error","status":"404","detail":"x"}',
     '{"event":"error","status":404}', '{"event":"error","status":true,"detail":"x"}',
-    '{"event":"progress"}', '{"event":"Answer","answer":{}}',
     '{"event":"answer","answer":{"ans',
 ])
 def test_a_malformed_stream_line_is_a_failed_request_not_a_crash(served, line):
     served(Lines([line]))
+    with lookup_notice([].append), pytest.raises(ValueError):
+        ask()
+
+
+@pytest.mark.parametrize("unknown", [
+    '{"event":"progress"}', '{"event":"progress","percent":40}', '{"event":"Answer","answer":{}}',
+    '{"event":"ERROR","status":true}',
+])
+def test_an_event_of_an_unknown_kind_is_skipped_and_the_answer_still_arrives(served, unknown):
+    served(Lines([json.dumps(SOURCE), unknown, json.dumps({"event": "answer", "answer": ANSWER})]))
+    with lookup_notice([].append):
+        assert ask() == ANSWER
+
+
+def test_a_stream_of_only_unknown_events_still_ends_without_an_answer(served):
+    served(Lines(['{"event":"progress"}']))
     with lookup_notice([].append), pytest.raises(ValueError):
         ask()
 

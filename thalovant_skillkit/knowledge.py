@@ -391,10 +391,12 @@ def _read_into(events: queue.Queue, url: str, request_payload: dict, headers: di
                 elif event["event"] == "answer":
                     events.put(("answer", event["answer"]))
                     return
-                else:
+                elif event["event"] == "error":
                     events.put(("raise", requests.HTTPError(
                         event["detail"], response=_StreamedStatus(event["status"]))))
                     return
+                # Any other kind is an event a later service sends and this kit does not
+                # know: it is skipped, so a new event never costs an older kit its answer.
         events.put(("raise", ValueError(
             "the knowledge service ended its stream without an answer")))
     except BaseException as error:  # noqa: BLE001 - whatever happened is the caller's to raise
@@ -454,18 +456,18 @@ class _StreamedStatus:
         self.status_code = status_code
 
 
-_EVENTS = frozenset({"source", "answer", "error"})
-
-
 def _event(line: str) -> dict:
-    """One line of the stream, checked: a service that sends anything else is a failed request."""
+    """One line of the stream, checked.
+
+    A line that is not an event, or a source, answer or error without the fields it
+    needs, is a failed request. An event of a kind this kit does not know is returned
+    as it is, for the reader to skip.
+    """
     event = json.loads(line)
     if not isinstance(event, dict) or not isinstance(event.get("event"), str):
         raise ValueError(
             f"the knowledge service sent a stream line that is not an event: {line[:80]!r}")
     kind = event["event"]
-    if kind not in _EVENTS:
-        raise ValueError(f"the knowledge service sent an unknown stream event: {kind[:40]!r}")
     if kind == "source" and not isinstance(event.get("provider"), str):
         raise ValueError("the knowledge service announced a source without naming it")
     if kind == "source" and "pending" in event and not isinstance(event["pending"], bool):
