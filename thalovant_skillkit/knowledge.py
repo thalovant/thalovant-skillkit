@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import itertools
+import json
 import logging
 from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -23,8 +25,6 @@ from pathlib import Path
 from typing import TypeVar
 
 import requests
-from babel import Locale
-from babel.lists import format_list
 
 from .locale import SkillResources
 from .service import request_headers as request_headers
@@ -183,18 +183,9 @@ def knowledge_reply(
     if age_policy is not None:
         request_payload["age_policy"] = age_policy
     try:
-        def ask() -> requests.Response:
-            response = requests.post(
-                f"{service_url.rstrip('/')}/v1/knowledge/answer",
-                json=request_payload,
-                headers=headers,
-                timeout=timeout,
-            )
-            response.raise_for_status()
-            return response
-
-        response = run_noticing(ask, lang=lang, mode=mode)
-        payload = response.json()
+        payload = ask_service(
+            service_url=service_url, request_payload=request_payload, headers=headers,
+            timeout=timeout, lang=lang)
     except requests.HTTPError as error:
         status = getattr(error.response, "status_code", None)
         if status == 404:
@@ -223,31 +214,54 @@ def knowledge_reply(
     return KnowledgeReply(answer or None, POLICY_BLOCKED, augmented)
 
 
-# -- telling the visitor where the lookup is going ---------------------------------
+# -- telling the visitor where the answer comes from, while it is written ---------------
 #
-# A lookup is slow on purpose: the service asks its providers in parallel and waits
-# for the good ones. For those seconds the chat is blank, or a voice device is silent.
-# So when a lookup takes longer than NOTICE_DELAY, the visitor is told which sources
-# are being asked, once, while the request carries on. A quicker lookup says nothing:
-# a notice that arrives with the answer is only noise.
+# A slow answer leaves the chat blank, or a voice device silent, for seconds. Most of
+# them are spent after the service has chosen its source: translating the answer and
+# having the model write it. The service says which source that is, before it starts
+# (`Accept: application/x-ndjson`, see its README), and when the answer is still not
+# there NOTICE_DELAY later the visitor is told "From Wikipedia…". An answer that follows
+# at once says nothing first: a notice that arrives with the answer is only noise. One
+# that comes from the cache or needs no provider never announces a source at all.
 #
 # The notice belongs to the turn, not to a call. A skill opens it where it has the
-# message to answer, and every knowledge call under it (this module's, or a skill's
-# own request wrapped in `run_noticing`) uses it, so the skills behave alike.
+# message to answer, and every call to the service under it (`knowledge_reply`, or a
+# skill's own request through `ask_service`) uses it, so the skills behave alike. The
+# source is named once, up front; an answer that cites its sources can ask the notice
+# which it already named, and not say them again at its end.
 
-NOTICE_DELAY = 0.6
+NOTICE_DELAY = 0.5
+NDJSON = "application/x-ndjson"
 # Not the matching tree (locale/): every folder there must declare a matching rule.
 _NOTICE_RESOURCES = SkillResources(Path(__file__).parent / "shared_dialog")
-#: The sources a question is put to, as the visitor knows them, and the provider
-#: ids the service answers with for the same ones. Wikidata rides with Wikipedia
-#: and is not named; an answer from a source not named here is still cited.
-_ASKED = {"wikipedia": "Wikipedia", "duckduckgo": "DuckDuckGo"}
-_ASKED_FOR_RESEARCH = {"openalex": "OpenAlex", "crossref": "Crossref", "arxiv": "arXiv"}
+#: Provider ids the service answers with, as the visitor knows them. These are proper
+#: nouns, the same in every language.
+PROVIDER_NAMES = {
+    "wikipedia": "Wikipedia",
+    "wikidata": "Wikidata",
+    "wikihow": "wikiHow",
+    "duckduckgo": "DuckDuckGo",
+    "web-search": "DuckDuckGo",
+    "wolfram": "WolframAlpha",
+    "wolframalpha": "WolframAlpha",
+    "openalex": "OpenAlex",
+    "crossref": "Crossref",
+    "arxiv": "arXiv",
+    "pubmed": "PubMed",
+    "semantic-scholar": "Semantic Scholar",
+}
 #: The service says "web-search" for DuckDuckGo's HTML fallback.
-_SAME_SOURCE = {"web-search": "duckduckgo"}
+_SAME_SOURCE = {"web-search": "duckduckgo", "wolframalpha": "wolfram"}
 
 T = TypeVar("T")
 _LOG = logging.getLogger(__name__)
+
+
+def provider_name(provider: str) -> str:
+    """The name a visitor knows a provider id by."""
+    key = provider.casefold()
+    return PROVIDER_NAMES.get(key) or " ".join(
+        part.capitalize() for part in key.replace("_", "-").split("-") if part)
 
 
 @dataclass
@@ -255,7 +269,7 @@ class LookupNotice:
     """One turn's notice: how to say it, and what it said."""
 
     speak: Callable[[str], None]
-    #: Provider ids named in the notice; empty until it has been said.
+    #: Provider ids the notice named; empty until it has been said.
     named: frozenset[str] = field(default_factory=frozenset)
 
     def names(self, provider: str) -> bool:
@@ -284,44 +298,108 @@ def current_notice() -> LookupNotice | None:
     return _CURRENT.get()
 
 
-def notice_text(lang: str | None, mode: str) -> tuple[str, frozenset[str]]:
-    """The localized line for a lookup in this mode, and the providers it names."""
-    asked = dict(_ASKED)
-    if mode == "research":
-        asked.update(_ASKED_FOR_RESEARCH)
-    # The list is joined in the language of the line that carries it, which is the
-    # requested one only when that language has a line: Japanese falls back to
-    # English words and must not get a Japanese comma between them.
-    spoken = next((candidate for candidate in _NOTICE_RESOURCES.candidate_langs(lang)
-                   if _NOTICE_RESOURCES.lines(candidate, "dialog", "knowledge.notice.dialog")),
-                  _NOTICE_RESOURCES.default_lang)
-    sources = format_list(list(asked.values()), locale=Locale.parse(spoken, sep="-"))
-    line = _NOTICE_RESOURCES.dialog("knowledge.notice", lang, {"sources": sources})
-    return line, frozenset(asked)
+def notice_text(lang: str | None, provider: str) -> str:
+    """The localized line naming one source: "From Wikipedia…"."""
+    return _NOTICE_RESOURCES.dialog("knowledge.notice", lang, {"source": provider_name(provider)})
 
 
-def run_noticing(work: Callable[[], T], *, lang: str | None, mode: str,
+def run_noticing(work: Callable[[], T], *, lang: str | None = None, mode: str = "",
                  delay: float | None = None) -> T:
-    """Run `work`, which asks the service, and say where it is looking if it is slow.
+    """Deprecated: runs `work` and says nothing.
 
-    With no notice open (an API preview, a test) this is just `work()`. The
-    notice is said at most once per turn, however many lookups the turn makes.
+    0.26.0 guessed which sources a question was put to and listed them, which named
+    sources that did not answer. The source is now announced by the service itself;
+    a skill with its own request calls `ask_service`. Kept so a skill written for
+    0.26.0 still imports and answers.
     """
+    return work()
+
+
+def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, str],
+                timeout: float, lang: str | None = None) -> dict:
+    """Post one question to the knowledge service and return its response document.
+
+    Raises what `requests` raises, as the plain call does: `HTTPError` for a status
+    (404 means no answer), another `RequestException` for a connection, `ValueError`
+    for a body that is not JSON.
+
+    With a notice open the call asks to hear the source first. Where the service
+    announces one and the answer is still not there NOTICE_DELAY later, the visitor
+    is told. Without a notice, or from a service that does not stream, this is the
+    plain request it always was.
+    """
+    url = f"{service_url.rstrip('/')}/v1/knowledge/answer"
     notice = _CURRENT.get()
-    if notice is None or notice.named:
-        return work()
-    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="knowledge-lookup") as pool:
-        # In the turn's context, so `work` can still see the notice it runs under.
-        future = pool.submit(contextvars.copy_context().run, work)
+    if notice is None:
+        response = requests.post(url, json=request_payload, headers=headers, timeout=timeout)
+        response.raise_for_status()
+        return response.json()
+    response = requests.post(
+        url, json=request_payload, headers={**headers, "Accept": f"{NDJSON}, application/json"},
+        timeout=timeout, stream=True)
+    with response:
+        response.raise_for_status()
+        if not response.headers.get("Content-Type", "").startswith(NDJSON):
+            return response.json()
+        return _streamed_answer(response, notice, lang)
+
+
+class _StreamedStatus:
+    """The part of a response `HTTPError` readers look at: the status."""
+
+    def __init__(self, status_code: int):
+        self.status_code = status_code
+
+
+def _event(line: str) -> dict:
+    """One line of the stream, checked: a service that sends anything else is a failed request."""
+    event = json.loads(line)
+    if not isinstance(event, dict) or not isinstance(event.get("event"), str):
+        raise ValueError(
+            f"the knowledge service sent a stream line that is not an event: {line[:80]!r}")
+    kind = event["event"]
+    if kind == "source" and not isinstance(event.get("provider"), str):
+        raise ValueError("the knowledge service announced a source without naming it")
+    if kind == "answer" and not isinstance(event.get("answer"), dict):
+        raise ValueError("the knowledge service sent an answer that is not a document")
+    if kind == "error" and not (
+            isinstance(event.get("status"), int) and isinstance(event.get("detail"), str)):
+        raise ValueError("the knowledge service sent an error without a status and a detail")
+    return event
+
+
+def _streamed_answer(response: requests.Response, notice: LookupNotice, lang: str | None) -> dict:
+    lines = (_event(line) for line in response.iter_lines(decode_unicode=True) if line)
+
+    def final(events) -> dict:
+        for event in events:
+            if event["event"] == "answer":
+                return event["answer"]
+            if event["event"] == "error":
+                raise requests.HTTPError(
+                    event["detail"], response=_StreamedStatus(event["status"]))
+        raise ValueError("the knowledge service ended its stream without an answer")
+
+    first = next(lines, None)
+    if first is None:
+        raise ValueError("the knowledge service sent an empty stream")
+    if first["event"] != "source":
+        # An answer or an error with no source announced first: nothing to say. `chain`
+        # hands `first` back without reading the next line, which may not exist yet.
+        return final(itertools.chain([first], lines))
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="knowledge-stream") as pool:
+        future = pool.submit(contextvars.copy_context().run, final, lines)
         try:
-            return future.result(timeout=NOTICE_DELAY if delay is None else delay)
+            return future.result(timeout=NOTICE_DELAY)
         except FutureTimeout:
-            text, named = notice_text(lang, mode)
-            notice.named = named
-            try:
-                notice.speak(text)
-            except Exception:  # noqa: BLE001 - the notice is a courtesy; the answer is the job
-                # A client that cannot take the line must not lose a good answer. Said
-                # and logged once, and the lookup's own result is returned as usual.
-                _LOG.warning("Could not say where the lookup is looking", exc_info=True)
+            if not notice.named:
+                provider = first["provider"]
+                key = provider.casefold()
+                notice.named = frozenset({_SAME_SOURCE.get(key, key)})
+                try:
+                    notice.speak(notice_text(lang, provider))
+                except Exception:  # noqa: BLE001 - the notice is a courtesy; the answer is the job
+                    # A client that cannot take the line must not lose a good answer. It
+                    # is logged, and the answer is returned as usual.
+                    _LOG.warning("Could not say where the answer comes from", exc_info=True)
             return future.result()
