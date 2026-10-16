@@ -454,6 +454,9 @@ class _StreamedStatus:
         self.status_code = status_code
 
 
+_EVENTS = frozenset({"source", "answer", "error"})
+
+
 def _event(line: str) -> dict:
     """One line of the stream, checked: a service that sends anything else is a failed request."""
     event = json.loads(line)
@@ -461,13 +464,17 @@ def _event(line: str) -> dict:
         raise ValueError(
             f"the knowledge service sent a stream line that is not an event: {line[:80]!r}")
     kind = event["event"]
+    if kind not in _EVENTS:
+        raise ValueError(f"the knowledge service sent an unknown stream event: {kind[:40]!r}")
     if kind == "source" and not isinstance(event.get("provider"), str):
         raise ValueError("the knowledge service announced a source without naming it")
     if kind == "source" and "pending" in event and not isinstance(event["pending"], bool):
         raise ValueError("the knowledge service announced a source whose pending is not a flag")
     if kind == "answer" and not isinstance(event.get("answer"), dict):
         raise ValueError("the knowledge service sent an answer that is not a document")
+    status = event.get("status")
     if kind == "error" and not (
-            isinstance(event.get("status"), int) and isinstance(event.get("detail"), str)):
+            isinstance(status, int) and not isinstance(status, bool)
+            and isinstance(event.get("detail"), str)):
         raise ValueError("the knowledge service sent an error without a status and a detail")
     return event

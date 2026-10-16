@@ -284,7 +284,9 @@ class Lines:
     '{"event":"source"}', '{"event":"source","provider":4}',
     '{"event":"answer"}', '{"event":"answer","answer":"text"}', '{"event":"answer","answer":[1]}',
     '{"event":"error"}', '{"event":"error","status":"404","detail":"x"}',
-    '{"event":"error","status":404}',
+    '{"event":"error","status":404}', '{"event":"error","status":true,"detail":"x"}',
+    '{"event":"progress"}', '{"event":"Answer","answer":{}}',
+    '{"event":"answer","answer":{"ans',
 ])
 def test_a_malformed_stream_line_is_a_failed_request_not_a_crash(served, line):
     served(Lines([line]))

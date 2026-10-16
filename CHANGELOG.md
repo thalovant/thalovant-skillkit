@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **A stream event of an unknown kind is a failed request, not a crash.** 0.27.0
+  checked each line's shape but let an `event` it did not know through, and the
+  reader then took it for an error and raised `KeyError` on its missing `detail`,
+  which `knowledge_reply` does not catch, so the turn failed. An unknown kind, and
+  an error whose `status` is `true` or `false`, are now a `ValueError`, which
+  `knowledge_reply` turns into an unavailable answer.
+
 ## 0.28.0
 
 - **No more silent seconds, and no guessing how long to wait.** 0.27.0 named the
