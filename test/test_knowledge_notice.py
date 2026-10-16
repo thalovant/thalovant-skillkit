@@ -245,3 +245,71 @@ def test_a_skill_can_read_the_turns_notice_and_there_is_none_outside_a_turn():
         notice = stack.enter_context(lookup_notice([].append))
         assert current_notice() is notice
     assert current_notice() is None
+
+
+class Lines:
+    """Raw lines, as a service might send them, and whether the reader went past the first."""
+
+    status_code = 200
+    headers = {"Content-Type": "application/x-ndjson"}
+
+    def __init__(self, lines, hang_after_first=False):
+        self.lines, self.hang_after_first, self.read = lines, hang_after_first, 0
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_lines(self, decode_unicode=False):
+        for index, line in enumerate(self.lines):
+            if index and self.hang_after_first:
+                time.sleep(30)
+            self.read = index + 1
+            yield line
+
+
+@pytest.mark.parametrize("line", [
+    "[]", '"x"', "null", "7", '{"no":"event"}', '{"event":3}', "not json at all",
+    '{"event":"source"}', '{"event":"source","provider":4}',
+    '{"event":"answer"}', '{"event":"answer","answer":"text"}', '{"event":"answer","answer":[1]}',
+    '{"event":"error"}', '{"event":"error","status":"404","detail":"x"}',
+    '{"event":"error","status":404}',
+])
+def test_a_malformed_stream_line_is_a_failed_request_not_a_crash(served, line):
+    served(Lines([line]))
+    with lookup_notice([].append), pytest.raises(ValueError):
+        ask()
+
+
+def test_the_shared_client_turns_a_malformed_line_into_an_unavailable_answer(served):
+    served(Lines(['{"event":"answer","answer":"text"}']))
+    with lookup_notice([].append):
+        reply = knowledge_reply(
+            service_url="http://knowledge", prompt="x", lang="en-US", mode="answer", max_sources=1,
+            augmentation="auto", age_policy_setting=None, headers={}, timeout=5)
+    assert reply.answer is None and reply.policy == knowledge.POLICY_NONE
+
+
+def test_an_answer_that_comes_first_is_returned_without_waiting_for_the_stream_to_end(served):
+    response = Lines([json.dumps({"event": "answer", "answer": ANSWER}), json.dumps(SOURCE)],
+                     hang_after_first=True)
+    served(response)
+    started = time.monotonic()
+    with lookup_notice([].append):
+        assert ask() == ANSWER
+    assert time.monotonic() - started < 5 and response.read == 1
+
+
+def test_an_error_that_comes_first_is_raised_without_waiting_for_the_stream_to_end(served):
+    response = Lines([json.dumps({"event": "error", "status": 404, "detail": "none"}),
+                      json.dumps(SOURCE)], hang_after_first=True)
+    served(response)
+    started = time.monotonic()
+    with lookup_notice([].append), pytest.raises(requests.HTTPError):
+        ask()
+    assert time.monotonic() - started < 5 and response.read == 1

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
+import itertools
 import json
 import logging
 from collections.abc import Callable, Iterator
@@ -350,27 +351,44 @@ class _StreamedStatus:
         self.status_code = status_code
 
 
-def _streamed_answer(response: requests.Response, notice: LookupNotice, lang: str | None) -> dict:
-    events = (json.loads(line) for line in response.iter_lines(decode_unicode=True) if line)
+def _event(line: str) -> dict:
+    """One line of the stream, checked: a service that sends anything else is a failed request."""
+    event = json.loads(line)
+    if not isinstance(event, dict) or not isinstance(event.get("event"), str):
+        raise ValueError(
+            f"the knowledge service sent a stream line that is not an event: {line[:80]!r}")
+    kind = event["event"]
+    if kind == "source" and not isinstance(event.get("provider"), str):
+        raise ValueError("the knowledge service announced a source without naming it")
+    if kind == "answer" and not isinstance(event.get("answer"), dict):
+        raise ValueError("the knowledge service sent an answer that is not a document")
+    if kind == "error" and not (
+            isinstance(event.get("status"), int) and isinstance(event.get("detail"), str)):
+        raise ValueError("the knowledge service sent an error without a status and a detail")
+    return event
 
-    def final() -> dict:
+
+def _streamed_answer(response: requests.Response, notice: LookupNotice, lang: str | None) -> dict:
+    lines = (_event(line) for line in response.iter_lines(decode_unicode=True) if line)
+
+    def final(events) -> dict:
         for event in events:
             if event["event"] == "answer":
                 return event["answer"]
             if event["event"] == "error":
                 raise requests.HTTPError(
-                    event["detail"], response=_StreamedStatus(int(event["status"])))
+                    event["detail"], response=_StreamedStatus(event["status"]))
         raise ValueError("the knowledge service ended its stream without an answer")
 
-    first = next(events, None)
+    first = next(lines, None)
     if first is None:
         raise ValueError("the knowledge service sent an empty stream")
     if first["event"] != "source":
-        # An answer or an error with no source announced first: nothing to say.
-        events = iter([first, *events])
-        return final()
+        # An answer or an error with no source announced first: nothing to say. `chain`
+        # hands `first` back without reading the next line, which may not exist yet.
+        return final(itertools.chain([first], lines))
     with ThreadPoolExecutor(max_workers=1, thread_name_prefix="knowledge-stream") as pool:
-        future = pool.submit(contextvars.copy_context().run, final)
+        future = pool.submit(contextvars.copy_context().run, final, lines)
         try:
             return future.result(timeout=NOTICE_DELAY)
         except FutureTimeout:
