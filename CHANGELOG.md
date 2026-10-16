@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.27.0
+
+- **The notice names the source that answers, not a list of those asked.** 0.26.0
+  said "Checking Wikipedia and DuckDuckGo…" after 0.6 s, which named sources that
+  did not answer and, for a research question, five of them. The knowledge service
+  now says which source it has chosen as soon as it has (it is known before the
+  answer is translated and written, which is where the seconds go), and the visitor
+  is told "From Wikipedia…" only when the answer is still not there `NOTICE_DELAY`
+  (0.5 s) after that. An answer that follows at once, one from the cache and one
+  that needs no provider say nothing first. Needs the service from
+  thalovant/thalovant-knowledge-service#166; against one without it the request is
+  answered in plain JSON, as before, and nothing is said.
+- `ask_service(...)` is the one place a skill posts a question to the service. It
+  asks to hear the source when a notice is open, reads the stream, and raises what
+  `requests` raises, so `knowledge_reply` and a skill with its own request use the
+  same code. An `error` line after the source carries the status the plain reply
+  would have had, so a 404 is still "no answer".
+- `provider_name(id)` gives the name a visitor knows a provider by, and
+  `notice_text(lang, provider)` the localized line. The line is now one source
+  ("From {source}…", "Selon {source}…", …) in each of the eleven hub languages.
+- `run_noticing` is deprecated and only runs its work: it was the 0.26.0 way for a
+  skill with its own request, and the skills written for it still import and answer.
+  Use `ask_service`.
+
 ## 0.26.0
 
 - **A slow lookup says where it is looking.** A question put to the knowledge

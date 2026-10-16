@@ -1,131 +1,247 @@
-"""Telling the visitor where a slow lookup is going, once, and only when it is slow."""
+"""Telling the visitor which source is answering, once, and only when the answer is slow."""
+import contextlib
+import json
 import time
 
 import pytest
+import requests
 
 from thalovant_skillkit import knowledge
-from thalovant_skillkit.knowledge import lookup_notice, notice_text, run_noticing
+from thalovant_skillkit.knowledge import (
+    ask_service,
+    current_notice,
+    knowledge_reply,
+    lookup_notice,
+    notice_text,
+    provider_name,
+)
+
+SOURCE = {"event": "source", "provider": "wikipedia"}
+ANSWER = {"text": "Ada Lovelace was a mathematician.", "provider": "wikipedia", "augmented": True}
 
 
-def slow(seconds, value="answer"):
-    def work():
-        time.sleep(seconds)
-        return value
-    return work
+class Streamed:
+    """A streaming response: the lines arrive when `delays` say they do."""
+
+    def __init__(self, events, delays=None):
+        self.events = events
+        self.delays = delays or [0] * len(events)
+        self.status_code = 200
+        self.headers = {"Content-Type": "application/x-ndjson"}
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def iter_lines(self, decode_unicode=False):
+        for event, delay in zip(self.events, self.delays, strict=True):
+            time.sleep(delay)
+            yield json.dumps(event)
 
 
-def test_a_quick_lookup_says_nothing():
+class Plain:
+    status_code = 200
+    headers = {"Content-Type": "application/json"}
+
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return self.payload
+
+
+@pytest.fixture
+def served(monkeypatch):
+    """Install a fake `requests.post`; returns the calls it was given."""
+    calls = []
+
+    def install(response):
+        def post(url, **kwargs):
+            calls.append((url, kwargs))
+            return response
+
+        monkeypatch.setattr(knowledge.requests, "post", post)
+        monkeypatch.setattr(knowledge, "NOTICE_DELAY", 0.1)
+
+    install.calls = calls
+    return install
+
+
+def ask(lang="en-US"):
+    return ask_service(service_url="http://knowledge", request_payload={"prompt": "ada"},
+                       headers={"X-Skill": "t"}, timeout=5, lang=lang)
+
+
+def test_a_slow_answer_says_the_exact_source_and_then_the_answer_arrives(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.4]))
     said = []
     with lookup_notice(said.append) as notice:
-        assert run_noticing(slow(0), lang="en-US", mode="answer", delay=0.3) == "answer"
+        assert ask() == ANSWER
+    assert said == ["From Wikipedia…"]
+    assert notice.names("wikipedia") and not notice.names("duckduckgo")
+
+
+def test_an_answer_that_follows_the_source_at_once_says_nothing(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}]))
+    said = []
+    with lookup_notice(said.append) as notice:
+        assert ask() == ANSWER
     assert said == [] and not notice.named
 
 
-def test_a_slow_lookup_says_where_it_is_looking_while_it_carries_on():
-    said = []
-    with lookup_notice(said.append) as notice:
-        started = time.monotonic()
-        result = run_noticing(slow(0.5), lang="en-US", mode="answer", delay=0.1)
-        elapsed = time.monotonic() - started
-    assert result == "answer"
-    assert said == ["Checking Wikipedia and DuckDuckGo…"]
-    # the lookup was not restarted or serialized behind the notice
-    assert elapsed < 0.9
-    assert notice.names("wikipedia") and notice.names("DuckDuckGo") and notice.names("web-search")
-    assert not notice.names("wikidata") and not notice.names("wolfram")
-
-
-def test_the_notice_is_said_once_however_many_lookups_a_turn_makes():
+def test_a_service_that_does_not_stream_is_read_as_plain_json(served):
+    served(Plain(ANSWER))
     said = []
     with lookup_notice(said.append):
-        for _ in range(3):
-            run_noticing(slow(0.3), lang="en-US", mode="answer", delay=0.05)
-    assert len(said) == 1
+        assert ask() == ANSWER
+    assert said == []
+    url, kwargs = served.calls[0]
+    assert url == "http://knowledge/v1/knowledge/answer"
+    assert kwargs["headers"]["Accept"].startswith("application/x-ndjson")
+    assert kwargs["headers"]["X-Skill"] == "t"
 
 
-def test_a_notice_open_for_one_turn_does_not_reach_the_next():
+def test_without_a_notice_the_request_is_the_plain_one_it_always_was(served):
+    served(Plain(ANSWER))
+    assert ask() == ANSWER
+    _, kwargs = served.calls[0]
+    assert kwargs["headers"] == {"X-Skill": "t"} and "stream" not in kwargs
+    assert kwargs["json"] == {"prompt": "ada"} and kwargs["timeout"] == 5
+
+
+def test_the_notice_is_said_once_however_many_lookups_a_turn_makes(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.3]))
+    said = []
+    with lookup_notice(said.append):
+        ask()
+        ask()
+    assert said == ["From Wikipedia…"]
+
+
+def test_each_turn_has_its_own_notice(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.3]))
     first, second = [], []
     with lookup_notice(first.append):
-        run_noticing(slow(0.2), lang="en-US", mode="answer", delay=0.05)
+        ask()
     with lookup_notice(second.append):
-        run_noticing(slow(0.2), lang="en-US", mode="answer", delay=0.05)
-    assert len(first) == len(second) == 1
+        ask()
+    assert first == second == ["From Wikipedia…"]
+    assert current_notice() is None
 
 
-def test_without_a_notice_the_lookup_just_runs():
-    assert run_noticing(slow(0.2), lang="en-US", mode="answer", delay=0.01) == "answer"
+def test_an_error_after_the_source_is_the_status_the_plain_reply_would_have_had(served):
+    served(Streamed([SOURCE, {"event": "error", "status": 404, "detail": "no answer"}]))
+    with lookup_notice([].append), pytest.raises(requests.HTTPError) as caught:
+        ask()
+    assert caught.value.response.status_code == 404
 
 
-def test_research_names_the_papers_it_asks_too():
-    text, named = notice_text("en-US", "research")
-    assert text == "Checking Wikipedia, DuckDuckGo, OpenAlex, Crossref, and arXiv…"
-    assert named == {"wikipedia", "duckduckgo", "openalex", "crossref", "arxiv"}
+def test_a_stream_that_ends_without_an_answer_is_an_error_not_a_hang(served):
+    served(Streamed([SOURCE]))
+    with lookup_notice([].append), pytest.raises(ValueError):
+        ask()
 
 
-@pytest.mark.parametrize("lang,start", [
-    ("fr-FR", "Je consulte Wikipedia et DuckDuckGo"),
-    ("fr-CA", "Je consulte Wikipedia et DuckDuckGo"),
-    ("es-ES", "Consultando Wikipedia y DuckDuckGo"),
-    ("de-DE", "Ich frage Wikipedia und DuckDuckGo ab"),
-    ("it-IT", "Consulto Wikipedia e DuckDuckGo"),
-    ("pt-PT", "A consultar Wikipedia e DuckDuckGo"),
-    ("nl-NL", "Ik raadpleeg Wikipedia en DuckDuckGo"),
-    ("ca-ES", "Consultant Wikipedia i DuckDuckGo"),
-    ("gl-ES", "Consultando Wikipedia e DuckDuckGo"),
-    ("eu-ES", "Wikipedia eta DuckDuckGo kontsultatzen"),
-    ("hi-IN", "Wikipedia और DuckDuckGo में देखा जा रहा है"),
-])
-def test_the_official_hub_languages_each_have_their_own_line(lang, start):
-    assert notice_text(lang, "answer")[0].startswith(start)
+def test_a_notice_that_cannot_be_said_does_not_cost_the_answer(served, caplog):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.3]))
 
-
-def test_a_language_without_a_line_uses_english_and_a_bad_tag_does_not_break_it():
-    assert notice_text("ja-JP", "answer")[0] == "Checking Wikipedia and DuckDuckGo…"
-    assert notice_text("not a tag", "answer")[0] == "Checking Wikipedia and DuckDuckGo…"
-    assert notice_text(None, "answer")[0] == "Checking Wikipedia and DuckDuckGo…"
-
-
-def test_the_shared_client_notices_a_slow_service(monkeypatch):
-    class Response:
-        def raise_for_status(self): pass
-        def json(self): return {"text": "Ada Lovelace was a mathematician.", "augmented": False}
-
-    def post(url, **kwargs):
-        time.sleep(0.4)
-        return Response()
-
-    monkeypatch.setattr(knowledge.requests, "post", post)
-    monkeypatch.setattr(knowledge, "NOTICE_DELAY", 0.05)
-    said = []
-    with lookup_notice(said.append):
-        reply = knowledge.knowledge_reply(
-            service_url="http://knowledge", prompt="who was ada lovelace", lang="en-US",
-            mode="answer", max_sources=2, augmentation="auto", age_policy_setting=None,
-            headers={}, timeout=5)
-    assert reply.answer == "Ada Lovelace was a mathematician."
-    assert said == ["Checking Wikipedia and DuckDuckGo…"]
-
-
-def test_a_skill_can_read_the_turns_notice_and_there_is_none_outside_a_turn():
-    assert knowledge.current_notice() is None
-    with lookup_notice([].append) as notice:
-        assert knowledge.current_notice() is notice
-    assert knowledge.current_notice() is None
-
-
-def test_the_lookup_sees_the_notice_it_runs_under():
-    seen = []
-    with lookup_notice([].append) as notice:
-        run_noticing(lambda: seen.append(knowledge.current_notice()), lang="en-US", mode="answer")
-    assert seen == [notice]
-
-
-def test_a_notice_that_cannot_be_said_does_not_cost_the_answer(caplog):
     def broken(text):
         raise RuntimeError("the client went away")
 
     with lookup_notice(broken):
-        result = run_noticing(slow(0.3), lang="en-US", mode="answer", delay=0.05)
+        assert ask() == ANSWER
+    assert "Could not say where the answer comes from" in caplog.text
 
-    assert result == "answer"
-    assert "Could not say where the lookup is looking" in caplog.text
+
+def test_a_source_that_answers_without_an_announcement_says_nothing(served):
+    served(Streamed([{"event": "answer", "answer": ANSWER}]))
+    said = []
+    with lookup_notice(said.append):
+        assert ask() == ANSWER
+    assert said == []
+
+
+def test_the_shared_client_uses_it_so_every_skill_behaves_alike(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.3]))
+    said = []
+    with lookup_notice(said.append):
+        reply = knowledge_reply(
+            service_url="http://knowledge", prompt="who was ada lovelace", lang="en-US",
+            mode="answer", max_sources=2, augmentation="auto", age_policy_setting=None,
+            headers={}, timeout=5)
+    assert reply.answer == ANSWER["text"] and reply.augmented
+    assert said == ["From Wikipedia…"]
+
+
+def test_a_404_from_a_streaming_service_is_still_no_answer(served):
+    served(Streamed([SOURCE, {"event": "error", "status": 404, "detail": "none"}]))
+    with lookup_notice([].append):
+        reply = knowledge_reply(
+            service_url="http://knowledge", prompt="x", lang="en-US", mode="answer", max_sources=1,
+            augmentation="auto", age_policy_setting=None, headers={}, timeout=5)
+    assert reply.answer is None and reply.policy == knowledge.POLICY_NO_ANSWER
+
+
+@pytest.mark.parametrize("lang,line", [
+    ("en-US", "From Wikipedia…"),
+    ("fr-FR", "Selon Wikipedia…"),
+    ("fr-CA", "Selon Wikipedia…"),
+    ("es-ES", "Según Wikipedia…"),
+    ("de-DE", "Laut Wikipedia…"),
+    ("it-IT", "Secondo Wikipedia…"),
+    ("pt-PT", "Segundo Wikipedia…"),
+    ("nl-NL", "Volgens Wikipedia…"),
+    ("ca-ES", "Segons Wikipedia…"),
+    ("gl-ES", "Segundo Wikipedia…"),
+    ("eu-ES", "Iturria: Wikipedia…"),
+    ("hi-IN", "Wikipedia से…"),
+    ("ja-JP", "From Wikipedia…"),
+    ("not a tag", "From Wikipedia…"),
+    (None, "From Wikipedia…"),
+])
+def test_the_official_hub_languages_each_have_their_own_line(lang, line):
+    assert notice_text(lang, "wikipedia") == line
+
+
+def test_a_provider_is_named_the_way_a_visitor_knows_it():
+    ids = ("wikipedia", "web-search", "wolfram", "arxiv", "wikihow")
+    assert [provider_name(p) for p in ids] == [
+        "Wikipedia", "DuckDuckGo", "WolframAlpha", "arXiv", "wikiHow"]
+    assert provider_name("semantic_scholar") == "Semantic Scholar"
+    assert provider_name("some-new-provider") == "Some New Provider"
+
+
+def test_the_service_name_for_a_source_counts_as_the_same_source():
+    with lookup_notice([].append) as notice:
+        notice.named = frozenset({"duckduckgo"})
+        assert notice.names("web-search") and notice.names("DuckDuckGo")
+        notice.named = frozenset({"wolfram"})
+        assert notice.names("wolframalpha")
+        assert not notice.names("wikipedia")
+
+
+def test_run_noticing_from_0_26_still_runs_the_work():
+    with lookup_notice([].append):
+        assert knowledge.run_noticing(lambda: 7, lang="en-US", mode="answer") == 7
+
+
+def test_a_skill_can_read_the_turns_notice_and_there_is_none_outside_a_turn():
+    assert current_notice() is None
+    with contextlib.ExitStack() as stack:
+        notice = stack.enter_context(lookup_notice([].append))
+        assert current_notice() is notice
+    assert current_notice() is None
