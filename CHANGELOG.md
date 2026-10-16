@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.28.0
+
+- **No more silent seconds, and no guessing how long to wait.** 0.27.0 named the
+  source that answers, but waited a fixed half second after hearing it in case the
+  answer followed at once, and said nothing at all while the providers were still
+  being asked. The service now says whether a slow step (translating the answer, or
+  the model writing it) follows the source it announces, and both are known before
+  they start (thalovant/thalovant-knowledge-service#167):
+  - a slow step follows (`pending: true`): "From Wikipedia…" the moment the source
+    is known, about 0.5 s in, instead of 0.5 s later;
+  - none follows (`pending: false`): nothing, the answer is on its way;
+  - an older service that does not say: the half-second wait of 0.27.0, as before.
+- **"Looking it up…" when nothing has come back after `WORKING_DELAY` (1.2 s).** A
+  provider that is slow to answer left the visitor with a blank chat for as long as
+  it took, and there is nothing true to name until a source is chosen, so this line
+  names nothing. It is said once per turn, and the source is still named after it
+  when one is announced. It also covers a service that does not stream at all.
+- `ask_service` reads the reply on its own thread and the calling thread decides when
+  to speak, so a reply that is slow to send its first byte no longer blocks the notice.
+- `working_text(lang)` is the localized line, in the eleven hub languages.
+
 ## 0.27.0
 
 - **The notice names the source that answers, not a list of those asked.** 0.26.0

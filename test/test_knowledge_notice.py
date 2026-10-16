@@ -66,16 +66,22 @@ class Plain:
 
 @pytest.fixture
 def served(monkeypatch):
-    """Install a fake `requests.post`; returns the calls it was given."""
+    """Install a fake `requests.post`; returns the calls it was given.
+
+    `first_byte` is how long the post takes to return: a streamed reply's headers are its
+    first line, so that is how long nothing at all is heard.
+    """
     calls = []
 
-    def install(response):
+    def install(response, first_byte=0):
         def post(url, **kwargs):
             calls.append((url, kwargs))
+            time.sleep(first_byte)
             return response
 
         monkeypatch.setattr(knowledge.requests, "post", post)
         monkeypatch.setattr(knowledge, "NOTICE_DELAY", 0.1)
+        monkeypatch.setattr(knowledge, "WORKING_DELAY", 0.15)
 
     install.calls = calls
     return install
@@ -313,3 +319,109 @@ def test_an_error_that_comes_first_is_raised_without_waiting_for_the_stream_to_e
     with lookup_notice([].append), pytest.raises(requests.HTTPError):
         ask()
     assert time.monotonic() - started < 5 and response.read == 1
+
+
+def sourced(pending):
+    return {**SOURCE, "pending": pending}
+
+
+def test_a_source_that_says_a_slow_step_follows_is_told_at_once(served):
+    served(Streamed([sourced(True), {"event": "answer", "answer": ANSWER}], [0, 0.4]))
+    said, at = [], []
+    started = time.monotonic()
+    with lookup_notice(lambda text: (said.append(text), at.append(time.monotonic() - started))):
+        assert ask() == ANSWER
+    assert said == ["From Wikipedia…"]
+    # at once: not after the NOTICE_DELAY a service that does not say would have been given
+    assert at[0] < 0.08
+
+
+def test_a_source_that_says_nothing_follows_is_never_told_however_late_the_answer(served):
+    served(Streamed([sourced(False), {"event": "answer", "answer": ANSWER}], [0, 0.4]))
+    said = []
+    with lookup_notice(said.append) as notice:
+        assert ask() == ANSWER
+    assert said == [] and not notice.named
+
+
+def test_a_service_that_does_not_say_is_given_the_delay(served):
+    served(Streamed([SOURCE, {"event": "answer", "answer": ANSWER}], [0, 0.4]))
+    said, at = [], []
+    started = time.monotonic()
+    with lookup_notice(lambda text: (said.append(text), at.append(time.monotonic() - started))):
+        assert ask() == ANSWER
+    assert said == ["From Wikipedia…"] and at[0] >= 0.09
+
+
+def test_nothing_heard_for_a_while_says_the_lookup_is_running_and_names_nothing(served):
+    served(Streamed([sourced(False), {"event": "answer", "answer": ANSWER}]), first_byte=0.4)
+    said = []
+    with lookup_notice(said.append) as notice:
+        assert ask() == ANSWER
+    assert said == ["Looking it up…"]
+    assert notice.working and not notice.named
+
+
+def test_the_source_is_still_named_after_the_lookup_was_said_to_be_running(served):
+    stream = Streamed([sourced(True), {"event": "answer", "answer": ANSWER}], [0, 0.3])
+    served(stream, first_byte=0.3)
+    said = []
+    with lookup_notice(said.append):
+        assert ask() == ANSWER
+    assert said == ["Looking it up…", "From Wikipedia…"]
+
+
+def test_a_reply_that_comes_back_in_time_says_nothing_at_all(served):
+    served(Streamed([sourced(False), {"event": "answer", "answer": ANSWER}]), first_byte=0.05)
+    said = []
+    with lookup_notice(said.append):
+        assert ask() == ANSWER
+    assert said == []
+
+
+def test_a_service_that_does_not_stream_but_is_slow_still_says_the_lookup_is_running(served):
+    served(Plain(ANSWER), first_byte=0.4)
+    said = []
+    with lookup_notice(said.append):
+        assert ask() == ANSWER
+    assert said == ["Looking it up…"]
+
+
+def test_the_lookup_is_said_to_be_running_once_per_turn(served):
+    served(Plain(ANSWER), first_byte=0.4)
+    said = []
+    with lookup_notice(said.append):
+        ask()
+        ask()
+    assert said == ["Looking it up…"]
+
+
+def test_a_failure_while_waiting_is_raised_not_swallowed(served):
+    def broken(url, **kwargs):
+        time.sleep(0.3)
+        raise requests.ConnectionError("down")
+
+    served(Plain(ANSWER))
+    knowledge.requests.post = broken
+    said = []
+    with lookup_notice(said.append), pytest.raises(requests.ConnectionError):
+        ask()
+    assert said == ["Looking it up…"]
+
+
+@pytest.mark.parametrize("pending", ["yes", 1, None, "true"])
+def test_a_pending_that_is_not_a_flag_is_a_failed_request(served, pending):
+    served(Lines([json.dumps({"event": "source", "provider": "wikipedia", "pending": pending})]))
+    with lookup_notice([].append), pytest.raises(ValueError):
+        ask()
+
+
+@pytest.mark.parametrize("lang,line", [
+    ("en-US", "Looking it up…"), ("fr-FR", "Je cherche…"), ("fr-CA", "Je cherche…"),
+    ("es-ES", "Buscando…"), ("de-DE", "Ich suche…"), ("it-IT", "Cerco…"),
+    ("pt-PT", "A procurar…"), ("nl-NL", "Ik zoek het op…"), ("ca-ES", "Cercant…"),
+    ("gl-ES", "Buscando…"), ("eu-ES", "Bilatzen…"), ("hi-IN", "खोज रहे हैं…"),
+    ("ja-JP", "Looking it up…"), (None, "Looking it up…"),
+])
+def test_the_running_line_exists_in_the_official_hub_languages(lang, line):
+    assert knowledge.working_text(lang) == line
