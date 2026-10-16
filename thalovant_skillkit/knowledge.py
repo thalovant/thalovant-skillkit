@@ -14,12 +14,12 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-import itertools
 import json
 import logging
+import queue
+import threading
+import time
 from collections.abc import Callable, Iterator
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TypeVar
@@ -230,7 +230,13 @@ def knowledge_reply(
 # source is named once, up front; an answer that cites its sources can ask the notice
 # which it already named, and not say them again at its end.
 
+#: How long a service that does not say whether a slow step follows (an older one) is
+#: given to answer once its source is known, before the visitor is told.
 NOTICE_DELAY = 0.5
+#: How long nothing at all may come back before the visitor is told the lookup is
+#: running. Before the source is known there is nothing true to name, so the line says
+#: no more than that.
+WORKING_DELAY = 1.2
 NDJSON = "application/x-ndjson"
 # Not the matching tree (locale/): every folder there must declare a matching rule.
 _NOTICE_RESOURCES = SkillResources(Path(__file__).parent / "shared_dialog")
@@ -271,6 +277,8 @@ class LookupNotice:
     speak: Callable[[str], None]
     #: Provider ids the notice named; empty until it has been said.
     named: frozenset[str] = field(default_factory=frozenset)
+    #: Whether the turn already said the lookup is running.
+    working: bool = False
 
     def names(self, provider: str) -> bool:
         """Whether the notice already told the visitor about this provider."""
@@ -303,6 +311,11 @@ def notice_text(lang: str | None, provider: str) -> str:
     return _NOTICE_RESOURCES.dialog("knowledge.notice", lang, {"source": provider_name(provider)})
 
 
+def working_text(lang: str | None) -> str:
+    """The localized line for a lookup that has not yet found its source: "Looking it up…"."""
+    return _NOTICE_RESOURCES.dialog("knowledge.working", lang)
+
+
 def run_noticing(work: Callable[[], T], *, lang: str | None = None, mode: str = "",
                  delay: float | None = None) -> T:
     """Deprecated: runs `work` and says nothing.
@@ -323,10 +336,19 @@ def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, s
     (404 means no answer), another `RequestException` for a connection, `ValueError`
     for a body that is not JSON.
 
-    With a notice open the call asks to hear the source first. Where the service
-    announces one and the answer is still not there NOTICE_DELAY later, the visitor
-    is told. Without a notice, or from a service that does not stream, this is the
-    plain request it always was.
+    With a notice open the call asks to hear the source first, and tells the visitor
+    what is happening instead of leaving the chat blank:
+
+    - the service announces its source and says a slow step follows (`pending`): "From
+      Wikipedia…", at once;
+    - it announces one and says nothing follows: nothing, the answer is on its way;
+    - it announces one without saying (an older service): "From Wikipedia…" if the
+      answer is not there NOTICE_DELAY later;
+    - nothing at all has come back after WORKING_DELAY: "Looking it up…", which names
+      nothing because nothing is known yet.
+
+    Without a notice, or from a service that does not stream, this is the plain
+    request it always was.
     """
     url = f"{service_url.rstrip('/')}/v1/knowledge/answer"
     notice = _CURRENT.get()
@@ -334,14 +356,95 @@ def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, s
         response = requests.post(url, json=request_payload, headers=headers, timeout=timeout)
         response.raise_for_status()
         return response.json()
-    response = requests.post(
-        url, json=request_payload, headers={**headers, "Accept": f"{NDJSON}, application/json"},
-        timeout=timeout, stream=True)
-    with response:
-        response.raise_for_status()
-        if not response.headers.get("Content-Type", "").startswith(NDJSON):
-            return response.json()
-        return _streamed_answer(response, notice, lang)
+    events: queue.Queue = queue.Queue()
+    worker = threading.Thread(
+        target=contextvars.copy_context().run,
+        args=(_read_into, events, url, request_payload,
+              {**headers, "Accept": f"{NDJSON}, application/json"}, timeout),
+        name="knowledge-stream", daemon=True)
+    worker.start()
+    return _wait_and_tell(events, notice, lang)
+
+
+def _read_into(events: queue.Queue, url: str, request_payload: dict, headers: dict[str, str],
+               timeout: float) -> None:
+    """Read the reply on its own thread: ("source", event), then ("answer", doc) or ("raise", exc).
+
+    The caller's thread is the one that speaks, so the post may block for as long as it
+    likes: the first byte of a streamed reply is the source, and an unstreamed one is
+    the whole answer.
+    """
+    try:
+        response = requests.post(url, json=request_payload, headers=headers,
+                                 timeout=timeout, stream=True)
+        with response:
+            response.raise_for_status()
+            if not response.headers.get("Content-Type", "").startswith(NDJSON):
+                events.put(("answer", response.json()))
+                return
+            for line in response.iter_lines(decode_unicode=True):
+                if not line:
+                    continue
+                event = _event(line)
+                if event["event"] == "source":
+                    events.put(("source", event))
+                elif event["event"] == "answer":
+                    events.put(("answer", event["answer"]))
+                    return
+                else:
+                    events.put(("raise", requests.HTTPError(
+                        event["detail"], response=_StreamedStatus(event["status"]))))
+                    return
+        events.put(("raise", ValueError(
+            "the knowledge service ended its stream without an answer")))
+    except BaseException as error:  # noqa: BLE001 - whatever happened is the caller's to raise
+        events.put(("raise", error))
+
+
+def _wait_and_tell(events: queue.Queue, notice: LookupNotice, lang: str | None) -> dict:
+    started = time.monotonic()
+    source: dict | None = None
+    source_at = 0.0
+    while True:
+        wait = None
+        if source is None:
+            if not notice.working:
+                wait = max(0.0, started + WORKING_DELAY - time.monotonic())
+        elif "pending" not in source and not notice.named:
+            wait = max(0.0, source_at + NOTICE_DELAY - time.monotonic())
+        try:
+            kind, value = events.get(timeout=wait)
+        except queue.Empty:
+            if source is None:
+                notice.working = True
+                _say(notice, working_text(lang))
+            else:
+                _tell_source(notice, source, lang)
+            continue
+        if kind == "answer":
+            return value
+        if kind == "raise":
+            raise value
+        source, source_at = value, time.monotonic()
+        if source.get("pending") is True:
+            _tell_source(notice, source, lang)
+
+
+def _tell_source(notice: LookupNotice, source: dict, lang: str | None) -> None:
+    if notice.named:
+        return
+    key = source["provider"].casefold()
+    notice.named = frozenset({_SAME_SOURCE.get(key, key)})
+    _say(notice, notice_text(lang, source["provider"]))
+
+
+def _say(notice: LookupNotice, text: str) -> None:
+    try:
+        notice.speak(text)
+    except Exception:  # noqa: BLE001 - the notice is a courtesy; the answer is the job
+        # A client that cannot take the line must not lose a good answer. It is logged,
+        # and the answer is returned as usual.
+        _LOG.warning("Could not say where the answer comes from", exc_info=True)
 
 
 class _StreamedStatus:
@@ -360,46 +463,11 @@ def _event(line: str) -> dict:
     kind = event["event"]
     if kind == "source" and not isinstance(event.get("provider"), str):
         raise ValueError("the knowledge service announced a source without naming it")
+    if kind == "source" and "pending" in event and not isinstance(event["pending"], bool):
+        raise ValueError("the knowledge service announced a source whose pending is not a flag")
     if kind == "answer" and not isinstance(event.get("answer"), dict):
         raise ValueError("the knowledge service sent an answer that is not a document")
     if kind == "error" and not (
             isinstance(event.get("status"), int) and isinstance(event.get("detail"), str)):
         raise ValueError("the knowledge service sent an error without a status and a detail")
     return event
-
-
-def _streamed_answer(response: requests.Response, notice: LookupNotice, lang: str | None) -> dict:
-    lines = (_event(line) for line in response.iter_lines(decode_unicode=True) if line)
-
-    def final(events) -> dict:
-        for event in events:
-            if event["event"] == "answer":
-                return event["answer"]
-            if event["event"] == "error":
-                raise requests.HTTPError(
-                    event["detail"], response=_StreamedStatus(event["status"]))
-        raise ValueError("the knowledge service ended its stream without an answer")
-
-    first = next(lines, None)
-    if first is None:
-        raise ValueError("the knowledge service sent an empty stream")
-    if first["event"] != "source":
-        # An answer or an error with no source announced first: nothing to say. `chain`
-        # hands `first` back without reading the next line, which may not exist yet.
-        return final(itertools.chain([first], lines))
-    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="knowledge-stream") as pool:
-        future = pool.submit(contextvars.copy_context().run, final, lines)
-        try:
-            return future.result(timeout=NOTICE_DELAY)
-        except FutureTimeout:
-            if not notice.named:
-                provider = first["provider"]
-                key = provider.casefold()
-                notice.named = frozenset({_SAME_SOURCE.get(key, key)})
-                try:
-                    notice.speak(notice_text(lang, provider))
-                except Exception:  # noqa: BLE001 - the notice is a courtesy; the answer is the job
-                    # A client that cannot take the line must not lose a good answer. It
-                    # is logged, and the answer is returned as usual.
-                    _LOG.warning("Could not say where the answer comes from", exc_info=True)
-            return future.result()
