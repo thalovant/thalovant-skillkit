@@ -11,9 +11,9 @@ Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback f
   French 12-hour one as "22:18". The short clock is now used only when it keeps the
   asked-for cycle (so Korean still writes "오후 10:18"); otherwise the fallback is
   `HH:mm` or `h:mm a`. `date_text(..., written=True, rules=...)` returned an
-  absolute rule-formatted date even for today and tomorrow; a near day now keeps
+  absolute rule-formatted date even for today and tomorrow; those now keep
   "today"/"tomorrow" unless the caller passes `relative=False`, as the docstring
-  says.
+  says. Yesterday still takes the rules.
 
 - **A malformed stream event is a failed request, not a crash; an unknown one is
   skipped.** 0.27.0 checked each line's shape but let an `event` it did not know

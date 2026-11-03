@@ -278,10 +278,12 @@ def date_text(
     # sentence-initial words in every locale it ships: reused mid-sentence
     # they read "in 1 day until Tomorrow", and a reader wants the concrete
     # date anyway.
-    near = relative and abs((value.date() - now.date()).days) <= 1
-    # A locale's own date rules are for an absolute date; a near one keeps
-    # "today" or "tomorrow", as the docstring promises for both forms.
-    if written and rules and not near:
+    days = (value.date() - now.date()).days
+    near = relative and abs(days) <= 1
+    # A locale's own date rules are for an absolute date. Today and tomorrow
+    # keep their word, as promised above for both forms; yesterday still
+    # takes the rules, as it always has.
+    if written and rules and not (relative and 0 <= days <= 1):
         written_by_rule = _date_by_rule(value, lang, rules, plain)
         if written_by_rule:
             return written_by_rule

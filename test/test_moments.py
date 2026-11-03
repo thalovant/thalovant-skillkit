@@ -313,6 +313,17 @@ def test_date_rules_keep_today_and_tomorrow():
     assert later == "Tuesday, September 1, 2026", later
 
 
+def test_date_rules_still_write_yesterday():
+    """Only today and tomorrow keep their word; the rules still write yesterday."""
+    value = datetime(2026, 8, 27, 9, 18)
+    rules = {"date_pattern": "full", "date_pattern_plain": "long"}
+
+    yesterday = value - timedelta(days=1)
+    assert date_text(yesterday, "en-US", value, written=True, rules=rules) == (
+        "Wednesday, August 26, 2026"
+    )
+
+
 def test_date_rules_apply_to_a_near_day_when_relative_is_refused():
     value = datetime(2026, 8, 27, 9, 18)
     rules = {"date_pattern": "full", "date_pattern_plain": "long"}
