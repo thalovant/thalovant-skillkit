@@ -1,5 +1,5 @@
 """Saying a date and writing one are two different jobs."""
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -264,3 +264,59 @@ def test_a_locale_may_carry_its_own_date_rules():
 
     assert full.startswith("Thursday"), full
     assert not plain.startswith("Thursday"), plain
+
+
+def test_marker_only_rules_keep_the_asked_for_24_hour_clock():
+    """A rule set with no pattern must not hand the cycle back to the locale."""
+    value = datetime(2026, 8, 27, 22, 18)
+    rules = {"am": "a.m.", "pm": "p.m."}
+
+    assert time_text(value, "en-US", True, written=True, rules=rules) == "22:18"
+
+
+def test_marker_only_rules_keep_the_asked_for_12_hour_clock():
+    """French writes 24-hour by default; an explicit 12-hour request still gets one."""
+    value = datetime(2026, 8, 27, 22, 18)
+
+    rules = {"am": "AM", "pm": "PM"}
+
+    assert time_text(value, "fr-FR", False, written=True, rules=rules) == "10:18 PM"
+
+
+def test_marker_only_rules_keep_the_locale_marker_placement():
+    """With no pattern, CLDR's short clock still puts the Korean marker first."""
+    value = datetime(2026, 8, 27, 22, 18)
+    rules = {"am": "오전", "pm": "오후"}
+
+    assert time_text(value, "ko-KR", False, written=True, rules=rules) == "오후 10:18"
+    assert time_text(value, "ko-KR", True, written=True, rules=rules) == "22:18"
+
+
+def test_a_quoted_letter_is_not_an_hour_field():
+    """Canadian French writes "22 h 18": the quoted h is text, the clock is 24-hour."""
+    value = datetime(2026, 8, 27, 22, 18)
+
+    rules = {"am": "a.m.", "pm": "p.m."}
+
+    assert time_text(value, "fr-CA", True, written=True, rules=rules) == "22 h 18"
+
+
+def test_date_rules_keep_today_and_tomorrow():
+    """Both forms keep the relative day when it is that near, rules or not."""
+    value = datetime(2026, 8, 27, 9, 18)
+    rules = {"date_pattern": "full", "date_pattern_plain": "long"}
+
+    assert date_text(value, "en-US", value, written=True, rules=rules) == "today"
+    tomorrow = value + timedelta(days=1)
+    assert date_text(tomorrow, "en-US", value, written=True, rules=rules) == "tomorrow"
+    later = date_text(value + timedelta(days=5), "en-US", value, written=True, rules=rules)
+    assert later == "Tuesday, September 1, 2026", later
+
+
+def test_date_rules_apply_to_a_near_day_when_relative_is_refused():
+    value = datetime(2026, 8, 27, 9, 18)
+    rules = {"date_pattern": "full", "date_pattern_plain": "long"}
+
+    assert date_text(value, "en-US", value, written=True, rules=rules, relative=False) == (
+        "Thursday, August 27, 2026"
+    )

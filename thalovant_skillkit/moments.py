@@ -183,7 +183,7 @@ def _time_by_rule(
         return ""
     locale = _babel_locale(lang)
     key = "time_pattern_24" if use_24hour else "time_pattern"
-    pattern = str(rules.get(key) or "").strip() or "short"
+    pattern = str(rules.get(key) or "").strip() or _cldr_clock_pattern(locale, use_24hour)
     try:
         rendered = format_time(value, format=pattern, locale=locale)
     except (UnknownLocaleError, ValueError, KeyError, TypeError):
@@ -196,6 +196,29 @@ def _time_by_rule(
     except (UnknownLocaleError, ValueError, KeyError, TypeError):
         return rendered
     return rendered.replace(cldr_marker, marker) if cldr_marker else rendered
+
+
+def _cldr_clock_pattern(locale: str, use_24hour: bool) -> str:
+    """CLDR's short clock when it keeps the asked-for cycle, else a plain one.
+
+    A rule set may carry only the am/pm markers and leave the pattern to
+    CLDR, whose short clock also places the marker ("a h:mm" in Korean). But
+    that pattern is the locale's own 12- or 24-hour preference, so it is only
+    used when it agrees with `use_24hour`; a caller that resolved the cycle
+    already has an answer, and the fallback must not quietly overrule it.
+    """
+    try:
+        from babel.core import UnknownLocaleError
+        from babel.dates import get_time_format
+
+        short = str(get_time_format("short", locale=locale))
+    except (ImportError, UnknownLocaleError, ValueError, KeyError, TypeError):
+        short = ""
+    # Quoted text is literal ("H 'h' mm" writes a letter h, not an hour).
+    hours = set(re.sub(r"'[^']*'", "", short)) & set("hHkK")
+    if hours and bool(hours & set("Hk")) == use_24hour:
+        return "short"
+    return "HH:mm" if use_24hour else "h:mm a"
 
 
 def _date_by_rule(value: datetime, lang: str, rules: Mapping[str, Any], plain: bool) -> str:
@@ -251,15 +274,17 @@ def date_text(
     English reads wrong bare, so it takes the ordinal it would be read with
     anyway: "Monday, 28th". The other locales use a cardinal there already.
     """
-    if written and rules:
-        written_by_rule = _date_by_rule(value, lang, rules, plain)
-        if written_by_rule:
-            return written_by_rule
     # `relative=False` is for a caller whose "today" and "tomorrow" are
     # sentence-initial words in every locale it ships: reused mid-sentence
     # they read "in 1 day until Tomorrow", and a reader wants the concrete
     # date anyway.
     near = relative and abs((value.date() - now.date()).days) <= 1
+    # A locale's own date rules are for an absolute date; a near one keeps
+    # "today" or "tomorrow", as the docstring promises for both forms.
+    if written and rules and not near:
+        written_by_rule = _date_by_rule(value, lang, rules, plain)
+        if written_by_rule:
+            return written_by_rule
     if written and not near:
         try:
             from babel.core import UnknownLocaleError

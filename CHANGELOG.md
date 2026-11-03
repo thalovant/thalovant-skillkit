@@ -1,6 +1,19 @@
+Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback fixes.
+
 # Changelog
 
 ## Unreleased
+
+- **A locale's written rules no longer overrule the clock or the relative day.**
+  `time_text(..., written=True, rules=...)` with a rule set that carries only the
+  am/pm markers fell back to CLDR's short clock, which is the locale's own 12- or
+  24-hour preference: an English 24-hour request came back as "10:18 p.m." and a
+  French 12-hour one as "22:18". The short clock is now used only when it keeps the
+  asked-for cycle (so Korean still writes "오후 10:18"); otherwise the fallback is
+  `HH:mm` or `h:mm a`. `date_text(..., written=True, rules=...)` returned an
+  absolute rule-formatted date even for today and tomorrow; a near day now keeps
+  "today"/"tomorrow" unless the caller passes `relative=False`, as the docstring
+  says.
 
 - **A malformed stream event is a failed request, not a crash; an unknown one is
   skipped.** 0.27.0 checked each line's shape but let an `event` it did not know
