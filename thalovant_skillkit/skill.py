@@ -61,6 +61,7 @@ try:
 except ImportError:  # pragma: no cover - a workshop without OCP
     _CommonPlayBase = None
 
+from . import display as display_module
 from .fallback import register_once, resolve_priority
 from .locale import SkillResources
 from .message import context_of, message_lang, utterance
@@ -136,6 +137,35 @@ class _SkillPlumbing:
     NO_GUI_FALLBACK: bool | None = None
 
     _resources: SkillResources | None = None
+
+    # -- what a screen shows, and what comes back from it -------------------------
+
+    def add_display_action_handler(self, handler: Any) -> None:
+        """Call `handler(tap, message)` when a satellite reports a tap on one
+        of this skill's cards (`display.Tap`: the card, the action, when).
+
+        The bus event is followed once, the first time a handler is added; a
+        tap on another skill's card is never delivered here. Answer it as a
+        turn would: `self.speak_to(message, ..., display=...)`, so the reply
+        reaches the screen that was tapped.
+        """
+        handlers = self.__dict__.setdefault("_display_action_handlers", [])
+        if handler not in handlers:
+            handlers.append(handler)
+        if not self.__dict__.get("_display_actions_bound"):
+            self.add_event(display_module.ACTION_EVENT, self._on_display_action,
+                           speak_errors=False)
+            self.__dict__["_display_actions_bound"] = True
+
+    def _on_display_action(self, message: Any) -> None:
+        tap = display_module.tap(getattr(message, "data", None))
+        if tap is None:
+            return
+        skill_id = getattr(self, "skill_id", "") or ""
+        if tap.skill != skill_id and not tap.card.startswith(f"{skill_id}:"):
+            return
+        for handler in list(self.__dict__.get("_display_action_handlers", ())):
+            handler(tap, message)
 
     # -- what the skill is made of --------------------------------------------
 
@@ -300,14 +330,20 @@ class _SkillPlumbing:
         return context_of(message)
 
     def speak_varied_dialog(self, key: str, data: dict | None = None, *,
-                            expect_response: bool = False, wait: bool = False):
+                            expect_response: bool = False, wait: bool = False,
+                            display: Any = None):
         """Speak curated lines without repeats, preserving OVOS rendering hooks.
 
         Framework resource overrides win over packaged lines. Selection history
         is local to this skill instance and bounded; reloaded choices replace
         their old bag. Ordinary ``speak_dialog`` remains unchanged. A `.ssml`
-        twin is sent with the line drawn, as `speak_dialog` does.
+        twin is sent with the line drawn, as `speak_dialog` does. `display`
+        is a card for a screen, as for `speak`.
         """
+        if display is not None:
+            with display_module.showing(display):
+                return self.speak_varied_dialog(key, data, expect_response=expect_response,
+                                                wait=wait)
         # OVOS initializes settings before a skill handles messages. setdefault
         # also makes lazy initialization safe for concurrent first turns.
         bags = self.__dict__.get("_varied_dialog_bags")
@@ -349,7 +385,12 @@ class _SkillPlumbing:
         `utterance_ssml` beside the words. A plain string holding SSML tags
         is moved into `utterance_ssml` and logged once, so a tag never
         reaches a client that shows or says `utterance` as written.
+
+        A card for a satellite with a screen (`display.py`) rides in
+        `meta["display"]`: inside a `display.showing(card)` block every
+        reply carries it, and `speak_to(..., display=card)` one reply.
         """
+        meta = display_module.attach(meta, display_module.pending())
         text, ssml = speech_parts(utterance, getattr(self, "skill_id", None))
         if ssml is None:
             return super().speak(text, expect_response, wait, meta)
@@ -367,7 +408,9 @@ class _SkillPlumbing:
         including when OVOS would render from other lines than the skill's
         own, such as an operator's override -- OVOS renders and speaks the
         dialog exactly as before. A `render_callback` that changes the line
-        drops the markup, since it no longer says the same words.
+        drops the markup, since it no longer says the same words. A card
+        for a screen rides along inside a `display.showing(card)` block, as
+        for `speak`.
         """
         speech = _twin_speech(
             self, key, data, lambda: self._framework_dialog_lines(key),
@@ -398,7 +441,8 @@ class _SkillPlumbing:
 
     def speak_to(self, message: Any, text: str, *, lang: str | None = None,
                  expect_response: bool = False, written: str | None = None,
-                 meta: dict | None = None, wait: bool | int = False):
+                 meta: dict | None = None, wait: bool | int = False,
+                 display: Any = None):
         """Say `text` to whoever sent `message`, in their language.
 
         `self.speak` finds the message it answers by walking the call stack and
@@ -409,6 +453,8 @@ class _SkillPlumbing:
         markup is sent beside the words. `wait` blocks as `speak(wait=...)`
         does. Returns the emitted message, or None for empty text.
         """
+        meta = display_module.attach(meta, display if display is not None
+                                     else display_module.pending())
         return _speak_to(self, message, text, lang=lang or self.lang_of(message),
                          expect_response=expect_response, written=written, meta=meta,
                          wait=wait)

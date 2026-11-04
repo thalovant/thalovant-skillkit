@@ -1,6 +1,14 @@
-Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback fixes from the #30 review follow-up.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Display cards: what a skill shows on a satellite with a screen, and the tap that comes back.
 
 # Maintenance report
+
+## 2026-11-04 display cards for a satellite with a screen
+
+- **Contents:** `thalovant_skillkit/display.py` (new): builders for the card a satellite with a display draws from `meta["display"]` -- `text`, `list_card`, `weather`, `media`, `layout` with `layout_file` reading `gui/thalovant/<name>.rfwtxt` -- `action`, `item`, `clear`, `attach`, the `showing` context manager and `pending`, and `tap` for the `thalovant.display.action` report. `skill.py`: `speak` and `speak_dialog` attach a pending card (their OVOS signatures unchanged, as `test_the_speech_overrides_keep_the_framework_signatures` requires); `speak_to` and `speak_varied_dialog` take `display=`; `_SkillPlumbing.add_display_action_handler` follows the tap event once and delivers `Tap`s for this skill's cards.
+- **Sizes:** the satellite's own bounds (thalovant-voice `display.py`) are mirrored as constants and checked when a card is built, so a card that will not be shown raises `CardError` here with the reason. A layout's text travels inline once per process and by `sha256` afterwards.
+- **Verification:** `ruff check` clean on the three files; `test/test_display.py` (new, 26 tests) and the whole suite: 690 passed with `[testing]` on this machine.
+- **Not done here:** no skill uses it yet (the weather skill's card is its own change); the control-plane grant for `thalovant.display.action` is thalovant-api's; the reference's version line still says 0.18.0, as before.
+- **Transparency Report:** AI model Claude Fable 5.1 (`claude-fable-5-1`) in Claude Code wrote the module, the plumbing, the tests and these entries. No human review before the PR.
 
 ## 2026-11-03 moments: written rules keep the asked-for clock and the relative day
 

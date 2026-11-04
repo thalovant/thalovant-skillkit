@@ -1,8 +1,20 @@
-Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback fixes.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Record the display cards a skill shows on a satellite with a screen.
 
 # Changelog
 
 ## Unreleased
+
+- **A skill can show something on a satellite with a screen.** `display` builds
+  a card -- `text`, `list_card`, `weather`, `media`, or a `layout` of the
+  skill's own from `gui/thalovant/<name>.rfwtxt` -- and `display.showing(card)`
+  puts it in `meta["display"]` of every reply spoken inside the block;
+  `speak_to(..., display=card)` and `speak_varied_dialog(..., display=card)`
+  take it directly (`speak` and `speak_dialog` keep OVOS's signatures). The
+  satellite's sizes are checked when the card is built, so a card it would
+  not show raises `CardError` here. A layout's text travels once per process
+  and by hash afterwards. A tap on a card's button comes back as
+  `thalovant.display.action`; `add_display_action_handler` delivers it as a
+  `display.Tap` for this skill's cards only.
 
 - **A locale's written rules no longer overrule the clock or the relative day.**
   `time_text(..., written=True, rules=...)` with a rule set that carries only the

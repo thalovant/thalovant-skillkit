@@ -92,6 +92,53 @@ become markup. `thalovant-skillkit check` checks every twin, and so does
 `check --fleet-only`. The [reference](docs/reference.md#speech-markup) lists the
 helpers, the tags a voice renders and the rules.
 
+## What the screen shows
+
+A satellite with a display (the Mark II) draws a **card** a skill puts on its
+reply, beside the words. A client without a screen ignores it, as one without
+alarms ignores the schedule the alarm skills send. The card is data, never
+code: four kinds the screen lays out itself, and a layout the skill draws.
+
+```python
+from thalovant_skillkit import display
+
+card = display.weather("Toronto", condition="Cloudy", icon="cloudy",
+                       temperature=11, high=12, low=4, unit="°",
+                       days=[display.item("Wed", "9°", icon="rain")],
+                       actions=[display.action("tomorrow", "Tomorrow")])
+with display.showing(card):
+    self.speak_dialog("weather.answer", {"summary": summary})
+```
+
+`display.text`, `display.list_card`, `display.weather` and `display.media`
+build the four kinds; `display.showing(card)` attaches it to every reply
+spoken inside the block (`speak` and `speak_dialog` keep OVOS's signatures),
+and `speak_to(message, text, display=card)` to one. `display.clear()` takes
+the cards down. The sizes the satellite enforces are checked here first, so
+a card that will not be shown raises `CardError` with the reason.
+
+**A layout of your own.** Ship `gui/thalovant/<name>.rfwtxt`, a Remote
+Flutter Widgets file composed from the screen's widget library (`Title`,
+`Body`, `Figure`, `Tile`, `Pill`, `Symbol`, `Button`...; the screen's README
+lists it), bind the card's `data`, and name the actions its buttons send:
+
+```python
+layout = display.layout_file(self, "weather.day")
+card = display.layout(layout, data={"place": "Toronto", "temperature": "11"},
+                      body=summary, actions=[display.action("refresh", "Refresh")])
+```
+
+The file travels once per hub process and by hash afterwards; a screen that
+cannot draw it shows `body`, the words that were said.
+
+**When a button is tapped**, the satellite reports it as
+`thalovant.display.action`; `self.add_display_action_handler(handler)`
+delivers `handler(tap, message)` for this skill's cards (`display.Tap`:
+`card`, `action`, `skill`, `at`). Answer with `speak_to(message, ...,
+display=...)`, so the reply reaches the screen that was tapped. The
+contract, with every size, is in thalovant-voice's README, "What the screen
+shows".
+
 ## Continue building
 
 - [Writing a Skill](https://docs.thalovant.com/developers/writing-a-skill/) — choose

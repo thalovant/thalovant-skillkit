@@ -1,6 +1,12 @@
-Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback findings and their fix.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Display cards: what a skill shows on a satellite with a screen, and the tap that comes back.
 
 # Audit
+
+## 2026-11-04 display cards
+
+- `display.showing` keeps the pending card in a thread-local; a handler that speaks from another thread it started (a worker) does not see it, and must pass `display=` to `speak_to` instead. Evidence: `test/test_display.py::test_a_showing_block_attaches_the_card_to_every_reply_inside` runs on one thread.
+- `layout_file` reads the file on every call; a skill answering often should keep the `Layout` it returns. The sent-once set (`_sent_layouts`) is per process: after the hub restarts, the first card sends the text again, which is the intent, but a satellite that lost its cache between two cards is not told until the skill calls `forget_sent_layouts()`.
+- A tap report is believed by its `skill` field or a `card` id prefixed with this skill's id; a hub that let another connection forge the field would reach the handler, which is why `tap` carries no more than ids and a time and the handler must answer only with what the skill would say to anyone.
 
 ## 2026-11-03 moments rule fallbacks (review follow-up from #30)
 
