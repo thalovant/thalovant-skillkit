@@ -237,7 +237,8 @@ def test_a_tap_on_this_skills_card_reaches_the_handler(punchline):
 
 def test_a_fullscreen_layout_says_so_and_an_ordinary_one_does_not(tmp_path):
     (tmp_path / "gui" / "thalovant").mkdir(parents=True)
-    (tmp_path / "gui" / "thalovant" / "scene.rfwtxt").write_text("import core.widgets;\nwidget root = Text(text: 'x');")
+    (tmp_path / "gui" / "thalovant" / "scene.rfwtxt").write_text(
+        "import core.widgets;\nwidget root = Text(text: 'x');")
     display.forget_sent_layouts()
     file = display.layout_file(None, "scene", root=tmp_path)
     assert display.layout(file, fullscreen=True).as_dict()["fullscreen"] is True
