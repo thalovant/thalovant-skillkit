@@ -1,4 +1,4 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Display cards: what a skill shows on a satellite with a screen, and the tap that comes back.
+Last Edit: Claude Fable 5.1 - 2026-11-04 - Motive: A layout may ask for the whole screen
 
 # Maintenance report
 
@@ -43,3 +43,20 @@ publication runs only from a GitHub release.
   `_time_by_rule` and `date_text`, added tests, ran the suite on 3.10 and 3.14 and the date-time
   skill's suite against the branch, and wrote the changelog entry, this report and `AUDIT.md`.
 - Oversight: the change goes through a pull request with hosted CI before merge. No release.
+
+## 2026-11-04: a layout may ask for the whole screen
+
+**Changes**: `Card.fullscreen` (default off) and `display.layout(..., fullscreen=True)`; the
+flag travels as `"fullscreen": true` in `meta["display"]` only when set. The satellite
+keeps it for a layout card (thalovant-voice `feat/fullscreen-card`) and the screen draws
+the layout edge to edge with no frame and no time along the top. For the guide skill's
+thank-you mosaic of every OpenVoiceOS and HiveMind contributor.
+
+**Verification**: `test/test_display.py` (one new: the flag in the dict when set, absent
+otherwise); 32 of 32.
+
+### Transparency Report
+- **AI Model**: Claude Fable 5.1.
+- **Actions Taken**: Added the field, the parameter and the test; a README sentence.
+- **Oversight**: Asked for by the owner. Not reviewed by a human.
+

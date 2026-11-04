@@ -129,7 +129,10 @@ card = display.layout(layout, data={"place": "Toronto", "temperature": "11"},
 ```
 
 The file travels once per hub process and by hash afterwards; a screen that
-cannot draw it shows `body`, the words that were said.
+cannot draw it shows `body`, the words that were said. `display.layout(...,
+fullscreen=True)` gives the layout the whole screen, with no frame and no
+time along the top: for a card that is a scene of its own, such as a
+thank-you mosaic; an ordinary card keeps its frame.
 
 **When a button is tapped**, the satellite reports it as
 `thalovant.display.action`; `self.add_display_action_handler(handler)`

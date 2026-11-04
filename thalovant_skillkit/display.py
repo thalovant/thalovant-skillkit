@@ -220,6 +220,9 @@ class Card:
     data: dict[str, Any] = field(default_factory=dict)
     ttl: float | None | bool = True
     lang: str = ""
+    #: The whole screen, edge to edge, with no frame and no time along the top:
+    #: for a card that is a scene of its own, such as a thank-you mosaic.
+    fullscreen: bool = False
 
     def as_dict(self) -> dict[str, Any]:
         """The `meta["display"]` entry. A layout's text goes inline the
@@ -250,6 +253,8 @@ class Card:
             entry["data"] = dict(self.data)
         if self.ttl is not True:
             entry["ttl"] = None if self.ttl in (None, False) else float(self.ttl)
+        if self.fullscreen:
+            entry["fullscreen"] = True
         return entry
 
 
@@ -347,15 +352,17 @@ def media(image: bytes, mime: str, *, title: str = "", body: str = "", identifie
 def layout(layout: Layout, *, data: dict[str, Any] | None = None, title: str = "",
            subtitle: str = "", body: str = "", identifier: str = "",
            actions: Iterable[Action] | None = None, image: tuple[bytes, str] | None = None,
-           ttl: float | None | bool = True, lang: str = "") -> Card:
+           ttl: float | None | bool = True, lang: str = "", fullscreen: bool = False) -> Card:
     """The skill's own layout, bound to `data`. `body` is what a screen that
     cannot draw the layout shows; by default the words that were said. The
-    `actions` are the ids the layout's buttons may send."""
+    `actions` are the ids the layout's buttons may send. `fullscreen` gives
+    the layout the whole screen, with no frame and no time along the top."""
     import json
 
     card = _common(Card("layout"), identifier=identifier, title=title, subtitle=subtitle,
                    body=body, actions=actions, ttl=ttl, lang=lang)
     card.layout = layout
+    card.fullscreen = bool(fullscreen)
     bound = dict(data or {})
     try:
         encoded = json.dumps(bound, ensure_ascii=False)
