@@ -15,12 +15,14 @@ so they are enforced here first, where the skill author sees the error.
     card = display.weather("Toronto", condition="Cloudy", icon="cloudy",
                            temperature=11, high=12, low=4, unit="°",
                            actions=[display.action("tomorrow", "Tomorrow")])
-    self.speak_dialog("weather.answer", {"summary": summary}, display=card)
+    with display.showing(card):
+        self.speak_dialog("weather.answer", {"summary": summary})
 
 A layout card binds the card's `data` to the skill's own layout:
 
     layout = display.layout_file(self, "weather.day")   # gui/thalovant/weather.day.rfwtxt
-    self.speak(summary, display=display.layout(layout, data={...}, actions=[...]))
+    self.speak_to(message, summary,
+                  display=display.layout(layout, data={...}, actions=[...]))
 
 The layout's text travels once per hub process and by hash afterwards; the
 satellite keeps it by hash. A tap on one of the card's `actions` comes back
@@ -189,8 +191,9 @@ def _skill_root(skill: Any) -> Path:
         return Path(root)
     import inspect
 
+    klass = skill if isinstance(skill, type) else type(skill)
     try:
-        return Path(inspect.getfile(type(skill))).resolve().parent
+        return Path(inspect.getfile(klass)).resolve().parent
     except (TypeError, OSError) as error:
         raise CardError("cannot find the skill's directory; pass root=") from error
 
