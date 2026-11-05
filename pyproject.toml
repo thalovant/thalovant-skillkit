@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.29.1"
+version = "0.29.2"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -44,8 +44,9 @@ dependencies = [
     "model2vec>=0.9",
     # Not imported here. It is model2vec's, and model2vec asks for
     # `tokenizers>=0.20` with no upper bound -- so pip is free to install
-    # tokenizers 1.x, which dropped `Tokenizer.get_vocab()`. model2vec 0.9.0,
-    # the newest there is, calls it twice (model.py:54 and :72), so every
+    # tokenizers 1.x, which dropped `Tokenizer.get_vocab()`. model2vec 0.9.0
+    # calls it twice (model.py:54 and :72), and 0.10.0 (2026-10-11) declares
+    # the same open range, so every
     # `thalovant-skillkit` install that resolves to 1.x raises
     # `AttributeError: 'tokenizers.Tokenizer' object has no attribute
     # 'get_vocab'` the moment the fleet check loads a model.

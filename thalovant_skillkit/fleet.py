@@ -308,12 +308,12 @@ def check_fleet(skill_root: Path, corpus_dir: Path | None = None, *, near: bool 
     model_cache: dict = {}
     run_near = corpus_dir is not None and near and near_check_available()
     if corpus_dir is not None and near and not run_near:
-        notes.append("near-duplicate check skipped: install thalovant-skillkit[fleet]")
+        notes.append("near-duplicate check skipped: model2vec is not installed")
     index: dict = {}
     model_dir: Path | None = None
     if model is not None:
         if not model_check_available():
-            notes.append("classifier check skipped: install thalovant-skillkit[fleet]")
+            notes.append("classifier check skipped: model2vec is not installed")
         else:
             model_dir = resolve_model(model)
             index_path = model_dir / "index.json"

@@ -1,7 +1,18 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Display cards: what a skill shows on a satellite with a screen, and the tap that comes back.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Whole-kit review for 0.29.2: the open review findings, the knowledge client's plain path, the lock and the records.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
 
 # Audit
+
+## 2026-11-05 whole-kit review (0.29.2)
+
+Every module under `thalovant_skillkit/` was read, with the CodeRabbit threads on #19 to #49.
+
+- Fixed (Minor, #47 outside the diff): `display.layout` accepted non-finite floats in `data`; `display.layout` took a non-bytes `image` to a `TypeError`; `display.tap` and `display._figure` raised `OverflowError` on an integer too large for a float. Evidence: reproduced on 0.29.1 (`tap({... "at": 10**400})`, `layout(data={"t": nan})`, `layout(image=("a path", "image/png"))`, `weather(temperature=10**400)`). Tests: the nine new cases of `test_what_the_satellite_would_not_show_fails_here` and the two in `test_a_tap_on_this_skills_card_reaches_the_handler`.
+- Fixed (Major): `knowledge.ask_service` handed a non-object body to `knowledge_reply`, which raised `AttributeError` and failed the turn. Evidence: reproduced with a fake `requests.post` returning a list, a string and an integer, with and without a notice. Test: `test_a_body_that_is_not_a_document_is_a_failed_request_on_both_paths`.
+- Fixed (test): `test_real_core_sends_a_twin_with_the_fallback_reply` depended on OVOScope's default pipeline, which omits the low fallback band when adapt and padatious are installed. Evidence: a probe of the captured turn showed `ovos.intent.unmatched` with the pipeline list ending at `ovos-fallback-pipeline-plugin-medium`. The test names `FALLBACK_PIPELINE`.
+- Fixed (records): README quickstart at 0.22.0; reference without `moments`, the lookup notice, `speak_to(display=)` and `layout(fullscreen=)`, `[testing]` at 0.12.0; `check` notes naming the empty `[fleet]` extra; `publish.yml` artifact actions by floating tag; the certifi bump missing from the 0.29.0 changelog (#48, the one CodeRabbit thread still open).
+- Open: Dependabot's security update for `filelock` fails on `main` because the patched versions need Python 3.11 and `requires-python` is `>=3.10`; raising the floor is the owner's call. `handle_fallback` speaks with `self.speak(text)` rather than `speak_to(message, ...)`; OVOS resolves the session's language from the handler's stack, so it answers the room that asked, but a skill answering from another thread should call `speak_to`. `fold_tight` keeps ASCII letters and digits only, which its docstring ("letters and digits") understates for a non-Latin identifier. `display.showing` is thread-local, as recorded on 2026-11-04. `SkillResources.dialog` catches `KeyError`/`IndexError` and not `ValueError`, as the reference says. None of these changed behaviour here.
+- Checked and sound: `text.py` (the kept-marks table and `WORD_CHAR`), `vocab.py`, `locale.py`, `message.py`, `fallback.py`, `service.py`, `bus.py`, `sessions.py`, `selection.py`, `network.py`, `workers.py`, `storage.py`, `regions.py`, `intents.py`, `fleet.py`, `checks.py`, `ssml.py`, `artifacts.py`, `moments.py`, `speech.py`, `cli.py`'s scaffold against the docs' "Writing a Skill" page, and the kit's display limits against thalovant-voice `src/thalovant_voice/display.py` on `main` (identical constants; the satellite drops a `lang` that is not a tag rather than refusing the card).
 
 ## 2026-11-04 review follow-up on #47
 

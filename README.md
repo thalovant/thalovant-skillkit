@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.22.0"
+python -m pip install --pre "thalovant-skillkit==0.29.2"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.22.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.29.2. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -141,6 +141,48 @@ delivers `handler(tap, message)` for this skill's cards (`display.Tap`:
 display=...)`, so the reply reaches the screen that was tapped. The
 contract, with every size, is in thalovant-voice's README, "What the screen
 shows".
+
+## A date for ears and for a screen
+
+A reminder read aloud says "tomorrow at nine forty a.m."; the same reminder in
+an app reads "May 24, 9:40 AM". `moments` gives both forms, and
+`speak_with_written` sends both, so a speaker hears one and a screen shows
+the other:
+
+```python
+from thalovant_skillkit.moments import date_text, speak_with_written, time_text, uses_24_hour_clock
+
+clock = uses_24_hour_clock(lang)
+spoken = f"Reminder set for {date_text(due, lang, now)} at {time_text(due, lang, clock)}."
+written = (f"Reminder set for {date_text(due, lang, now, written=True)} "
+           f"at {time_text(due, lang, clock, written=True)}.")
+speak_with_written(self, spoken, message, lang, written=written)
+```
+
+`duration_text(seconds, lang)` says "five minutes" and writes "5:00". Nothing
+is imported until the first date is formatted, so a skill that never says one
+pays nothing at boot.
+
+## While the knowledge service looks
+
+A question put to the knowledge service takes a few seconds, and the room is
+silent for all of it. Open a `lookup_notice` where you have the message to
+answer, and `knowledge_reply` says "From Wikipedia…" the moment the service
+names its source and a slow step follows, or "Looking it up…" when nothing has
+come back after 1.2 seconds. A quick answer says nothing first:
+
+```python
+from thalovant_skillkit.knowledge import knowledge_reply, lookup_notice
+
+with lookup_notice(lambda line: self.speak_to(message, line)):
+    reply = knowledge_reply(service_url=url, prompt=question, lang=lang, mode="answer",
+                            max_sources=3, augmentation="auto", age_policy_setting=None,
+                            headers=headers, timeout=4.0)
+```
+
+The line exists in each of the eleven languages the public hubs serve. A skill
+that posts its own request calls `ask_service(...)` inside the block instead of
+`requests.post`, and gets the same notice.
 
 ## Continue building
 

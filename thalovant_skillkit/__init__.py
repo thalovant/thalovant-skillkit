@@ -23,11 +23,15 @@ behaviour of the most careful copy:
     knowledge  the knowledge-service client, previously vendored three times
 
 Other modules are imported explicitly: `skill` carries the OVOS base classes;
-`testing` supplies message and recording-bus doubles; `testing_ovos` provides
-optional integration helpers; `sessions` holds bounded application state;
-`selection` provides independent shuffle bags; and `ssml` builds speech markup
-that travels beside the plain words. `checks` and `artifacts` validate
-source contracts and built archives.
+`speech` says something to the room that asked; `ssml` builds speech markup
+that travels beside the plain words; `display` builds the card a satellite
+with a screen draws; `moments` says a date, a clock or a duration and writes
+it for a screen; `testing` supplies message and recording-bus doubles;
+`testing_ovos` provides optional integration helpers; `sessions` holds bounded
+application state; `selection` provides independent shuffle bags; `network`,
+`workers` and `storage` bound service calls, refresh in the background and keep
+optional shared state. `checks` and `artifacts` validate source contracts and
+built archives.
 ovos-workshop and the fleet-check dependencies are included in the base install;
 the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install
 `thalovant-skillkit[testing]` for the OVOScope integration stack.

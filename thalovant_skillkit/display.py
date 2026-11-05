@@ -98,9 +98,13 @@ def _figure(value: Any) -> str:
     if isinstance(value, bool):
         raise CardError("a figure is a number or text, not a boolean")
     if isinstance(value, int | float):
-        if not math.isfinite(value):
+        try:
+            as_float = float(value)
+        except OverflowError as error:
+            raise CardError("a figure must be a number a screen can print") from error
+        if not math.isfinite(as_float):
             raise CardError("a figure must be finite")
-        return str(int(value)) if float(value).is_integer() else f"{value:.1f}"
+        return str(int(value)) if as_float.is_integer() else f"{value:.1f}"
     return _text(value, FIGURE_LIMIT, "a figure")
 
 
@@ -332,16 +336,21 @@ def media(image: bytes, mime: str, *, title: str = "", body: str = "", identifie
           lang: str = "") -> Card:
     """A picture, embedded: PNG, JPEG or WebP under 512 kB. A path or a URL
     is never sent; read the file and pass its bytes."""
+    card = _common(Card("media"), identifier=identifier, title=title, subtitle="", body=body,
+                   actions=actions, ttl=ttl, lang=lang)
+    card.image = _image(image, mime)
+    return card
+
+
+def _image(image: Any, mime: Any) -> tuple[bytes, str]:
+    """The bytes and type of a picture a screen can show, or why not."""
     if mime not in IMAGE_TYPES:
         raise CardError(f"image type {mime!r} is not one of {', '.join(IMAGE_TYPES)}")
     if not isinstance(image, bytes | bytearray) or not image:
         raise CardError("an image is bytes")
     if len(image) > MAX_IMAGE_BYTES:
         raise CardError(f"an image is at most {MAX_IMAGE_BYTES} bytes; resize it for a screen")
-    card = _common(Card("media"), identifier=identifier, title=title, subtitle="", body=body,
-                   actions=actions, ttl=ttl, lang=lang)
-    card.image = (bytes(image), mime)
-    return card
+    return bytes(image), mime
 
 
 def layout(layout: Layout, *, data: dict[str, Any] | None = None, title: str = "",
@@ -360,17 +369,20 @@ def layout(layout: Layout, *, data: dict[str, Any] | None = None, title: str = "
     card.fullscreen = bool(fullscreen)
     bound = dict(data or {})
     try:
-        encoded = json.dumps(bound, ensure_ascii=False)
+        # Strict JSON: a NaN or an infinity is not a value the satellite's
+        # reader accepts, so it is refused here rather than dropped there.
+        encoded = json.dumps(bound, ensure_ascii=False, allow_nan=False)
     except (TypeError, ValueError) as error:
-        raise CardError("layout data must be JSON: maps, lists, strings, numbers") from error
+        raise CardError("layout data must be JSON: maps, lists, strings, finite numbers") from error
     if len(encoded.encode("utf-8")) > MAX_DATA_BYTES:
         raise CardError(f"layout data is at most {MAX_DATA_BYTES} bytes")
     card.data = json.loads(encoded)
     if image is not None:
-        data_bytes, mime = image
-        if mime not in IMAGE_TYPES or len(data_bytes) > MAX_IMAGE_BYTES:
-            raise CardError("a layout's image is PNG, JPEG or WebP under 512 kB")
-        card.image = (bytes(data_bytes), mime)
+        try:
+            data_bytes, mime = image
+        except (TypeError, ValueError) as error:
+            raise CardError("a layout's image is (bytes, mime)") from error
+        card.image = _image(data_bytes, mime)
     return card
 
 
@@ -447,7 +459,13 @@ def tap(data: Any) -> Tap | None:
             or not isinstance(act, str) or not _ID.match(act)):
         return None
     at = data.get("at")
-    if isinstance(at, bool) or not isinstance(at, int | float) or not math.isfinite(at):
+    if isinstance(at, bool) or not isinstance(at, int | float):
+        return None
+    try:
+        when = float(at)
+    except OverflowError:
+        return None
+    if not math.isfinite(when):
         return None
     skill = data.get("skill")
-    return Tap(card, act, skill if isinstance(skill, str) else "", float(at))
+    return Tap(card, act, skill if isinstance(skill, str) else "", when)
