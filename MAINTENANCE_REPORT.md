@@ -1,6 +1,13 @@
-Last Edit: Claude Fable 5.1 - 2026-11-04 - Motive: Review follow-up on #47
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
 
 # Maintenance report
+
+## 2026-11-05: a layout's text travels with every card (0.29.1)
+
+- **Found:** the Mark II logged `display: showing text card weather (layout_missing)` after the weather skill 0.5.0 was installed on Daily Desk. The hub's `display._sent_layouts` is a process-wide set: the first card with a layout hash carried the text, every later card for any satellite carried only the hash. A monitoring client asking the weather every five minutes took the inline copy.
+- **Changed:** `Card.as_dict` always sends `rfw`; the set and its lock are gone; `forget_sent_layouts` is a no-op. `test_a_layout_travels_inline_with_every_card` replaces the once-then-hash test.
+- **Verification:** 663 passed, 28 skipped.
+- **Transparency Report:** AI model Claude Sonnet 5.5 (`claude-sonnet-5-5`) in Claude Code wrote the change from the satellite's and the hub's logs. No human review before the PR.
 
 ## 2026-11-04 review follow-up on #47 (CodeRabbit, three findings)
 

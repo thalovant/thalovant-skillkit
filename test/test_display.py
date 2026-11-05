@@ -98,7 +98,9 @@ def test_a_media_card_embeds_its_bytes():
                                        "data": base64.b64encode(PNG).decode("ascii")}
 
 
-def test_a_layout_travels_inline_once_and_by_hash_after(tmp_path):
+def test_a_layout_travels_inline_with_every_card(tmp_path):
+    """0.29.0 sent the text once per process: the Mark II, asking after another
+    client had, got a hash it did not have and drew the words (2026-11-05)."""
     (tmp_path / "gui" / "thalovant").mkdir(parents=True)
     (tmp_path / "gui" / "thalovant" / "weather.day.rfwtxt").write_text(LAYOUT, encoding="utf-8")
     layout = display.layout_file(object(), "weather.day", root=tmp_path)
@@ -108,9 +110,10 @@ def test_a_layout_travels_inline_once_and_by_hash_after(tmp_path):
     assert first["layout"] == {"name": "weather.day", "sha256": layout.sha256, "rfw": LAYOUT}
     assert first["data"] == {"place": "Toronto"} and first["body"] == "Cloudy."
     again = display.layout(layout, data={"place": "Ottawa"}).as_dict()
-    assert again["layout"] == {"name": "weather.day", "sha256": layout.sha256}
-    display.forget_sent_layouts()
-    assert "rfw" in display.layout(layout).as_dict()["layout"]
+    assert again["layout"] == {"name": "weather.day", "sha256": layout.sha256, "rfw": LAYOUT}, (
+        "a second satellite asking after the first still gets the text")
+    display.forget_sent_layouts()  # kept for 0.29.0 callers
+    assert display.layout(layout).as_dict()["layout"]["rfw"] == LAYOUT
 
 
 def test_the_layout_is_read_beside_the_skills_module(punchline, tmp_path):

@@ -1,6 +1,17 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Release 0.29.0 with the display cards, the written-rules clock fix and the stream-event fix.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
 
 # Changelog
+
+## 0.29.1
+
+- **A layout's text travels with every card.** 0.29.0 sent it inline the first
+  time a hub process sent that layout and by hash afterwards, assuming one
+  satellite. A hub serves many: on 2026-11-05 a probe asking the weather took
+  the one inline copy of the forecast layout, and the Mark II, asking a minute
+  later, got a hash it did not have and drew the words with `layout_missing`.
+  `Card.as_dict()` now always carries `rfw` with `sha256` (at most 64 KB, a few
+  KB in practice); the satellite still keeps layouts by hash.
+  `forget_sent_layouts()` stays as a no-op for 0.29.0 callers.
 
 ## 0.29.0
 
