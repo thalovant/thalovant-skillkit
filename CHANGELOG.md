@@ -1,8 +1,8 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Record the display cards a skill shows on a satellite with a screen.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Release 0.29.0 with the display cards, the written-rules clock fix and the stream-event fix.
 
 # Changelog
 
-## Unreleased
+## 0.29.0
 
 - **A skill can show something on a satellite with a screen.** `display` builds
   a card -- `text`, `list_card`, `weather`, `media`, or a `layout` of the
