@@ -317,9 +317,11 @@ class _Spoken(ThalovantFallbackSkill):
 
     def __init__(self):  # no bus, no config: the point is the plumbing
         self.said = []
+        self.answered = []
 
     def speak_to(self, message, text, **kwargs):  # the base answers the message it was given
         self.said.append(text)
+        self.answered.append(message)
 
     def can_answer(self, message):
         return "news" in self.utterance(message)
@@ -334,9 +336,11 @@ def test_reply_is_spoken_on_the_hub_and_returned_to_the_showroom():
     """Nineteen skills kept a `preview_reply` in step with their speaking path
     by hand. Deriving both from one `reply` makes drift impossible."""
     skill = _Spoken()
+    incoming = Msg({"utterance": "the news"}, {"lang": "fr-FR"})
 
-    assert skill.handle_fallback(Msg({"utterance": "the news"}, {"lang": "fr-FR"})) is True
+    assert skill.handle_fallback(incoming) is True
     assert skill.said == ["[fr-FR] the news is quiet"]
+    assert skill.answered == [incoming]  # the room that asked, not whatever is on the stack
     assert skill.preview_reply("the news", "fr-FR") == "[fr-FR] the news is quiet"
 
 
