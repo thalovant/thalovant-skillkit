@@ -318,7 +318,7 @@ class _Spoken(ThalovantFallbackSkill):
     def __init__(self):  # no bus, no config: the point is the plumbing
         self.said = []
 
-    def speak(self, text, *args, **kwargs):
+    def speak_to(self, message, text, **kwargs):  # the base answers the message it was given
         self.said.append(text)
 
     def can_answer(self, message):

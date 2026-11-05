@@ -123,6 +123,31 @@ def test_the_layout_is_read_beside_the_skills_module(punchline, tmp_path):
         display.layout_file(punchline, "Weather Day", root=tmp_path)
 
 
+def test_the_layout_is_found_in_the_directory_of_the_skills_own_module(tmp_path, monkeypatch):
+    """Without `root=` and without OVOS's `root_dir`, the directory searched is
+    the one holding the module that defines the skill's class: a layout
+    planted beside such a module is read, and its text is what was planted."""
+    import importlib.util
+    import sys
+
+    module = tmp_path / "planted_skill.py"
+    module.write_text("class PlantedSkill:\n    pass\n", encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("planted_skill", module)
+    loaded = importlib.util.module_from_spec(spec)
+    monkeypatch.setitem(sys.modules, "planted_skill", loaded)  # as an import does
+    spec.loader.exec_module(loaded)
+    layout_dir = tmp_path.joinpath(*display.LAYOUT_DIR)
+    layout_dir.mkdir(parents=True)
+    (layout_dir / "score.rfwtxt").write_text("widget root = Text(text: data.score);\n",
+                                             encoding="utf-8")
+
+    layout = display.layout_file(loaded.PlantedSkill(), "score")
+
+    assert layout.name == "score"
+    assert layout.text == "widget root = Text(text: data.score);\n"
+    assert display.layout_file(loaded.PlantedSkill, "score") == layout
+
+
 def test_a_clear_takes_the_cards_down():
     assert display.clear().as_dict() == {"kind": "clear"}
     assert display.clear("punchline").as_dict() == {"kind": "clear", "skill": "punchline"}

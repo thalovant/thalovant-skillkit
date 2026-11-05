@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "thalovant-skillkit"
-version = "0.29.2"
+version = "0.30.0"
 description = "Write a Thalovant OVOS skill without writing the plumbing"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = "Apache-2.0"
 license-files = ["LICENSE"]
 authors = [{ name = "Thalovant" }]
@@ -16,10 +16,10 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
     "Topic :: Software Development :: Libraries",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
@@ -29,8 +29,6 @@ dependencies = [
     # Shared script-aware regional matching, also used by OVOS's resource loader.
     "ovos-spec-tools>=1.12.0a1",
     "langcodes>=3.5",
-    # tomllib arrived in 3.11; tomli is the same parser for the one version before.
-    "tomli>=2.0; python_version < '3.11'",
     # The skill framework itself: a skill needs it, and so does `check`.
     "ovos-workshop>=8.0.0",
     # The question test the fallback gate reads: the language's own words.
@@ -45,17 +43,18 @@ dependencies = [
     # Not imported here. It is model2vec's, and model2vec asks for
     # `tokenizers>=0.20` with no upper bound -- so pip is free to install
     # tokenizers 1.x, which dropped `Tokenizer.get_vocab()`. model2vec 0.9.0
-    # calls it twice (model.py:54 and :72), and 0.10.0 (2026-10-11) declares
-    # the same open range, so every
+    # calls it twice (model.py:54 and :72), 0.10.0 (2026-10-11) once, and both
+    # declare the same open range, so every
     # `thalovant-skillkit` install that resolves to 1.x raises
     # `AttributeError: 'tokenizers.Tokenizer' object has no attribute
     # 'get_vocab'` the moment the fleet check loads a model.
     #
-    # Only pre-releases of 1.x exist today (1.0.0rc1, rc2), so this bites
-    # anything installed with --pre and nothing else -- which is how it was
-    # found, in the docs tutorial job. It stops being selective the day 1.0.0
-    # goes stable, and then it is every install, including the hub runtime.
-    # Lift this when model2vec supports 1.x.
+    # Only pre-releases of 1.x exist today (1.0.0rc1 to rc3, 2026-10-19), so
+    # this bites anything installed with --pre and nothing else -- which is
+    # how it was found, in the docs tutorial job. It stops being selective the
+    # day 1.0.0 goes stable, and then it is every install, including the hub
+    # runtime. Checked again on 2026-11-05: model2vec 0.10.0 still calls
+    # `get_vocab()` (model.py:67). Lift this when model2vec supports 1.x.
     "tokenizers<1",
     "numpy>=1.24",
 ]
@@ -100,3 +99,15 @@ line-length = 100
 # knowledge client's deliberate fail-closed ValueError, and the typographic
 # apostrophe in text.py that exists precisely to be normalised away.
 select = ["E", "F", "I", "UP", "B"]
+
+[tool.uv]
+# This lock, and only this lock. combo-lock 0.3.1 (under ovos-utils) still
+# says `filelock~=3.0`, and every filelock 3.x carries the thirteen advisories
+# Dependabot reports on this file (GHSA-v4x8-3wr5-3wq8 and the twelve beside
+# it; all fixed in 4.2.1). combo-lock uses `FileLock(path, mode=)`,
+# `acquire(timeout=)` and `Timeout`, which 4.x kept: its own test suite gives
+# the same result on 3.32.7 and 4.2.9 (2026-11-05), and this kit's suite runs
+# on 4.x from this lock. A pip install of the kit still gets 3.x until
+# combo-lock widens its requirement (forslund/combo-lock#28); drop this when
+# it does.
+override-dependencies = ["filelock>=4.2.1"]

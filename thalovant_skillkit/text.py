@@ -95,9 +95,12 @@ def fold_words(text: str) -> str:
 
 
 def fold_tight(text: str) -> str:
-    """Letters and digits only: "Test-Value" -> "testvalue".
+    """ASCII letters and digits only: "Test-Value" -> "testvalue".
 
     For comparing identifiers -- a city name typed against the same name
-    spelled with accents -- not for matching what someone said.
+    spelled with accents -- not for matching what someone said. Accents are
+    stripped first, so "Québec" keeps its letters; a script `fold` cannot
+    reduce to ASCII (Cyrillic, kana) is dropped, and two such names compare
+    equal. Use `fold` for those.
     """
     return _NOT_ALNUM.sub("", fold(text))

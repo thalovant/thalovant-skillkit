@@ -642,13 +642,15 @@ class ThalovantFallbackSkill(_SkillPlumbing, FallbackSkill):
     def handle_fallback(self, message: Any) -> bool:
         """Say what `reply` returns. Override only to do something other than speak.
 
+        The answer goes through `speak_to(message, ...)`, so it reaches the
+        room that asked, in its language, whatever thread it is spoken from.
         Returns True when the skill answered, which is what tells ovos-core to
         stop asking the skills behind it.
         """
         text = self.reply(self.utterance(message), self.lang_of(message), self.context_of(message))
         if not text:
             return False
-        self.speak(text)
+        self.speak_to(message, text)
         return True
 
 

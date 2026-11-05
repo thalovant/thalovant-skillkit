@@ -11,7 +11,6 @@ import argparse
 import json
 import os
 import subprocess
-import sys
 import tempfile
 import venv
 import zipfile
@@ -28,7 +27,6 @@ from importlib.metadata import distribution, entry_points, version
 from importlib.resources import files
 import json
 from pathlib import Path
-import sys
 import zipfile
 
 wheel, package, distribution_name, group, entry_name, kit_version = sys.argv[1:]
@@ -70,8 +68,6 @@ def main() -> None:
                         help="source inventory to compare as data, never an import path")
     parser.add_argument("--work-dir", type=Path, help="parent for temporary consumer files")
     args = parser.parse_args()
-    if sys.version_info < (3, 11):
-        parser.error("generated skills require Python 3.11 or newer")
     wheel = args.wheel.resolve(strict=True)
     source = args.source.resolve(strict=True)
     sdist = args.sdist.resolve(strict=True) if args.sdist else None

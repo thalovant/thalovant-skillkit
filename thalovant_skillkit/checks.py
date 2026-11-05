@@ -430,10 +430,7 @@ def _entry_points(skill_root: Path) -> list[str]:
                 rf'["\']{re.escape(group)}["\']\s*:\s*\[?\s*["\']([^"\']+=[^"\']+)["\']', text)
     pyproject = skill_root / "pyproject.toml"
     if pyproject.is_file():
-        try:
-            import tomllib  # 3.11+
-        except ImportError:  # pragma: no cover - 3.10 gets the same parser from PyPI
-            import tomli as tomllib
+        import tomllib
 
         try:
             data = tomllib.loads(pyproject.read_text(encoding="utf-8"))
