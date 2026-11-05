@@ -116,6 +116,7 @@ class Action:
     label: str
 
     def as_dict(self) -> dict[str, str]:
+        """The action as the card carries it: its id and its label."""
         return {"id": self.id, "label": self.label}
 
 
@@ -134,6 +135,7 @@ class Item:
     id: str = ""
 
     def as_dict(self) -> dict[str, str]:
+        """The item as the card carries it; an absent value or hint is left out."""
         entry = {"label": self.label}
         if self.value:
             entry["value"] = self.value
@@ -393,6 +395,7 @@ class Clear:
     skill: str = ""
 
     def as_dict(self) -> dict[str, Any]:
+        """The `meta["display"]` entry that takes cards down."""
         entry: dict[str, Any] = {"kind": "clear"}
         if self.skill:
             entry["skill"] = self.skill

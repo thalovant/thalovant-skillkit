@@ -15,7 +15,7 @@ jobs:
       fail-fast: false
       matrix:
         # The oldest a skill may run on, what the node runs, and the newest.
-        python: ["3.10", "3.12", "3.14"]
+        python: ["3.11", "3.12", "3.14"]
     name: test (py${{ matrix.python }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -38,7 +38,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Generated consumers require 3.11+, independently of the Kit's 3.10 floor.
+        # The kit's floor and its generated consumers' is 3.11 (0.30.0).
         python: ["3.11", "3.14"]
     name: Installed wheel (py${{ matrix.python }})
     steps:
@@ -61,7 +61,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python: ["3.10", "3.14"]
+        python: ["3.11", "3.14"]
     name: OVOS integration (py${{ matrix.python }})
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7

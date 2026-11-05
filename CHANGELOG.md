@@ -1,7 +1,40 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.29.2, the review follow-ups on #47 and #48 and a knowledge body that is not a document.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
-
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to.
+Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.29.2, the review follow-ups on #47 and #48 and a knowledge body that is not a document.
 # Changelog
+
+## 0.30.0
+
+- **Python 3.11 is the floor.** The kit said 3.10 while every project it
+  generates, the docs and the README's own quickstart said 3.11, and the floor
+  kept Dependabot's security update for `filelock` red: all thirteen advisories
+  against the 3.x line (GHSA-v4x8-3wr5-3wq8, high, and twelve beside it) are
+  fixed in 4.2.1, which needs 3.11. `requires-python` is `>=3.11`, the `tomli`
+  fallback is gone (`tomllib` is in the standard library from 3.11), the CI
+  matrix runs 3.11, 3.12 and 3.14, and the classifiers say 3.11 to 3.14.
+
+- **The lock takes `filelock` 4.2.9.** combo-lock 0.3.1, under ovos-utils, still
+  requires `filelock~=3.0`, so the project's `uv.lock` overrides that one
+  requirement (`[tool.uv] override-dependencies`), recorded in the lock's
+  manifest. combo-lock's own suite gives the same result on 3.32.7 and 4.2.9,
+  and this kit's suite runs on 4.x from the lock. The override governs this
+  lock only: a `pip install thalovant-skillkit` still resolves filelock 3.x
+  until combo-lock widens its requirement (forslund/combo-lock#28).
+
+- **The fallback base answers the message it was given.** `handle_fallback`
+  spoke with `self.speak(text)`, which finds the message it answers by walking
+  the stack and speaks in `self.lang`; it now calls `speak_to(message, text)`,
+  the kit's own advice for a reply from any thread, so the room that asked
+  hears it in its language. A skill that overrides `handle_fallback` is
+  unaffected. A test double that captured fallback replies by overriding
+  `speak` should override `speak_to` (the `testing` harnesses listen on the
+  bus and need no change).
+
+- `fold_tight`'s docstring says what it keeps (ASCII letters and digits) and
+  what that means for a non-Latin identifier; the display cards' `as_dict`
+  methods carry docstrings; a test proves `layout_file` reads the layout
+  beside the module that defines the skill's class, not only that it fails
+  elsewhere. The `tokenizers<1` pin stays: model2vec 0.10.0 still calls
+  `Tokenizer.get_vocab()` and tokenizers 1.0.0 is at rc3.
 
 ## 0.29.2
 

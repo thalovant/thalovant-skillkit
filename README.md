@@ -8,8 +8,8 @@ sessions, and scheduling.
 ## Quickstart
 
 You need Python **3.11 or newer** with `venv` and `pip`, a terminal, and access to
-your Python package index. SkillKit itself supports Python 3.10 and newer; its
-generated projects require 3.11. No running hub or speaker is needed here.
+your Python package index. SkillKit and the projects it generates both require
+3.11 (the kit's floor was 3.10 until 0.30.0). No running hub or speaker is needed here.
 
 Start in a working directory where `thalovant-skill-garden-watering` does not
 already exist:
@@ -17,7 +17,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.29.2"
+python -m pip install --pre "thalovant-skillkit==0.30.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -25,7 +25,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.29.2. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.30.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 

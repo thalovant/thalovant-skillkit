@@ -477,7 +477,8 @@ available; the helper itself neither formats nor plays its items.
 [`ThalovantFallbackSkill`](../thalovant_skillkit/skill.py) defaults to priority
 **100**; the CLI scaffold defaults to **98**. Define a narrow `can_answer`
 and return text or `None` from `reply`. `handle_fallback` speaks a truthy reply
-and returns `True`; an empty reply returns `False`. If you override
+to the message it was given (`speak_to`, so the room that asked hears it in its
+language) and returns `True`; an empty reply returns `False`. If you override
 `initialize`, call `super().initialize()` to retain registration.
 
 [`resolve_priority(settings, default, band=(90, 101))`](../thalovant_skillkit/fallback.py)
@@ -550,7 +551,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.29.2"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.30.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
