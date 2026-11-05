@@ -1,6 +1,37 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
+Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.29.2, the review follow-ups on #47 and #48 and a knowledge body that is not a document.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1, a layout's text travels with every card.
 
 # Changelog
+
+## 0.29.2
+
+- **What the satellite would refuse is refused when the card is built, with a
+  reason.** Three review findings on #47 that 0.29.0 shipped without: a layout's
+  `data` accepted `NaN` and infinity (`json.dumps` allows them, the satellite's
+  strict reader does not); a layout's `image` was not checked to be bytes, so a
+  path raised `TypeError` instead of `CardError`; and a figure (`weather`,
+  `item`) or a tap's `at` too large for a float raised `OverflowError` -- out of
+  the builder, or out of the bus handler, which dropped the tap with a traceback.
+  Each is now a `CardError`, and for the tap report, a report that is not
+  believed.
+
+- **A knowledge answer that is not a document is a failed request.**
+  `ask_service` returned whatever JSON the service sent on the plain path; a
+  list or a string reached `knowledge_reply`, which raised `AttributeError` on
+  `.get` and failed the turn. It is now the `ValueError` the streamed path
+  already raised for a malformed answer, and `knowledge_reply` reports an
+  unavailable answer.
+
+- The `check` notes that pointed at the empty `[fleet]` extra now say that
+  `model2vec` is not installed, which the base install carries. The README's
+  quickstart pins this release instead of 0.22.0 and shows `moments` and the
+  lookup notice; the reference documents `moments`, the lookup notice and
+  `ask_service`, `speak_to(display=)`, `layout(fullscreen=)` and the new
+  refusals, and its `[testing]` pin follows the release. The publish workflow
+  pins the artifact actions by commit, as every other step is. `uv.lock`
+  follows the OVOS prereleases CI installs (ovoscope 1.12.1a1, ovos-workshop
+  9.10.1a1, ovos-core 3.7.5a1), so `test_real_core_sends_a_twin_with_the_fallback_reply`
+  passes from the lock as it does in CI.
 
 ## 0.29.1
 
@@ -48,6 +79,8 @@ Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-05 - Motive: Release 0.29.1
   fields it needs, an error whose `status` is `true` or `false`, a line that is not
   an event and a stream that ends without an answer are a `ValueError`, which
   `knowledge_reply` turns into an unavailable answer.
+
+- `uv.lock`: certifi 2026.7.22 to 2026.10.19 (#45, Dependabot).
 
 ## 0.28.0
 

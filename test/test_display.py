@@ -153,6 +153,21 @@ def test_a_clear_takes_the_cards_down():
                             data={"big": "x" * display.MAX_DATA_BYTES}), "at most"),
     (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), data={"f": object()}),
      "must be JSON"),
+    # Review follow-ups on #47: what the satellite's strict JSON reader and its
+    # image check would refuse is refused here, with a reason, not a traceback.
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), data={"t": float("nan")}),
+     "finite numbers"),
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), data={"t": float("inf")}),
+     "finite numbers"),
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), image=("a path", "image/png")),
+     "is bytes"),
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), image=(b"", "image/png")),
+     "is bytes"),
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), image=(PNG, "image/gif")),
+     "not one of"),
+    (lambda: display.layout(display.Layout("w", LAYOUT, "f" * 64), image=PNG), "(bytes, mime)"),
+    (lambda: display.weather("Toronto", temperature=10 ** 400), "a screen can print"),
+    (lambda: display.item("x", 10 ** 400), "a screen can print"),
 ])
 def test_what_the_satellite_would_not_show_fails_here(build, why):
     with pytest.raises(display.CardError, match=why):
@@ -236,6 +251,11 @@ def test_a_tap_on_this_skills_card_reaches_the_handler(punchline):
     assert taps[0] == display.Tap("punchline.test:text", "again", "punchline.test", 1.0)
     assert display.tap("not a report") is None
     assert display.tap({**mine, "at": float("inf")}) is None
+    # An integer too large for a float is not a time; it used to raise
+    # OverflowError out of the bus handler instead of being dropped.
+    assert display.tap({**mine, "at": 10 ** 400}) is None
+    assert display.tap({**mine, "at": 7}) == display.Tap("punchline.test:text", "again",
+                                                          "punchline.test", 7.0)
 
 
 def test_a_fullscreen_layout_says_so_and_an_ordinary_one_does_not(tmp_path):

@@ -265,8 +265,17 @@ def test_real_core_sends_a_twin_with_the_fallback_reply(integration_scope, monke
     monkeypatch.syspath_prepend(str(fixture))
     from thalovant_skill_punchline import PunchlineSkill
 
+    # Name the pipeline: left to OVOScope, it picks its lean default when the
+    # adapt and padatious plugins are installed, and that one has no low
+    # fallback band, so a skill at priority 97 is never asked (2026-11-05, a
+    # checkout with ovoscope 1.12.1a1 under uv; CI's pip install lacks
+    # padatious and falls back to a pipeline that has the band).
+    pipeline = getattr(ovoscope, "FALLBACK_PIPELINE", [
+        "ovos-fallback-pipeline-plugin-high", "ovos-fallback-pipeline-plugin-medium",
+        "ovos-fallback-pipeline-plugin-low"])
     try:
-        with managed_minicroft([], extra_skills={"punchline.test": PunchlineSkill}) as croft:
+        with managed_minicroft([], extra_skills={"punchline.test": PunchlineSkill},
+                               default_pipeline=pipeline) as croft:
             turns = {}
             for lang, text in (("en-US", "tell me a joke"), ("fr-FR", "raconte une blague")):
                 session = Session(f"room-{lang}")

@@ -121,6 +121,24 @@ def test_a_service_that_does_not_stream_is_read_as_plain_json(served):
     assert kwargs["headers"]["X-Skill"] == "t"
 
 
+@pytest.mark.parametrize("body", [["not", "a", "document"], "a string", 7])
+def test_a_body_that_is_not_a_document_is_a_failed_request_on_both_paths(served, body):
+    """A list or a string where the answer document should be reached
+    `knowledge_reply`, which raised AttributeError on `.get` and failed the turn.
+    The streamed path already refused it (`_event`); the plain one now does too."""
+    served(Plain(body))
+    with pytest.raises(ValueError, match="not a document"):
+        ask()
+    with lookup_notice(lambda line: None), pytest.raises(ValueError, match="not a document"):
+        ask()
+    for notice in (contextlib.nullcontext(), lookup_notice(lambda line: None)):
+        with notice:
+            reply = knowledge_reply(service_url="http://knowledge", prompt="ada", lang="en-US",
+                                    mode="answer", max_sources=1, augmentation="auto",
+                                    age_policy_setting=None, headers={}, timeout=5)
+        assert reply == knowledge.KnowledgeReply(None, knowledge.POLICY_NONE)
+
+
 def test_without_a_notice_the_request_is_the_plain_one_it_always_was(served):
     served(Plain(ANSWER))
     assert ask() == ANSWER

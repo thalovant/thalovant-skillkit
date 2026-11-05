@@ -209,7 +209,7 @@ format arguments (`KeyError`/`IndexError`), not malformed braces (`ValueError`).
 Use native `self.speak_dialog` for OVOS's speech renderer and delivery behavior.
 
 `self.speak_to(message, text, *, lang=None, expect_response=False, written=None,
-meta=None, wait=False)` speaks `text` to whoever sent `message`: it forwards that message,
+meta=None, wait=False, display=None)` speaks `text` to whoever sent `message`: it forwards that message,
 so the reply keeps its session, source and destination, and speaks in the
 message's language unless `lang` is given. It uses the topic the installed
 workshop's own `speak` uses (`ovos.utterance.speak` on workshop 9, legacy `speak`
@@ -223,7 +223,9 @@ other than the one `self.lang` describes; `self.speak` remains the native call
 for a handler answering the message it was handed. `speech.speak_to(skill,
 message, text, ...)` is the same function for skills on other bases. `wait`
 blocks as `speak(wait=...)` does: `True` for up to 15 seconds, a number for that
-many seconds. A `Speech` sends its SSML as `utterance_ssml`.
+many seconds. A `Speech` sends its SSML as `utterance_ssml`. `written` is the
+form a screen shows (see [Dates and clocks](#dates-and-clocks)) and `display` a
+card for a satellite with a screen (see [What the screen shows](#what-the-screen-shows)).
 
 `self.setting(key, default=None)` returns the default for unreadable settings,
 missing keys or a stored `None`. `False`, `0` and `""` are retained.
@@ -361,6 +363,39 @@ assert joke.document == '<speak>Why? <break time="1s"/> Because.</speak>'
 assert spell("XK7").ssml == '<say-as interpret-as="characters">XK7</say-as>'
 ```
 
+## Dates and clocks
+
+[`thalovant_skillkit.moments`](../thalovant_skillkit/moments.py) says a date, a
+clock or a duration the way a voice should, and writes it the way a screen
+should: the two forms travel together as `utterance` and `utterance_written`.
+`ovos-date-parser` and `babel` are imported on the first call, never at import.
+
+| Helper | Spoken (default) | Written (`written=True`) |
+|---|---|---|
+| `uses_24_hour_clock(lang)` | Whether the locale writes `19:30` or `7:30 PM`, from CLDR's short time pattern; `False` for an unknown locale. | |
+| `time_text(value, lang, use_24hour, *, written=False, rules=None)` | "nine forty a.m.", "midnight" | `9:40 AM` or `21:40`; `rules` (a locale's own `time_pattern`, `time_pattern_24`, `am`, `pm`) win, the marker substituted in place, and CLDR's short clock is used only when it keeps the asked-for cycle. |
+| `date_text(value, lang, now, *, written=False, rules=None, plain=False, relative=True)` | "tomorrow", "Monday the twenty-eighth" | "today"/"tomorrow" kept; otherwise `EEEE, d` ("Monday, 28th" in English) or the locale's `date_pattern` / `date_pattern_plain`; `relative=False` always gives the concrete date. Never the empty string. |
+| `date_time_text(value, lang, now, *, written=False)` | Day and clock through upstream's per-language template | The same, written; CLDR's medium format for a language upstream has no template for. |
+| `duration_text(seconds, lang, *, written=False)` | "five minutes" | `5:00`, `1:02:03` |
+| `tidy_sentence(text)` | Collapses the doubled full stop a spoken "a.m." leaves before a sentence's own. | |
+| `english_ordinal(day)` | `1st`, `2nd`, `3rd`, `11th`, `12th`, `13th`, `21st` | |
+
+A rule set is a mapping a locale ships (`thalovant-languages` carries them); a
+rule that does not apply falls through to the defaults above. Every entry
+point falls back rather than raising when a language's upstream resources are
+missing: the ISO date or `HH:MM` is the last resort.
+
+`WrittenForms.say(spoken, written)` records a pair as a reply is composed and
+returns the spoken half; `WrittenForms.render(reply)` is that reply with every
+recorded pair written out, longest first, and the sentence's full stop kept.
+Call `WrittenForms.reset()` at the start of a turn; the record is thread-local.
+`speak_with_written(skill, reply, message, lang, written=None)` sends the
+reply through `speech.speak_to` with `written` as `utterance_written` beside
+it: pass the written form yourself, `written=WrittenForms.render(reply)` for
+a reply composed through `say`; with `written=None` only the spoken words are
+sent, and a screen shows those. It falls back to `skill.speak` on a skill
+with no bus.
+
 ## What the screen shows
 
 `thalovant_skillkit.display` builds the card a satellite with a display draws
@@ -374,7 +409,7 @@ README).
 | `list_card(items, *, title, subtitle, ...)` | up to 12 `item(label, value, icon=, identifier=)` rows, or bare labels |
 | `weather(place, *, condition, icon, temperature, high, low, feels_like, unit, wind, humidity, precipitation, days, ...)` | the forecast; numbers are printed as given, `icon` is one of `WEATHER_ICONS` |
 | `media(image_bytes, mime, *, title, body, ...)` | a PNG, JPEG or WebP under 512 kB, embedded |
-| `layout(layout, *, data, body, actions, image, ...)` | the skill's own layout bound to `data`; `body` is shown where it cannot be drawn |
+| `layout(layout, *, data, body, actions, image, fullscreen=False, ...)` | the skill's own layout bound to `data` (strict JSON: no `NaN`, at most 16 kB); `body` is shown where it cannot be drawn; `image=(bytes, mime)` is checked as `media` checks one; `fullscreen=True` gives it the whole screen, with no frame and no time along the top |
 | `layout_file(skill, name, *, root=None)` | reads `gui/thalovant/<name>.rfwtxt` beside the skill, hashed |
 | `action(identifier, label)` | a button; `identifier` comes back in the tap |
 | `clear(skill="")` | takes every card down, or one skill's |
@@ -385,7 +420,10 @@ replaced or closed; the default leaves it to the satellite (two minutes). An
 satellite uses `<skill_id>:<kind>`. Every size the satellite enforces
 (`TITLE_LIMIT`, `TEXT_LIMIT`, `ITEM_LIMIT`, `ACTION_LIMIT`, `MAX_IMAGE_BYTES`,
 `MAX_LAYOUT_BYTES`, `MAX_DATA_BYTES`) is checked when the card is built and
-raises `CardError` with the reason.
+raises `CardError` with the reason, as is a figure or a value a screen cannot
+print (a non-finite number, or an integer too large for a float). `lang` names
+the card's language for the screen's typography; the satellite drops a value
+that is not a language tag.
 
 Putting it on a reply: `showing(card)` is a context manager that attaches the
 card to every reply spoken inside it, through `speak`, `speak_dialog` and the
@@ -400,8 +438,11 @@ as a no-op.
 What comes back: a tap on a card's action reaches the hub as
 `thalovant.display.action` with `{"card", "action", "skill", "at"}`.
 `add_display_action_handler(handler)` on a skill follows the event once and
-calls `handler(tap, message)` with a `Tap` for this skill's cards only;
-`tap(data)` is the parser, `None` for a report that cannot be believed.
+calls `handler(tap, message)` with a `Tap` (`card`, `action`, `skill`, `at` as
+a float) for this skill's cards only: the report's `skill` is this skill's id,
+or its `card` starts with `<skill_id>:`. `tap(data)` is the parser, `None` for
+a report that cannot be believed: ids that are not plain ids, or an `at` that
+is not a finite number.
 
 ## Non-repeating choices
 
@@ -509,7 +550,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.12.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.29.2"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -661,8 +702,45 @@ or its exact string), defaulting to 13. Invalid configuration raises `ValueError
 `normalize_ai_augmentation` maps supported values to `on`, `off` or default
 `auto`; `knowledge_reply` expects the caller to pass the intended mode.
 `knowledge_answer(...)` is the compatibility wrapper returning `(answer, policy)`.
-The knowledge client expects a JSON object response; it is not a general schema
-validator, and caller-input/type errors can still propagate.
+A body that is not a JSON object, streamed or not, is a `ValueError` that
+`knowledge_reply` reports as `POLICY_NONE` with no answer; the client is not a
+general schema validator beyond that, and caller-input/type errors can still
+propagate.
+
+### Saying where a slow answer comes from
+
+A lookup takes a few seconds, most of them after the service has chosen its
+source. With `Accept: application/x-ndjson` the service announces the source
+first (`{"event": "source", "provider": "wikipedia", "pending": true}`), then
+the answer or an error. `ask_service(*, service_url, request_payload, headers,
+timeout, lang=None)` posts one question and returns the answer document,
+raising what `requests` raises; inside a `lookup_notice` it asks for the
+stream and tells the visitor what is happening:
+
+| What the service says | What the visitor hears |
+|---|---|
+| A source, and a slow step follows (`pending: true`) | "From Wikipedia…" at once |
+| A source, and nothing follows (`pending: false`) | Nothing: the answer is on its way |
+| A source, without saying (an older service) | "From Wikipedia…" if the answer is not there `NOTICE_DELAY` (0.5 s) later |
+| Nothing at all for `WORKING_DELAY` (1.2 s) | "Looking it up…", which names nothing |
+| An event the kit does not know | Skipped; a malformed source, answer or error, or a stream that ends without an answer, is a `ValueError` |
+
+```python
+from thalovant_skillkit.knowledge import knowledge_reply, lookup_notice
+
+with lookup_notice(lambda line: self.speak_to(message, line)) as notice:
+    reply = knowledge_reply(...)
+notice.names("wikipedia")   # whether the source was already named this turn
+```
+
+`lookup_notice(speak)` opens one turn's notice in a context variable, so every
+call under it (`knowledge_reply`, or a skill's own `ask_service`) shares it and
+the source is named once per turn; `current_notice()` reads it, `None` outside
+a turn. A `speak` that raises is logged and never costs the answer. The lines
+are `notice_text(lang, provider)` and `working_text(lang)`, from the kit's
+`shared_dialog/` in each of the public hubs' eleven languages; `provider_name`
+maps the service's ids (`PROVIDER_NAMES`: `web-search` is DuckDuckGo) to the
+names a visitor knows. `run_noticing` from 0.26.0 is kept as a no-op wrapper.
 
 ## Regional resources CLI
 

@@ -334,7 +334,7 @@ def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, s
 
     Raises what `requests` raises, as the plain call does: `HTTPError` for a status
     (404 means no answer), another `RequestException` for a connection, `ValueError`
-    for a body that is not JSON.
+    for a body that is not JSON or not a JSON object.
 
     With a notice open the call asks to hear the source first, and tells the visitor
     what is happening instead of leaving the chat blank:
@@ -355,7 +355,7 @@ def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, s
     if notice is None:
         response = requests.post(url, json=request_payload, headers=headers, timeout=timeout)
         response.raise_for_status()
-        return response.json()
+        return _document(response.json())
     events: queue.Queue = queue.Queue()
     worker = threading.Thread(
         target=contextvars.copy_context().run,
@@ -380,7 +380,7 @@ def _read_into(events: queue.Queue, url: str, request_payload: dict, headers: di
         with response:
             response.raise_for_status()
             if not response.headers.get("Content-Type", "").startswith(NDJSON):
-                events.put(("answer", response.json()))
+                events.put(("answer", _document(response.json())))
                 return
             for line in response.iter_lines(decode_unicode=True):
                 if not line:
@@ -447,6 +447,18 @@ def _say(notice: LookupNotice, text: str) -> None:
         # A client that cannot take the line must not lose a good answer. It is logged,
         # and the answer is returned as usual.
         _LOG.warning("Could not say where the answer comes from", exc_info=True)
+
+
+def _document(body: object) -> dict:
+    """The answer document, or a failed request when the body is not an object.
+
+    `knowledge_reply` reads the document's fields; a list or a string in its
+    place used to reach it and fail the turn with an `AttributeError` that
+    nothing caught. A streamed answer is checked the same way in `_event`.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("the knowledge service answered with something that is not a document")
+    return body
 
 
 class _StreamedStatus:
