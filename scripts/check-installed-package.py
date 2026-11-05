@@ -27,6 +27,7 @@ from importlib.metadata import distribution, entry_points, version
 from importlib.resources import files
 import json
 from pathlib import Path
+import sys
 import zipfile
 
 wheel, package, distribution_name, group, entry_name, kit_version = sys.argv[1:]
