@@ -24,8 +24,8 @@ A layout card binds the card's `data` to the skill's own layout:
     self.speak_to(message, summary,
                   display=display.layout(layout, data={...}, actions=[...]))
 
-The layout's text travels once per hub process and by hash afterwards; the
-satellite keeps it by hash. A tap on one of the card's `actions` comes back
+The layout's text travels with every card, with its hash; the satellite keeps
+it by hash. A tap on one of the card's `actions` comes back
 to the skill as a `thalovant.display.action` bus message with
 `{"card", "action", "skill", "at"}`; `on_display_action` in the skill base
 delivers it to a handler registered with `add_display_action_handler`.
@@ -159,10 +159,6 @@ class Layout:
     sha256: str
 
 
-_sent_layouts: set[str] = set()
-_sent_lock = threading.Lock()
-
-
 def layout_file(skill: Any, name: str, *, root: str | os.PathLike | None = None) -> Layout:
     """The skill's `gui/thalovant/<name>.rfwtxt`, read and hashed.
 
@@ -199,10 +195,9 @@ def _skill_root(skill: Any) -> Path:
 
 
 def forget_sent_layouts() -> None:
-    """Send every layout inline again: for tests, and after a satellite says
-    it does not have one."""
-    with _sent_lock:
-        _sent_layouts.clear()
+    """Kept for skills and tests written against 0.29.0, which sent a layout's
+    text once per process: since 0.29.1 every card carries it, so there is
+    nothing to forget."""
 
 
 @dataclass
@@ -228,8 +223,9 @@ class Card:
     fullscreen: bool = False
 
     def as_dict(self) -> dict[str, Any]:
-        """The `meta["display"]` entry. A layout's text goes inline the
-        first time this process sends it, and by hash afterwards."""
+        """The `meta["display"]` entry. A layout's text always goes inline,
+        with its hash: a hub serves many satellites, and a text sent once
+        reached only the first of them."""
         entry: dict[str, Any] = {"kind": self.kind}
         if self.id:
             entry["id"] = self.id
@@ -247,12 +243,8 @@ class Card:
             data, mime = self.image
             entry["image"] = {"mime": mime, "data": base64.b64encode(data).decode("ascii")}
         if self.layout is not None:
-            layout = {"name": self.layout.name, "sha256": self.layout.sha256}
-            with _sent_lock:
-                if self.layout.sha256 not in _sent_layouts:
-                    layout["rfw"] = self.layout.text
-                    _sent_layouts.add(self.layout.sha256)
-            entry["layout"] = layout
+            entry["layout"] = {"name": self.layout.name, "sha256": self.layout.sha256,
+                               "rfw": self.layout.text}
             entry["data"] = dict(self.data)
         if self.ttl is not True:
             entry["ttl"] = None if self.ttl in (None, False) else float(self.ttl)

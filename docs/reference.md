@@ -392,9 +392,10 @@ card to every reply spoken inside it, through `speak`, `speak_dialog` and the
 kit's helpers alike; `speak_to(message, text, display=card)` and
 `speak_varied_dialog(key, display=card)` take one directly. `attach(meta,
 card)` returns `meta` with the entry, for a skill that builds its own speak
-message. A layout's text is sent inline the first time this process sends
-it and by `sha256` afterwards; `forget_sent_layouts()` sends them inline
-again.
+message. A layout's text is always sent inline, with its `sha256`, since
+0.29.1 (0.29.0 sent it once per process, and the satellites that were not the
+first to ask got a hash they did not have); `forget_sent_layouts()` remains
+as a no-op.
 
 What comes back: a tap on a card's action reaches the hub as
 `thalovant.display.action` with `{"card", "action", "skill", "at"}`.

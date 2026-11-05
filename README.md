@@ -128,7 +128,7 @@ card = display.layout(layout, data={"place": "Toronto", "temperature": "11"},
                       body=summary, actions=[display.action("refresh", "Refresh")])
 ```
 
-The file travels once per hub process and by hash afterwards; a screen that
+The file travels with every card, with its hash; a screen that
 cannot draw it shows `body`, the words that were said. `display.layout(...,
 fullscreen=True)` gives the layout the whole screen, with no frame and no
 time along the top: for a card that is a scene of its own, such as a
