@@ -390,8 +390,11 @@ returns the spoken half; `WrittenForms.render(reply)` is that reply with every
 recorded pair written out, longest first, and the sentence's full stop kept.
 Call `WrittenForms.reset()` at the start of a turn; the record is thread-local.
 `speak_with_written(skill, reply, message, lang, written=None)` sends the
-reply through `speech.speak_to` with `utterance_written` beside it, and falls
-back to `skill.speak` on a skill with no bus.
+reply through `speech.speak_to` with `written` as `utterance_written` beside
+it: pass the written form yourself, `written=WrittenForms.render(reply)` for
+a reply composed through `say`; with `written=None` only the spoken words are
+sent, and a screen shows those. It falls back to `skill.speak` on a skill
+with no bus.
 
 ## What the screen shows
 

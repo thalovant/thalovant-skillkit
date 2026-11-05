@@ -145,9 +145,9 @@ shows".
 ## A date for ears and for a screen
 
 A reminder read aloud says "tomorrow at nine forty a.m."; the same reminder in
-an app reads "May 24, 9:40 AM". `moments` gives both forms, and
-`speak_with_written` sends both, so a speaker hears one and a screen shows
-the other:
+an app reads "tomorrow at 9:40 AM", and one further off "Monday, 28th at
+9:40 AM". `moments` gives both forms, and `speak_with_written` sends both, so
+a speaker hears one and a screen shows the other:
 
 ```python
 from thalovant_skillkit.moments import date_text, speak_with_written, time_text, uses_24_hour_clock
