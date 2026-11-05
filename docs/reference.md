@@ -1,4 +1,4 @@
-# SkillKit 0.18.0 reference
+# SkillKit reference
 
 Practical contracts for the released Python API and CLI. Start with the
 [README](../README.md) for installation, [Writing a Skill](https://docs.thalovant.com/developers/writing-a-skill/)
@@ -360,6 +360,47 @@ assert joke == "Why? Because."
 assert joke.document == '<speak>Why? <break time="1s"/> Because.</speak>'
 assert spell("XK7").ssml == '<say-as interpret-as="characters">XK7</say-as>'
 ```
+
+## What the screen shows
+
+`thalovant_skillkit.display` builds the card a satellite with a display draws
+from a reply's `meta["display"]` (the satellite's contract: thalovant-voice,
+README "What the screen shows"; the screen's widget library: thalovant-screen,
+README).
+
+| Helper | Builds |
+|---|---|
+| `text(body, *, title, subtitle, identifier, actions, ttl, lang)` | a title and a body |
+| `list_card(items, *, title, subtitle, ...)` | up to 12 `item(label, value, icon=, identifier=)` rows, or bare labels |
+| `weather(place, *, condition, icon, temperature, high, low, feels_like, unit, wind, humidity, precipitation, days, ...)` | the forecast; numbers are printed as given, `icon` is one of `WEATHER_ICONS` |
+| `media(image_bytes, mime, *, title, body, ...)` | a PNG, JPEG or WebP under 512 kB, embedded |
+| `layout(layout, *, data, body, actions, image, ...)` | the skill's own layout bound to `data`; `body` is shown where it cannot be drawn |
+| `layout_file(skill, name, *, root=None)` | reads `gui/thalovant/<name>.rfwtxt` beside the skill, hashed |
+| `action(identifier, label)` | a button; `identifier` comes back in the tap |
+| `clear(skill="")` | takes every card down, or one skill's |
+
+`ttl` is seconds (up to a day); `None` keeps the card until it is cleared,
+replaced or closed; the default leaves it to the satellite (two minutes). An
+`identifier` names the card so a later one replaces it; without one the
+satellite uses `<skill_id>:<kind>`. Every size the satellite enforces
+(`TITLE_LIMIT`, `TEXT_LIMIT`, `ITEM_LIMIT`, `ACTION_LIMIT`, `MAX_IMAGE_BYTES`,
+`MAX_LAYOUT_BYTES`, `MAX_DATA_BYTES`) is checked when the card is built and
+raises `CardError` with the reason.
+
+Putting it on a reply: `showing(card)` is a context manager that attaches the
+card to every reply spoken inside it, through `speak`, `speak_dialog` and the
+kit's helpers alike; `speak_to(message, text, display=card)` and
+`speak_varied_dialog(key, display=card)` take one directly. `attach(meta,
+card)` returns `meta` with the entry, for a skill that builds its own speak
+message. A layout's text is sent inline the first time this process sends
+it and by `sha256` afterwards; `forget_sent_layouts()` sends them inline
+again.
+
+What comes back: a tap on a card's action reaches the hub as
+`thalovant.display.action` with `{"card", "action", "skill", "at"}`.
+`add_display_action_handler(handler)` on a skill follows the event once and
+calls `handler(tap, message)` with a `Tap` for this skill's cards only;
+`tap(data)` is the parser, `None` for a report that cannot be believed.
 
 ## Non-repeating choices
 

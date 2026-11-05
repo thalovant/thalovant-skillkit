@@ -1,6 +1,23 @@
-Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback fixes from the #30 review follow-up.
+Last Edit: Claude Fable 5.1 - 2026-11-04 - Motive: Review follow-up on #47
 
 # Maintenance report
+
+## 2026-11-04 review follow-up on #47 (CodeRabbit, three findings)
+
+- `_skill_root` (`thalovant_skillkit/display.py`): a skill passed as a class was resolved through `type(skill)`, the metaclass (`abc.ABCMeta` under OVOS's `FallbackSkill`), never the module that defines it. Locally the `abc` module's directory holds no layout, so `test_the_layout_is_read_beside_the_skills_module` passed by accident; on CI (3.10, 3.12, 3.14) the C-implemented metaclass has no file, `inspect.getfile` raised and the test saw "cannot find the skill's directory" instead of "not found". The class itself is now resolved (`klass = skill if isinstance(skill, type) else type(skill)`); instances keep the old lookup.
+- The module docstring's examples passed `display=` to `speak_dialog` and `speak`, which keep the OVOS signatures and would raise `TypeError`; they now use `display.showing(card)` and `speak_to(message, ..., display=...)`, as the README does.
+- The entry below had 26 tests, a green suite and a stale 0.18.0 remark; corrected.
+- **Verification:** `test/test_display.py` 32 passed, the whole suite 691 passed with `[testing]`, `ruff check` clean; CI on the push is the proof for 3.10/3.12/3.14.
+- **Transparency Report:** AI model Claude Fable 5.1 (`claude-fable-5-1`) in Claude Code applied the three fixes and resolved the threads. No human review before the push.
+
+
+## 2026-11-04 display cards for a satellite with a screen
+
+- **Contents:** `thalovant_skillkit/display.py` (new): builders for the card a satellite with a display draws from `meta["display"]` -- `text`, `list_card`, `weather`, `media`, `layout` with `layout_file` reading `gui/thalovant/<name>.rfwtxt` -- `action`, `item`, `clear`, `attach`, the `showing` context manager and `pending`, and `tap` for the `thalovant.display.action` report. `skill.py`: `speak` and `speak_dialog` attach a pending card (their OVOS signatures unchanged, as `test_the_speech_overrides_keep_the_framework_signatures` requires); `speak_to` and `speak_varied_dialog` take `display=`; `_SkillPlumbing.add_display_action_handler` follows the tap event once and delivers `Tap`s for this skill's cards.
+- **Sizes:** the satellite's own bounds (thalovant-voice `display.py`) are mirrored as constants and checked when a card is built, so a card that will not be shown raises `CardError` here with the reason. A layout's text travels inline once per process and by `sha256` afterwards.
+- **Verification:** `ruff check` clean on the three files; `test/test_display.py` (new, 32 tests: the size-refusal test counts 20 cases) and the whole suite: 691 passed with `[testing]` on this machine. CI on #47 failed `test_the_layout_is_read_beside_the_skills_module` on 3.10, 3.12 and 3.14 until the `_skill_root` fix in the entry above.
+- **Not done here:** no skill uses it yet (the weather skill's card is its own change); the control-plane grant for `thalovant.display.action` is thalovant-api's. The guide skill's credits card (thalovant-skill-guide #63) is the first user.
+- **Transparency Report:** AI model Claude Fable 5.1 (`claude-fable-5-1`) in Claude Code wrote the module, the plumbing, the tests and these entries. No human review before the PR.
 
 ## 2026-11-03 moments: written rules keep the asked-for clock and the relative day
 
@@ -35,3 +52,20 @@ publication runs only from a GitHub release.
   `_time_by_rule` and `date_text`, added tests, ran the suite on 3.10 and 3.14 and the date-time
   skill's suite against the branch, and wrote the changelog entry, this report and `AUDIT.md`.
 - Oversight: the change goes through a pull request with hosted CI before merge. No release.
+
+## 2026-11-04: a layout may ask for the whole screen
+
+**Changes**: `Card.fullscreen` (default off) and `display.layout(..., fullscreen=True)`; the
+flag travels as `"fullscreen": true` in `meta["display"]` only when set. The satellite
+keeps it for a layout card (thalovant-voice `feat/fullscreen-card`) and the screen draws
+the layout edge to edge with no frame and no time along the top. For the guide skill's
+thank-you mosaic of every OpenVoiceOS and HiveMind contributor.
+
+**Verification**: `test/test_display.py` (one new: the flag in the dict when set, absent
+otherwise); 32 of 32.
+
+### Transparency Report
+- **AI Model**: Claude Fable 5.1.
+- **Actions Taken**: Added the field, the parameter and the test; a README sentence.
+- **Oversight**: Asked for by the owner. Not reviewed by a human.
+

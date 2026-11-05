@@ -1,6 +1,20 @@
-Last Edit: Claude Code - 2026-11-03 - Motive: Record the moments rule fallback findings and their fix.
+Last Edit: Claude Fable 5.1 - 2026-11-04 - Motive: Review follow-up on #47: the class lookup in _skill_root
+Previous:  Claude Code (Claude Fable 5.1) - 2026-11-04 - Motive: Display cards: what a skill shows on a satellite with a screen, and the tap that comes back.
 
 # Audit
+
+## 2026-11-04 review follow-up on #47
+
+- Fixed: `_skill_root` in `thalovant_skillkit/display.py` resolved a class argument through its metaclass. Evidence: CI run 41912545035 failed `test/test_display.py::test_the_layout_is_read_beside_the_skills_module` on 3.10, 3.12 and 3.14 (the C `_abc` metaclass has no source file, `inspect.getfile` raised `TypeError`, and `CardError("cannot find the skill's directory")` came out instead of "not found"); locally the test passed only because the `abc` module's directory holds no layout. The class is now resolved when a class is passed.
+- Fixed: the module docstring's two examples called `speak_dialog` / `speak` with `display=`, which those OVOS-signature methods do not accept.
+- Open: `test_the_layout_is_read_beside_the_skills_module` asserts the failure text, not the directory searched; a test that plants a layout beside the fixture skill and reads it would prove the lookup positively.
+
+
+## 2026-11-04 display cards
+
+- `display.showing` keeps the pending card in a thread-local; a handler that speaks from another thread it started (a worker) does not see it, and must pass `display=` to `speak_to` instead. Evidence: `test/test_display.py::test_a_showing_block_attaches_the_card_to_every_reply_inside` runs on one thread.
+- `layout_file` reads the file on every call; a skill answering often should keep the `Layout` it returns. The sent-once set (`_sent_layouts`) is per process: after the hub restarts, the first card sends the text again, which is the intent, but a satellite that lost its cache between two cards is not told until the skill calls `forget_sent_layouts()`.
+- A tap report is believed by its `skill` field or a `card` id prefixed with this skill's id; a hub that let another connection forge the field would reach the handler, which is why `tap` carries no more than ids and a time and the handler must answer only with what the skill would say to anyone.
 
 ## 2026-11-03 moments rule fallbacks (review follow-up from #30)
 
