@@ -1,6 +1,45 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.29.2, the review follow-ups on #47 and #48 and a knowledge body that is not a document.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to.
 # Changelog
+
+## 0.31.0
+
+- **`RecordStore`: a person's records, kept one at a time under that person.**
+  `JsonStateStore` keeps every owner's records as one document under one key and
+  writes all of it back on each save, so two people, or two hub pods, saving
+  together overwrote one another, and each pod's copy went stale. The alarm,
+  reminder, timer and stopwatch skills all stand on it. `thalovant_skillkit.records`
+  keeps a Redis hash per owner and a PostgreSQL row per record (both set: Redis is
+  read, PostgreSQL keeps a copy and refills an emptied Redis), written by one Lua
+  step or one transaction per record; `save_changes(before, after)` writes only
+  what differs, by owner and id, and never touches another owner's records;
+  `load_all`, `load_owner`, `splice_owner`/`replace_owner`, `owners`. The owner is
+  hashed into every key and row (`owner_key`), so no label, "a" and "a:b", empty,
+  unicode or enormous, can reach another's data; a record with no owner field
+  lives in `_unowned`. It reads the same settings and environment as
+  `JsonStateStore` (`redis_url`, `redis_sentinel_urls`, `database_url`,
+  `<PREFIX>_REDIS_URL`, `REDIS_URL`, `<PREFIX>_DATABASE_URL`, `DATABASE_URL`,
+  `<PREFIX>_STATE_KEY`): an operator changes nothing. With no database it returns
+  None and writes nothing, and the skill keeps its settings. A write that
+  cannot be made raises `RecordStoreError` and leaves nothing half written.
+- **The old document comes over once, and is left alone.** `migrate_legacy` (and
+  `load_all_with_legacy`, the call a skill makes at its start) imports the
+  whole-document records into the new layout: put only where absent, so anything
+  newer wins; one pod claims the import (a claim not finished within five minutes
+  may be taken over, the import being repeatable); the marker is set only after a
+  document was read, so a legacy store that was merely unreachable is tried again;
+  the old document is never modified or deleted.
+- `testing.FakeRecordStore` is the real store over an in-memory backend for a
+  skill's unit tests (diff saves, per-owner records, migration, and
+  `backend.fail = OSError(...)` to rehearse a database that is down).
+- A guide for skill authors: `docs/records.md` (the swap from
+  `_state_store().save()` to `save_changes(before, after)`, the per-turn read of
+  one owner, the migration call, how to look at a person's records in Redis and
+  PostgreSQL, the limits).
+- Tests: 89 in `test/test_records.py` run on memory, fakeredis (which runs the
+  real Lua) and the real SQL over a sqlite adapter; with
+  `THALOVANT_RECORDS_TEST_REDIS_URL` and `THALOVANT_RECORDS_TEST_DATABASE_URL`
+  the same suite runs on a real Redis and PostgreSQL (CI starts both).
 
 ## 0.30.0
 

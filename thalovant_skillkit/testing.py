@@ -141,3 +141,31 @@ class FakeBus:
             for m in self.emitted
             if getattr(m, "msg_type", None) in self.SPEAK_TYPES
         ]
+
+
+class FakeRecordStore:
+    """A `RecordStore` over an in-memory backend, for a skill's unit tests.
+
+    It behaves like the real one with a database set up (diff saves, per-owner
+    records, `load_all`, `load_owner`, `replace_owner`, `migrate_legacy`) and
+    needs no Redis or PostgreSQL. `backend` is the dict-backed store behind it:
+    `backend.calls` counts the calls made, `backend.data` holds the stored JSON
+    by owner key, and `backend.fail = OSError("down")` makes it raise, to try
+    the skill with a database that is down.
+
+        store = FakeRecordStore("alarm")
+        skill._state_store = lambda: store
+    """
+
+    def __new__(cls, scope: str = "fake", *, owner_field: str = "owner", id_field: str = "id",
+                settings: dict | None = None, backend: Any = None):
+        from thalovant_skillkit.records import MemoryBackend, RecordStore
+
+        backend = backend if backend is not None else MemoryBackend()
+        store = RecordStore(
+            scope, settings or {}, env_prefix="THALOVANT_FAKE_RECORDS", default_key="records",
+            owner_field=owner_field, id_field=id_field, backends=[backend],
+        )
+        store.backend = backend
+        return store
+

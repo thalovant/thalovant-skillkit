@@ -1,6 +1,14 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: 0.30.0: the Python floor, the filelock advisories and combo-lock's cap, the review's open notes closed.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Whole-kit review for 0.29.2: the open review findings, the knowledge client's plain path, the lock and the records.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: 0.30.0: the Python floor, the filelock advisories and combo-lock's cap, the review's open notes closed.
 # Audit
+
+## 2026-11-06 per-owner records (0.31.0)
+
+- Fixed (Major, data loss): `JsonStateStore` rewrites every owner's records as one document on each save: two owners or two hub pods saving together lose one change ([storage.py](thalovant_skillkit/storage.py) `save`, `_save_redis`). `RecordStore` ([records.py](thalovant_skillkit/records.py)) replaces it for skills that keep a person's records: one write per changed record, by (owner, id). Evidence: `test_a_pod_with_a_stale_copy_does_not_overwrite_the_others`, `test_twenty_threads_over_two_pods_lose_nothing` on memory, fakeredis, the SQL over sqlite, and a real Redis 7.4 and PostgreSQL 16.15 (all passing, three runs).
+- Open (Major, until the skills move): alarm, reminder, timer and stopwatch still use `JsonStateStore`; the fix reaches users only when each releases a version that swaps to `save_changes` and `load_all_with_legacy`, and the hub restarts its runtime pod (the kit stays in memory).
+- Known limits: last writer wins for one record changed by two pods at once (no version check); no transaction across records (a save is one transaction in PostgreSQL and one script per record in Redis, so with both backends one can succeed while the other fails: `RecordStoreError`, the next save repeats it); Redis Cluster is not supported (scripts touch two keys); a Redis refill from PostgreSQL copies only records that are absent.
+- Open (Minor, legacy): the old whole document is never deleted, so an old pod still saving whole documents after the migration writes where the new code no longer reads. `JsonStateStore.load()` answers None both for no document and no answer, so the migration is retried (at most every five minutes) until a document is read.
+- Not exercised: Redis behind Sentinel, a PostgreSQL that drops the connection mid-save (the connection is dropped and made again on the next call; covered by `test_a_backend_that_is_down_raises_on_save_and_reads_as_none` only through an injected failure).
 
 ## 2026-11-05 the floor, the lock and the review's open notes (0.30.0)
 

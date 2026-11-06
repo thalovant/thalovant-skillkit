@@ -1,6 +1,14 @@
-Last Edit: Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to, the review's leftovers.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.29.2, the review follow-ups left open on #47 and #48, a knowledge body that is not a document, and the stale lock.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to, the review's leftovers.
 # Maintenance report
+
+## 2026-11-06: a per-owner record store (0.31.0)
+
+- **Found:** the lists skill's worker showed the weakness every record-keeping skill shares: `JsonStateStore` keeps all owners' records as one document under one key and rewrites it whole on each save, so two owners or two hub pods saving together overwrite each other (a lost update) and a pod's copy, read once, goes stale. The alarm, reminder, timer and stopwatch skills all stand on it. The lists skill's own store (a hash per owner, Lua scripts, rows with advisory locks) was the working design.
+- **Changed:** new `thalovant_skillkit/records.py` (`RecordStore`, `RedisBackend`, `PostgresBackend`, `MemoryBackend`, `owner_key`, `RecordStoreError`, `Changes`) configured exactly like `JsonStateStore` (same settings, environment and key), per-record atomic writes by (owner, id) from a before/after diff, owners hashed into every key, a once-only and non-destructive import of the old whole document; `testing.FakeRecordStore`; `docs/records.md`; the reference section; version 0.31.0 (0.30.0 was already released on 2026-11-05, so this is not it). `.github/workflows/test.yml` installs fakeredis, lupa, redis and psycopg and starts Redis 7 and PostgreSQL 16 for the `test` job so the live suite runs on every pull request.
+- **Verification:** `ruff check thalovant_skillkit test scripts` clean; the whole suite passes; `test/test_records.py` runs the same operations on memory, fakeredis (real Lua) and the real SQL over a sqlite adapter, and, against a real Redis 7.4 and PostgreSQL 16.15 in containers, ran three times in a row without a failure, including 20 threads over two stores, the tricky owner labels, eight pods migrating at once, a claim taken over, and a Redis refilled from PostgreSQL.
+- **Not done here:** the skills (alarm, reminder, timer, stopwatch) are not changed in this release; each swaps `_state_store().save()` for `save_changes(before, after)` using `docs/records.md` and calls `load_all_with_legacy()` at start. Until then they keep the old whole-document behaviour. Nothing was run against Redis Cluster (not supported) or a Sentinel.
+- **Transparency Report:** AI model Claude Sonnet 5.5 (`claude-sonnet-5-5`) in Claude Code designed on the lists skill's store, wrote the module, tests, docs and this entry, and ran the suite against containers. No human review before the pull request.
 
 ## 2026-11-05: Python 3.11 floor, filelock 4.2.x, the fallback through speak_to (0.30.0)
 

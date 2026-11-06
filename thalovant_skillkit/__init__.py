@@ -30,7 +30,8 @@ it for a screen; `testing` supplies message and recording-bus doubles;
 `testing_ovos` provides optional integration helpers; `sessions` holds bounded
 application state; `selection` provides independent shuffle bags; `network`,
 `workers` and `storage` bound service calls, refresh in the background and keep
-optional shared state. `checks` and `artifacts` validate source contracts and
+optional shared state; `records` keeps a person's records one at a time under
+that person, in Redis or PostgreSQL. `checks` and `artifacts` validate source contracts and
 built archives.
 ovos-workshop and the fleet-check dependencies are included in the base install;
 the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install
