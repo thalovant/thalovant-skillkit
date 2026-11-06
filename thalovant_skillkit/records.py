@@ -594,6 +594,9 @@ class RecordStore:
             and not os.getenv(f"{env_prefix}_REDIS_URL")
         ):
             self._config.redis_url = shared_url
+            # JsonStateStore decided `enabled` before this URL existed, and every record
+            # skill asks it first.
+            self._config.enabled = True
         # Where in Redis: the setting, then `<PREFIX>_KEY_PREFIX`, then
         # THALOVANT_RECORDS_KEY_PREFIX, else `thalovant` (the keys then are what 0.31.0 wrote).
         raw = (
@@ -608,6 +611,7 @@ class RecordStore:
         self._built = backends is not None
         self._build_lock = threading.Lock()
         self._legacy_checked = 0.0
+        self._legacy_refused = False
 
     # -- what is configured --------------------------------------------------------
 
@@ -859,11 +863,14 @@ class RecordStore:
             if primary.migration_state() == "done":
                 return 0
             now = time.monotonic()
+            if self._legacy_refused:
+                return 0
             if self._legacy_checked and now - self._legacy_checked < LEGACY_RECHECK_SECONDS:
                 return 0
             document = legacy.load()
             if document is None:
                 self._legacy_checked = now
+                self._legacy_refused = bool(getattr(legacy, "redis_refused", False))
                 return 0
             if not primary.migration_claim(uuid.uuid4().hex, MIGRATION_CLAIM_SECONDS):
                 return 0

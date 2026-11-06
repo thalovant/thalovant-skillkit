@@ -1,6 +1,16 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
 # Changelog
+
+## 0.31.2
+
+- **`THALOVANT_RECORDS_REDIS_URL` on its own now switches `RecordStore` on.** The store
+  took the URL after `enabled` had been decided, so a runtime with only this variable
+  reported no database and every record skill stayed on its settings, with no warning.
+- **A Redis user that may not read the old whole-document key is asked once.** The import
+  retried every five minutes for the life of the process, with a warning and an entry in
+  Redis's ACL log each time. A refusal now stops the retries for that process; an
+  unreachable Redis is still tried again.
 
 ## 0.31.1
 

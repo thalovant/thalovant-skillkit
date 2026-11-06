@@ -1,6 +1,16 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
 Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
 # Maintenance report
+
+## 2026-11-06 - 0.31.2: the shared Redis URL switches RecordStore on
+
+`RecordStore.__init__` set `self._config.redis_url` from `THALOVANT_RECORDS_REDIS_URL` after `JsonStateStore` had computed `enabled`, so `RecordStore.enabled` stayed False and the timer, reminder and stopwatch skills returned early. The store now sets `enabled`. `test/test_records.py::test_the_shared_redis_url_alone_switches_the_store_on` failed before the fix.
+
+The legacy import no longer retries after Redis refuses the read (`JsonStateStore.redis_refused`), which would otherwise warn every five minutes for ever under a limited user. Verified on real Redis 7 under the hub ACL rules with environment variables only, through `enabled`, `load_all_with_legacy` and `save_changes` for all four record skills, with a second store instance reading the records back; with the first fix removed the same run fails.
+
+### Transparency report
+
+AI model Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code made the change, the tests and this entry. No human review before the PR.
 
 ## 2026-11-06: a key prefix and a one-time ACL warning (0.31.1)
 
