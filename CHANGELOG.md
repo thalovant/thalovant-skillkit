@@ -1,6 +1,27 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
 # Changelog
+
+## 0.31.1
+
+- **`RecordStore` can run under a Redis user that may touch only some keys.**
+  `key_prefix` in the settings, `<PREFIX>_KEY_PREFIX` or `THALOVANT_RECORDS_KEY_PREFIX`
+  (that order) replaces the leading `thalovant` of every Redis key: the records, the
+  owner set and the import marker are `<prefix>:records:v1:<scope>:<key>:...`. A
+  prefix is validated (segments of letters, digits, `_`, `.`, `-` joined by single
+  colons, at most 200 characters); a bad one turns Redis off with one warning and
+  leaves PostgreSQL working. Unset, the keys are exactly what 0.31.0 wrote.
+  `THALOVANT_RECORDS_REDIS_URL` is one Redis URL for every record skill in a
+  runtime (after `<PREFIX>_REDIS_URL`, before `REDIS_URL`).
+- **A Redis that refuses (`NOPERM`, `WRONGPASS`, `NOAUTH`) is one warning, once.**
+  It names the key prefix, the key pattern and commands the ACL needs
+  (`REDIS_ACL_COMMANDS`) and the settings that move the keys; the skill falls back
+  as before and `RecordStoreError.acl` is True on a save. Other failures still
+  warn every time.
+- Docs: `docs/records.md`, "Operators: running under a per-hub Redis user" (the
+  OvosRuntime `$(VAR)` recipe, URL-escaping the password, the exact ACL).
+- Not changed: the old `JsonStateStore` key stays `thalovant:<scope>:<key>` (a
+  prefix there would orphan existing documents).
 
 ## 0.31.0
 

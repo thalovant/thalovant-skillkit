@@ -1,4 +1,5 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store for the skills that keep a person's records.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store for the skills that keep a person's records.
 
 # Per-owner records (`thalovant_skillkit.records`)
 
@@ -25,11 +26,14 @@ changes nothing: `redis_url`, `redis_sentinel_urls`, `redis_sentinel_service_nam
 and `database_url` in the skill's settings, then `<PREFIX>_REDIS_URL`,
 `<PREFIX>_REDIS_SENTINEL_URLS`, `<PREFIX>_DATABASE_URL`, then `REDIS_URL`,
 `REDIS_SENTINEL_URLS`, `DATABASE_URL`; `state_key` / `<PREFIX>_STATE_KEY` selects the
-key (one per hub, if several share a database).
+key (one per hub, if several share a database). `key_prefix` / `<PREFIX>_KEY_PREFIX` /
+`THALOVANT_RECORDS_KEY_PREFIX` moves every Redis key (below); `THALOVANT_RECORDS_REDIS_URL` is one
+Redis URL for every record skill in a runtime (after the skill's own `<PREFIX>_REDIS_URL`, before
+the generic `REDIS_URL`).
 
 | Backend | Layout |
 |---|---|
-| Redis | `thalovant:records:v1:<scope>:<key>:<owner key>` is a HASH, field = the record's id, value = its JSON. `thalovant:records:v1:<scope>:<key>:owners` is a SET of the owner keys. `...:migration` is the import marker. `<scope>` and `<key>` are percent-encoded. Each change is one Lua script. |
+| Redis | `<key prefix>:records:v1:<scope>:<key>:<owner key>` is a HASH, field = the record's id, value = its JSON. `<key prefix>:records:v1:<scope>:<key>:owners` is a SET of the owner keys. `...:migration` is the import marker. `<scope>` and `<key>` are percent-encoded. The key prefix is `thalovant` unless you set one (see the operator section below). Each change is one Lua script. |
 | PostgreSQL | Table `thalovant_records (seq, scope, key, owner_key, id, body jsonb, updated_at)`, primary key `(scope, key, owner_key, id)`; `thalovant_records_meta` holds the import marker. A save's puts and deletes are one transaction. Tables are created once, under an advisory lock. |
 | Both | Redis is read first; PostgreSQL keeps a copy. A Redis that answers empty while PostgreSQL holds records is refilled from it. |
 | Neither | `load_all()` is None and `save_changes` does nothing: the skill keeps its settings, as it did. |
@@ -128,6 +132,88 @@ Alarms and reminders of real people exist in the old whole-document key.
 - an old pod still running after the migration, and still saving whole
   documents, writes where the new code no longer reads. Roll the skills out
   together and restart the runtime pod (the kit stays in memory until then).
+
+## Operators: running under a per-hub Redis user
+
+A hub often gives its runtime a Redis user that may touch only the hub's own
+keys (an ACL such as `~hub-<id>:*`). The store's default keys start with
+`thalovant:`, which such a user is refused (`NOPERM`). The store then logs **one
+warning** naming the key prefix and the ACL it needs, and the skill keeps its
+records in its settings, as before. Give the store a prefix the user may touch.
+
+**The prefix.** Set `key_prefix` in the skill's settings, or `<PREFIX>_KEY_PREFIX`
+(for that skill), or `THALOVANT_RECORDS_KEY_PREFIX` (for every record skill in the
+runtime; this order wins). It is one or more segments of letters, digits, `_`, `.`
+and `-` joined by single colons (`hub-1:memory`), at most 200 characters. Anything
+else (space, `*`, `?`, `[`, a leading, trailing or doubled colon, non-ASCII) is
+refused: the store uses no Redis, says so once, and PostgreSQL still works if
+configured. With no prefix the keys are exactly what 0.31.0 wrote. The PostgreSQL
+table names do not change, and the old whole-document key `JsonStateStore` uses
+(`thalovant:<scope>:<key>`) stays fixed: a restricted user cannot read it, so
+`load()` answers None and the import is retried at most every five minutes; it
+only matters if you still hold records there.
+
+**Which prefix is right.** The final keys are `<prefix>:records:v1:...`, so the
+prefix must sit inside the ACL's key pattern. `hub-<id>:memory` (the journal's
+own `HIVEMIND_MEMORY_KEY_PREFIX`) is inside both `~hub-<id>:*` and
+`~hub-<id>:memory:*`, so it works under either ACL shape and needs nothing new
+from whoever owns the user; a sibling such as `hub-<id>:skills` needs the wider
+`~hub-<id>:*`. If the journal writer scans or expires everything under its own
+prefix, use the sibling (and the wider ACL) instead so it never meets these keys.
+
+**An OvosRuntime `spec.config.env` recipe.** Kubernetes expands `$(NAME)` only
+for variables defined **earlier** in the same list, so these entries go after the
+`HIVEMIND_MEMORY_*` ones:
+
+```yaml
+env:
+  # ... HIVEMIND_MEMORY_REDIS_HOST / PORT / DB / USERNAME / PASSWORD / KEY_PREFIX first ...
+  - name: THALOVANT_RECORDS_REDIS_URL
+    value: redis://$(HIVEMIND_MEMORY_REDIS_USERNAME):$(HIVEMIND_MEMORY_REDIS_PASSWORD)@$(HIVEMIND_MEMORY_REDIS_HOST):$(HIVEMIND_MEMORY_REDIS_PORT)/$(HIVEMIND_MEMORY_REDIS_DB)
+  - name: THALOVANT_RECORDS_KEY_PREFIX
+    value: $(HIVEMIND_MEMORY_KEY_PREFIX)
+```
+
+**The password is pasted in raw.** `$(...)` does no URL escaping, so a password
+containing any of `@ : / # ? %` (or a space, `+`, `&`) breaks the URL: the host is
+misread and every call fails with a connection or authentication error. Either
+make the password URL-safe (letters and digits) or percent-escape it and keep
+the escaped copy in the Secret as a second key, then read that key:
+
+```sh
+python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" 'p@ss:w/rd+1'
+# p%40ss%3Aw%2Frd%2B1
+```
+
+**What the ACL must allow.** Key pattern `~<prefix>:*` and exactly these
+commands, each one proven necessary against a real Redis 7 (the store's own
+scripts run as the user, so the commands they call count too):
+
+| Command | Used for |
+|---|---|
+| `EVALSHA`, `SCRIPT LOAD` | the Lua scripts that change one owner's record at a time (`SCRIPT LOAD` after a Redis restart) |
+| `HSET`, `HDEL`, `HLEN`, `HGETALL`, `HSETNX` | a record, an owner's hash, the import (put-if-absent) |
+| `SADD`, `SREM`, `SMEMBERS` | the set of owners |
+| `GET`, `SET` | the import marker (`SET NX EX` claims it) |
+| `SELECT` | only if the URL names a database other than 0 |
+
+`DEL`, `EXPIRE`, `SCAN`, `KEYS` and `EVAL` are not used. For example:
+
+```
+ACL SETUSER hub-<id> on '>PASSWORD' '~hub-<id>:*' -@all +evalsha +script|load +hset +hsetnx +hdel +hlen +hgetall +sadd +srem +smembers +get +set +select
+```
+
+(Keep whatever the journal already needs on the same user.) `REDIS_ACL_COMMANDS`
+in [records.py](../thalovant_skillkit/records.py) is this list, and
+`test_a_redis_user_limited_by_an_acl_works_with_a_prefix_inside_it_and_says_no_outside`
+runs the store as such a user on a live Redis.
+
+**What a refusal looks like.** One warning, once per process, for example:
+`record store alarm: Redis refused the request. This store's keys are under
+'thalovant:records:v1:'. If the Redis user is limited by an ACL, it needs the key
+pattern ~thalovant:* ... and the commands ...`. Read it as: the prefix is outside the
+user's keys, or the user lacks a command, or the username or password is wrong. Saves
+then raise `RecordStoreError` with `acl` True; reads answer None.
 
 ## Looking at a person's records
 

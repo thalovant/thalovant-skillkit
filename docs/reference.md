@@ -551,7 +551,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.31.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.31.1"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -943,6 +943,10 @@ write is one step per record, and the owner is hashed into every key. The old
 whole document is imported once and never touched. `testing.FakeRecordStore`
 needs no servers. The full contract, the swap for an existing skill, how to
 inspect a person's records and the limits are in [records.md](records.md).
+
+Under a Redis user limited to some keys, set `key_prefix` (or `THALOVANT_RECORDS_KEY_PREFIX`)
+so every key is `<prefix>:records:v1:...`; a refusal is logged once with the ACL it needs. See
+[records.md](records.md#operators-running-under-a-per-hub-redis-user).
 
 ### Cache and selection choices
 

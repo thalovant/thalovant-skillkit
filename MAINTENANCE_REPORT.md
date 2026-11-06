@@ -1,6 +1,13 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: Release 0.30.0, Python 3.11 as the floor, filelock 4.2.x in the lock, the fallback reply through speak_to, the review's leftovers.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
 # Maintenance report
+
+## 2026-11-06: a key prefix and a one-time ACL warning (0.31.1)
+
+- **Found:** the coordinator's finding that Daily Desk's runtime gets a per-hub Redis user (`HIVEMIND_MEMORY_REDIS_*`, prefix `hub-<id>:memory`), probably ACL-limited to `hub-<id>:`; `RecordStore`'s fixed `thalovant:` keys would be refused (`NOPERM`) and the skill would fall back quietly. Reproduced on a real Redis 7 with a user restricted to `~hub-1:*`: `NoPermissionError` on the first key outside the prefix. Removing each command in turn from the allowed list, with the script cache flushed, showed every command in `REDIS_ACL_COMMANDS` is needed (`SELECT` only for a database other than 0). `THALOVANT_RECORDS_REDIS_URL`, used in the proposed recipe, was read by nothing.
+- **Changed:** `thalovant_skillkit/records.py` (`key_prefix` setting and environment, `valid_key_prefix`, `RedisBackend(prefix=)`, `REDIS_ACL_COMMANDS`, `RecordStoreError.acl`, one warning per process for an ACL refusal, `THALOVANT_RECORDS_REDIS_URL`); `test/test_records.py` (prefix keys, owner set, marker, precedence, good and bad prefixes, two prefixes on one Redis, the once-only warning, a live ACL-limited user); `docs/records.md` (operator section); CHANGELOG; AUDIT; version 0.31.1 (`pyproject.toml`, `version.py`, README and reference pins, the root package line of `uv.lock` only).
+- **Not done here:** `JsonStateStore` keeps its fixed key (a prefix would orphan existing documents); the skills and the OvosRuntime manifests are not changed (the hub's env entries are the owner's to add); nothing was run against the real Daily Desk Redis or its ACL.
+- **Transparency Report:** AI model Claude Sonnet 5.5 (`claude-sonnet-5-5`) in Claude Code made the changes, wrote the tests and these entries, and ran the suite and the ACL probes against Redis 7 and PostgreSQL 16 containers. No human review before the pull request.
 
 ## 2026-11-06: a per-owner record store (0.31.0)
 
