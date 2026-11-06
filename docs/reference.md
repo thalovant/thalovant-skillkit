@@ -551,7 +551,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.30.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.31.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -910,6 +910,8 @@ Redis uses `thalovant:<scope>:<key>`; PostgreSQL keeps the existing
 `thalovant_skill_state(scope, key, value, updated_at)` table. No data migration is
 needed for Alarm, Timer, Reminder or Stopwatch.
 
+(For several owners' records prefer `RecordStore`, below: this document is rewritten whole on every save.)
+
 A cache miss reads PostgreSQL and fills Redis. `save(list_of_records)` attempts
 both stores independently, without a success guarantee. Connection setup failures
 disable that backend for this store instance; rebuild the store to retry setup.
@@ -917,6 +919,30 @@ Skills must validate records, enforce speaker ownership and retain their existin
 local recovery path. This helper adds no in-memory copy or TTL that could hide a
 new state write. It is not a transactional database or a replacement for a
 service-owned persistence contract.
+
+### Per-owner records
+
+`JsonStateStore` keeps all owners' records as one document, and every save
+rewrites all of it: two owners or two hub pods saving together overwrite each
+other. A skill that keeps a person's records (alarms, reminders, timers, lists)
+should use `RecordStore` instead:
+
+```python
+from thalovant_skillkit.records import RecordStore, RecordStoreError
+
+store = RecordStore("alarm", self.settings, env_prefix="THALOVANT_ALARM",
+                    default_key="alarms")                    # same settings as JsonStateStore
+records = store.load_all_with_legacy()                       # at start; None = keep the settings
+store.save_changes(before, after)                            # writes only what changed
+mine = store.load_owner(owner)                               # one person's records, afresh
+```
+
+The records are dicts with an `id` and an `owner` (`id_field` and `owner_field`
+rename them). Redis keeps a hash per owner, PostgreSQL a row per record, every
+write is one step per record, and the owner is hashed into every key. The old
+whole document is imported once and never touched. `testing.FakeRecordStore`
+needs no servers. The full contract, the swap for an existing skill, how to
+inspect a person's records and the limits are in [records.md](records.md).
 
 ### Cache and selection choices
 
