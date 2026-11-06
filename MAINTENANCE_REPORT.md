@@ -1,5 +1,13 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
+## 2026-11-06 — 0.32.0: RecordStore without Lua
+
+`RedisBackend` writes through transactions instead of Lua, because a login that can load a script can take down a shared Redis. Behaviour is unchanged: an owner still leaves the set with their last record, and `WATCH` covers the race the script closed. Redis Cluster stays unsupported.
+
+Verification: `test/test_records.py` on fakeredis and on a real Redis 8.2.9, including as a user limited to `REDIS_ACL_COMMANDS`; results are in the pull request.
+
+Transparency Report. AI Model: Claude Opus 5.5. Actions Taken: rewrote the Redis writes and their tests, updated the docs. Oversight: requested by the owner ("make sure all is perfect"), after an independent review found the crash; no human review before merge.
+
 # Maintenance report
 
 ## 2026-11-06 - 0.31.2: the shared Redis URL switches RecordStore on

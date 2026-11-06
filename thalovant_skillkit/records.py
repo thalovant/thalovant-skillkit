@@ -18,7 +18,7 @@ Where the data lives, chosen from the same settings and environment names as
 
 * Redis, a HASH per owner (`thalovant:records:v1:<scope>:<key>:<owner key>`,
   field = the record's id, value = its JSON) and a SET of the owner keys, every
-  write one Lua step.
+  write one transaction.
 * PostgreSQL, a row per record in `thalovant_records`, upserted and deleted by
   primary key in one transaction.
 * With both set, Redis is read first and PostgreSQL keeps a copy; a Redis that
@@ -40,7 +40,7 @@ bucket.
 
 What it does not do: it is last-writer-wins for a record changed by two pods at
 once, and there is no transaction across records. Redis Cluster is not
-supported (the scripts touch two keys).
+supported (a transaction touches two keys).
 """
 
 from __future__ import annotations
@@ -76,14 +76,18 @@ _KEY_PREFIX = re.compile(r"[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)*\Z")
 MAX_KEY_PREFIX = 200
 
 #: What the Redis backend asks of Redis, for an operator who limits the user with an ACL
-#: (`ACL SETUSER <user> on ><password> ~<prefix>:* -@all +evalsha +script|load ...`).
-#: The Lua scripts call HSET, HSETNX, HDEL, HLEN, SADD and SREM; the reads are HGETALL and
-#: SMEMBERS; the migration marker is GET and SET (with NX and EX); EVALSHA runs the scripts and
-#: SCRIPT LOAD is how the client puts them in once per Redis start. SELECT is only sent when the
-#: URL names a database other than 0.
+#: (`ACL SETUSER <user> on ><password> ~<prefix>:* -@all +multi +exec +discard +watch ...`).
+#: A record changes in one MULTI; a delete WATCHes the owner's hash, because only the last
+#: record takes the owner out of the set. The reads are HGETALL and SMEMBERS, the migration
+#: marker is GET and SET (with NX and EX). SELECT is only sent when the URL names a database
+#: other than 0.
+#:
+#: No Lua on purpose. Redis does not count a script's memory against maxmemory, so a login that
+#: can load a script can take down a Redis it shares, and every skill in a runtime can read this
+#: login. A skill's user therefore needs no EVAL, EVALSHA or SCRIPT LOAD for this store.
 REDIS_ACL_COMMANDS = (
-    "EVALSHA", "SCRIPT LOAD", "HSET", "HSETNX", "HDEL", "HLEN", "HGETALL", "SADD", "SREM",
-    "SMEMBERS", "GET", "SET", "SELECT",
+    "MULTI", "EXEC", "DISCARD", "WATCH", "UNWATCH", "HSET", "HSETNX", "HDEL", "HLEN", "HEXISTS",
+    "HGETALL", "SADD", "SREM", "SMEMBERS", "GET", "SET", "SELECT",
 )
 
 #: The bucket of a record with no owner field. Not a hash, so it cannot be an owner's key.
@@ -264,29 +268,13 @@ class MemoryBackend:
             self.meta["migration"] = "done"
 
 
-#: KEYS: owner hash, owner set. ARGV: id, body, owner key.
-_PUT = """
-redis.call('HSET', KEYS[1], ARGV[1], ARGV[2])
-redis.call('SADD', KEYS[2], ARGV[3])
-return 1
-"""
-#: KEYS: owner hash, owner set. ARGV: id, body, owner key. Returns 1 when the record was new.
-_PUT_NX = """
-local added = redis.call('HSETNX', KEYS[1], ARGV[1], ARGV[2])
-redis.call('SADD', KEYS[2], ARGV[3])
-return added
-"""
-#: KEYS: owner hash, owner set. ARGV: id, owner key.
-#: The owner leaves the set with their last record.
-_DELETE = """
-local gone = redis.call('HDEL', KEYS[1], ARGV[1])
-if redis.call('HLEN', KEYS[1]) == 0 then redis.call('SREM', KEYS[2], ARGV[2]) end
-return gone
-"""
+#: How many times a delete starts over when the owner's hash changes under it. Each owner has
+#: their own hash, so this only takes that person writing from two pods at the same moment.
+DELETE_ATTEMPTS = 8
 
 
 class RedisBackend:
-    """A HASH per owner and a SET of the owners, changed by one Lua step per record.
+    """A HASH per owner and a SET of the owners, changed by one transaction per record.
 
         <prefix>:records:v1:<scope>:<key>:<owner key>   HASH id -> JSON body
         <prefix>:records:v1:<scope>:<key>:owners        SET  owner keys
@@ -306,10 +294,6 @@ class RedisBackend:
         self.prefix = prefix
         self.namespace = f"{prefix}:records:v1:"
         self._base = f"{self.namespace}{quote(scope, safe='')}:{quote(key, safe='')}"
-        self._scripts = {
-            name: client.register_script(body)
-            for name, body in (("put", _PUT), ("put_nx", _PUT_NX), ("delete", _DELETE))
-        }
 
     def _hash(self, ok: str) -> str:
         return f"{self._base}:{ok}"
@@ -335,18 +319,45 @@ class RedisBackend:
             found.extend(self.load_owner(ok))
         return found
 
+    def _delete(self, ok: str, rid: str) -> None:
+        """Remove one record, and the owner from the set with their last one.
+
+        The hash is watched so a record written after the check cannot lose its owner: such a
+        write makes EXEC return nothing, and the delete starts over.
+        """
+        key = self._hash(ok)
+        for attempt in range(1, DELETE_ATTEMPTS + 1):
+            with self._client.pipeline(transaction=True) as pipe:
+                try:
+                    pipe.watch(key)
+                    size = pipe.hlen(key)
+                    last = size == 0 or (size == 1 and bool(pipe.hexists(key, rid)))
+                    pipe.multi()
+                    pipe.hdel(key, rid)
+                    if last:
+                        pipe.srem(self._owners, ok)
+                    pipe.execute()
+                    return
+                except Exception as error:  # redis is an optional dependency, so no import here
+                    if type(error).__name__ != "WatchError" or attempt == DELETE_ATTEMPTS:
+                        raise
+
     def apply(self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]]) -> None:
         for ok, rid, body in puts:
-            self._scripts["put"](keys=[self._hash(ok), self._owners], args=[rid, body, ok])
+            with self._client.pipeline(transaction=True) as pipe:
+                pipe.hset(self._hash(ok), rid, body)
+                pipe.sadd(self._owners, ok)
+                pipe.execute()
         for ok, rid in deletes:
-            self._scripts["delete"](keys=[self._hash(ok), self._owners], args=[rid, ok])
+            self._delete(ok, rid)
 
     def put_if_absent(self, items: list[tuple[str, str, str]]) -> int:
         added = 0
         for ok, rid, body in items:
-            added += int(
-                self._scripts["put_nx"](keys=[self._hash(ok), self._owners], args=[rid, body, ok])
-            )
+            with self._client.pipeline(transaction=True) as pipe:
+                pipe.hsetnx(self._hash(ok), rid, body)
+                pipe.sadd(self._owners, ok)
+                added += int(pipe.execute()[0])
         return added
 
     def migration_state(self) -> str:

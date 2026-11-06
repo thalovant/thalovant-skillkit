@@ -1,4 +1,4 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: RecordStore uses no Lua, so a skill's Redis login needs no scripting right.
 Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store for the skills that keep a person's records.
 
 # Per-owner records (`thalovant_skillkit.records`)
@@ -186,22 +186,25 @@ python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=
 ```
 
 **What the ACL must allow.** Key pattern `~<prefix>:*` and exactly these
-commands, each one proven necessary against a real Redis 7 (the store's own
-scripts run as the user, so the commands they call count too):
+commands, run against a real Redis 8.2.9. The store uses no Lua, so a skill's login
+needs no scripting right: Redis doesn't count a script's memory against `maxmemory`,
+so a login that can load a script can take down a Redis it shares.
 
 | Command | Used for |
 |---|---|
-| `EVALSHA`, `SCRIPT LOAD` | the Lua scripts that change one owner's record at a time (`SCRIPT LOAD` after a Redis restart) |
-| `HSET`, `HDEL`, `HLEN`, `HGETALL`, `HSETNX` | a record, an owner's hash, the import (put-if-absent) |
+| `MULTI`, `EXEC`, `DISCARD`, `WATCH`, `UNWATCH` | one transaction per record; a delete watches the owner's hash |
+| `HSET`, `HDEL`, `HLEN`, `HEXISTS`, `HGETALL`, `HSETNX` | a record, an owner's hash, the import (put-if-absent) |
 | `SADD`, `SREM`, `SMEMBERS` | the set of owners |
 | `GET`, `SET` | the import marker (`SET NX EX` claims it) |
 | `SELECT` | only if the URL names a database other than 0 |
 
-`DEL`, `EXPIRE`, `SCAN`, `KEYS` and `EVAL` are not used. For example:
+`DEL`, `EXPIRE`, `SCAN`, `KEYS`, `EVAL`, `EVALSHA` and `SCRIPT LOAD` are not used. For example:
 
 ```
-ACL SETUSER hub-<id> on '>PASSWORD' '~hub-<id>:*' -@all +evalsha +script|load +hset +hsetnx +hdel +hlen +hgetall +sadd +srem +smembers +get +set +select
+ACL SETUSER hub-<id> on '>PASSWORD' '~hub-<id>:*' -@all +multi +exec +discard +watch +unwatch +hset +hsetnx +hdel +hlen +hexists +hgetall +sadd +srem +smembers +get +set
 ```
+
+This example is for database 0. If the URL names another database, add `+select`.
 
 (Keep whatever the journal already needs on the same user.) `REDIS_ACL_COMMANDS`
 in [records.py](../thalovant_skillkit/records.py) is this list, and
