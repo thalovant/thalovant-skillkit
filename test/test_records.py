@@ -1,8 +1,8 @@
 """The per-owner record store: one operation suite on every backend, then two pods at once.
 
-The in-memory backend runs on a dict, Redis on fakeredis (which runs the real
-Lua), PostgreSQL through the real SQL over a sqlite3 connection that speaks
-psycopg's dialect (`PgOverSqlite`). The `-live` kinds run the same suite on a
+The in-memory backend runs on a dict, Redis on fakeredis, PostgreSQL through the
+real SQL over a sqlite3 connection that speaks psycopg's dialect (`PgOverSqlite`).
+The `-live` kinds run the same suite on a
 real Redis and a real PostgreSQL when `THALOVANT_RECORDS_TEST_REDIS_URL` /
 `THALOVANT_RECORDS_TEST_DATABASE_URL` name one (they are emptied first: use
 scratch servers); otherwise they are skipped.
@@ -21,6 +21,7 @@ import pytest
 from thalovant_skillkit import records
 from thalovant_skillkit.records import (
     DEFAULT_KEY_PREFIX,
+    DELETE_ATTEMPTS,
     MAX_BODY_BYTES,
     REDIS_ACL_COMMANDS,
     UNOWNED,
@@ -799,16 +800,36 @@ class DeniedRedis:
     def __init__(self, error):
         self._error = error
 
-    def register_script(self, body):
-        def call(*args, **kwargs):
-            raise self._error
-
-        return call
+    def pipeline(self, transaction=True):
+        return DeniedPipeline(self._error)
 
     def _refuse(self, *args, **kwargs):
         raise self._error
 
     smembers = hgetall = get = set = _refuse
+
+
+class DeniedPipeline:
+    """Refuses at EXEC or WATCH, where a real transaction reports a NOPERM."""
+
+    def __init__(self, error):
+        self._error = error
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def _queue(self, *args, **kwargs):
+        return self
+
+    hset = hsetnx = hdel = sadd = srem = multi = _queue
+
+    def _refuse(self, *args, **kwargs):
+        raise self._error
+
+    watch = execute = hlen = hexists = _refuse
 
 
 def denied(message="No permissions to access a key", kind=None):
@@ -969,3 +990,143 @@ def test_the_shared_redis_url_sits_between_the_skills_own_and_the_generic_one(mo
     monkeypatch.delenv("THALOVANT_ALARM_REDIS_URL")
     assert url({"redis_url": "redis://setting"}) == "redis://setting"
 
+
+# ---- no Lua, and a delete that cannot lose a record's owner ------------------------------------
+
+
+class SpyRedis:
+    """A real client's calls, recorded: nothing here may need a scripting right."""
+
+    def __init__(self, inner):
+        self._inner = inner
+        self.used = []
+
+    def __getattr__(self, name):
+        self.used.append(name)
+        return getattr(self._inner, name)
+
+
+def test_the_redis_backend_never_uses_a_script():
+    spy = SpyRedis(fakeredis.FakeStrictRedis(server=fakeredis.FakeServer()))
+    backend = RedisBackend(spy, SCOPE, KEY)
+    backend.apply([("o", "1", "{}"), ("o", "2", "{}")], [("o", "1")])
+    backend.put_if_absent([("o", "3", "{}")])
+    backend.load_all()
+
+    assert not {"register_script", "eval", "evalsha", "script_load"} & set(spy.used)
+    assert not {"EVAL", "EVALSHA", "SCRIPT LOAD"} & set(REDIS_ACL_COMMANDS)
+
+
+def _pair():
+    server = fakeredis.FakeServer()
+    return (
+        RedisBackend(fakeredis.FakeStrictRedis(server=server), SCOPE, KEY),
+        fakeredis.FakeStrictRedis(server=server),
+    )
+
+
+def test_put_writes_the_record_and_the_owner_together():
+    backend, client = _pair()
+    backend.apply([("o", "1", "{}")], [])
+    assert client.hget(backend._hash("o"), "1") == b"{}"
+    assert client.smembers(backend._owners) == {b"o"}
+
+
+def test_put_if_absent_counts_only_what_was_new():
+    backend, _ = _pair()
+    assert backend.put_if_absent([("o", "1", "a"), ("o", "1", "b"), ("o", "2", "c")]) == 2
+    assert dict((rid, body) for _, rid, body in backend.load_owner("o")) == {"1": "a", "2": "c"}
+
+
+@pytest.mark.parametrize(
+    "records,deleted,stays",
+    [
+        (["1"], "1", False),  # the last record takes the owner out
+        (["1", "2"], "1", True),  # another record keeps them in
+        (["2"], "1", True),  # deleting what is not there leaves another record alone
+        ([], "1", False),  # an empty hash has no owner to keep
+    ],
+)
+def test_the_owner_leaves_with_their_last_record(records, deleted, stays):
+    backend, client = _pair()
+    client.sadd(backend._owners, "o")
+    for rid in records:
+        client.hset(backend._hash("o"), rid, "{}")
+
+    backend.apply([], [("o", deleted)])
+
+    assert (b"o" in client.smembers(backend._owners)) is stays
+    assert client.hexists(backend._hash("o"), deleted) is False
+
+
+def test_a_write_during_a_delete_keeps_the_owner():
+    """The record that arrives between the delete's check and its EXEC must not lose its owner."""
+    backend, client = _pair()
+    backend.apply([("o", "1", "{}")], [])
+    real_pipeline = backend._client.pipeline
+    raced = []
+
+    def pipeline(transaction=True):
+        pipe = real_pipeline(transaction=transaction)
+        real_multi = pipe.multi
+
+        def multi():
+            if not raced:
+                raced.append(True)
+                # Another pod saves a second record after this delete read HLEN == 1.
+                client.hset(backend._hash("o"), "2", "{}")
+                client.sadd(backend._owners, "o")
+            real_multi()
+
+        pipe.multi = multi
+        return pipe
+
+    backend._client.pipeline = pipeline
+
+    backend.apply([], [("o", "1")])
+
+    assert raced
+    assert client.hkeys(backend._hash("o")) == [b"2"]
+    assert client.smembers(backend._owners) == {b"o"}
+
+
+def test_a_delete_that_keeps_losing_the_race_gives_up_with_the_error():
+    redis = pytest.importorskip("redis")
+    backend, _ = _pair()
+    backend.apply([("o", "1", "{}")], [])
+    tries = []
+
+    class AlwaysRaced:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def watch(self, key):
+            tries.append(key)
+
+        def hlen(self, key):
+            return 1
+
+        def hexists(self, key, rid):
+            return True
+
+        def multi(self):
+            pass
+
+        def hdel(self, *a):
+            pass
+
+        def srem(self, *a):
+            pass
+
+        def execute(self):
+            raise redis.exceptions.WatchError("changed")
+
+    backend._client.pipeline = lambda transaction=True: AlwaysRaced()
+
+    with pytest.raises(redis.exceptions.WatchError):
+        backend.apply([], [("o", "1")])
+
+    assert len(tries) == DELETE_ATTEMPTS

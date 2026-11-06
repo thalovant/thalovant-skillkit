@@ -1,6 +1,10 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
 # Changelog
+
+## 0.32.0
+
+- **`RecordStore` no longer uses Lua on Redis.** A record changes in one `MULTI`, and a delete watches the owner's hash. Redis doesn't count a script's memory against `maxmemory`, so a login that can load a script can take down a shared Redis with one script, and every skill in a runtime can read this login. A limited Redis user now needs `MULTI`, `EXEC`, `DISCARD`, `WATCH`, `UNWATCH` and `HEXISTS`, and no longer needs `EVALSHA` or `SCRIPT LOAD`. **Grant the new commands before a runtime takes this version:** without them every save is refused and the skill keeps its change in memory.
 
 ## 0.31.2
 

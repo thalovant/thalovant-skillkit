@@ -1,5 +1,10 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+
+## 2026-11-06 — RecordStore needed Lua, which could take down a shared Redis
+
+An independent review ran `SCRIPT LOAD` and `EVALSHA` with a runtime login's rights on Redis 8.2.9 and built a string past the container's memory limit from Lua. Redis was OOM-killed (`oom=true exit=137`). Lua memory isn't limited by `maxmemory`. RecordStore was the only reason a runtime login needed those rights. `RedisBackend` in `thalovant_skillkit/records.py` now uses `MULTI` and `WATCH`, tested by `test_the_redis_backend_never_uses_a_script` and `test_a_write_during_a_delete_keeps_the_owner` in `test/test_records.py`. The login's rights are removed in hivemind-k8s-operator.
+
 # Audit
 
 ## 2026-11-06 key prefix and a Redis that refuses (0.31.1)
