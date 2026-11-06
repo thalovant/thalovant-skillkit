@@ -18,7 +18,9 @@ from contextlib import contextmanager
 import pytest
 
 from thalovant_skillkit.records import (
+    DEFAULT_KEY_PREFIX,
     MAX_BODY_BYTES,
+    REDIS_ACL_COMMANDS,
     UNOWNED,
     Changes,
     MemoryBackend,
@@ -27,6 +29,7 @@ from thalovant_skillkit.records import (
     RecordStoreError,
     RedisBackend,
     owner_key,
+    valid_key_prefix,
 )
 from thalovant_skillkit.storage import JsonStateStore
 from thalovant_skillkit.testing import FakeRecordStore
@@ -603,3 +606,305 @@ def test_owner_keys_are_fixed_size_and_stable():
     assert owner_key("anna") == owner_key("anna") and len(owner_key("x" * 10**6)) == 40
     assert len(owner_key("\ud800")) == 40 and owner_key("\ud800") != owner_key("\ud801")
     assert owner_key("a") != owner_key("a:b") and owner_key("") != UNOWNED
+
+
+# ---- a key prefix, for a Redis user that may only touch some keys -------------------------------
+
+
+def names(server) -> list[str]:
+    return sorted(k.decode() for k in fakeredis.FakeStrictRedis(server=server).keys("*"))
+
+
+def build_on(server, monkeypatch, settings=None, env_prefix="THALOVANT_ALARM"):
+    monkeypatch.setattr(
+        JsonStateStore, "_redis_client", lambda self: fakeredis.FakeStrictRedis(server=server)
+    )
+    base = {"redis_url": "redis://example"}
+    return RecordStore(
+        SCOPE, {**base, **(settings or {})}, env_prefix=env_prefix, default_key=KEY
+    )
+
+
+def test_without_a_prefix_the_keys_are_what_0_31_0_wrote(monkeypatch):
+    for name in ("THALOVANT_ALARM_KEY_PREFIX", "THALOVANT_RECORDS_KEY_PREFIX"):
+        monkeypatch.delenv(name, raising=False)
+    server = fakeredis.FakeServer()
+    store = build_on(server, monkeypatch)
+    assert store.key_prefix == DEFAULT_KEY_PREFIX == "thalovant"
+    store.save_changes([], [rec("anna", "1")])
+    store.migrate_legacy(LegacyDocument([rec("ben", "1")]))
+    ok = owner_key("anna")
+    assert names(server) == sorted([
+        f"thalovant:records:v1:alarm:alarms:{ok}",
+        f"thalovant:records:v1:alarm:alarms:{owner_key('ben')}",
+        "thalovant:records:v1:alarm:alarms:owners",
+        "thalovant:records:v1:alarm:alarms:migration",
+    ])
+
+
+@pytest.mark.parametrize("how", ["setting", "own-env", "shared-env"])
+def test_every_redis_key_goes_under_the_prefix(monkeypatch, how):
+    for name in ("THALOVANT_ALARM_KEY_PREFIX", "THALOVANT_RECORDS_KEY_PREFIX"):
+        monkeypatch.delenv(name, raising=False)
+    prefix = "hub-0f8e6e0e-4e2b:memory"
+    settings = {}
+    if how == "setting":
+        settings["key_prefix"] = prefix
+    elif how == "own-env":
+        monkeypatch.setenv("THALOVANT_ALARM_KEY_PREFIX", prefix)
+    else:
+        monkeypatch.setenv("THALOVANT_RECORDS_KEY_PREFIX", prefix)
+    server = fakeredis.FakeServer()
+    store = build_on(server, monkeypatch, settings)
+    assert store.key_prefix == prefix
+    store.save_changes([], [rec("anna", "1"), rec("anna", "2")])
+    assert store.migrate_legacy(LegacyDocument([rec("ben", "1")])) == 1
+    found = names(server)
+    assert len(found) == 4, found
+    assert all(n.startswith(f"{prefix}:records:v1:alarm:alarms:") for n in found), found
+    assert f"{prefix}:records:v1:alarm:alarms:owners" in found
+    assert f"{prefix}:records:v1:alarm:alarms:migration" in found
+    assert by_id(store.load_all()) == by_id([rec("anna", "1"), rec("anna", "2"), rec("ben", "1")])
+
+
+def test_the_setting_beats_its_own_environment_beats_the_shared_one(monkeypatch):
+    monkeypatch.setenv("THALOVANT_ALARM_KEY_PREFIX", "own")
+    monkeypatch.setenv("THALOVANT_RECORDS_KEY_PREFIX", "shared")
+    server = fakeredis.FakeServer()
+    assert build_on(server, monkeypatch, {"key_prefix": "setting"}).key_prefix == "setting"
+    assert build_on(server, monkeypatch).key_prefix == "own"
+    monkeypatch.delenv("THALOVANT_ALARM_KEY_PREFIX")
+    assert build_on(server, monkeypatch).key_prefix == "shared"
+
+
+def test_two_prefixes_on_one_redis_never_meet(monkeypatch):
+    server = fakeredis.FakeServer()
+    one = build_on(server, monkeypatch, {"key_prefix": "hub-1:memory"})
+    two = build_on(server, monkeypatch, {"key_prefix": "hub-1:memory2"})
+    three = build_on(server, monkeypatch, {"key_prefix": "hub-1"})
+    one.save_changes([], [rec("anna", "1", where="one")])
+    two.save_changes([], [rec("anna", "1", where="two")])
+    assert one.load_all() == [rec("anna", "1", where="one")]
+    assert two.load_all() == [rec("anna", "1", where="two")]
+    assert three.load_all() == []
+
+
+GOOD_PREFIXES = ["a", "hub-1:memory", "a.b-c_d:e", "x" * 200, "hub-0f8e6e0e-4e2b-4a0c-9b6c:skills"]
+BAD_PREFIXES = [
+    "", " ", "a b", "a*", "a?", "a[1]", "{a}", "a:", ":a", "a::b", "a\n", "é", "x" * 201, "a/b",
+    "a%3Ab", "a\0b",
+]
+# Spaces around a setting are trimmed, so these two are only bad to the validator, not as settings.
+TRIMMED = {" ", "a\n"}
+
+
+@pytest.mark.parametrize("prefix", GOOD_PREFIXES)
+def test_a_usable_prefix_is_accepted(prefix, monkeypatch):
+    assert valid_key_prefix(prefix)
+    server = fakeredis.FakeServer()
+    store = build_on(server, monkeypatch, {"key_prefix": prefix})
+    store.save_changes([], [rec("anna", "1")])
+    assert all(n.startswith(f"{prefix}:records:v1:") for n in names(server))
+
+
+@pytest.mark.parametrize("prefix", [p for p in BAD_PREFIXES if p and p not in TRIMMED])
+def test_an_unusable_prefix_turns_redis_off_and_says_so_once(prefix, monkeypatch, caplog):
+    assert not valid_key_prefix(prefix)
+    server = fakeredis.FakeServer()
+    store = build_on(server, monkeypatch, {"key_prefix": prefix})
+    with caplog.at_level("WARNING", logger="thalovant_skillkit.records"):
+        assert store.load_all() is None
+        assert store.save_changes([], [rec("anna", "1")]) == Changes()
+        assert store.load_all() is None
+    assert names(server) == [], "nothing was written under any key"
+    messages = [r.getMessage() for r in caplog.records if "key prefix" in r.getMessage()]
+    assert len(messages) == 1, messages
+
+
+def test_the_validator_refuses_every_bad_prefix():
+    assert not any(valid_key_prefix(p) for p in BAD_PREFIXES)
+
+
+def test_an_empty_prefix_is_the_default_not_an_error(monkeypatch):
+    monkeypatch.delenv("THALOVANT_RECORDS_KEY_PREFIX", raising=False)
+    store = build_on(fakeredis.FakeServer(), monkeypatch, {"key_prefix": "  "})
+    assert store.key_prefix == "thalovant" and not valid_key_prefix("")
+
+
+def test_a_bad_prefix_leaves_postgres_working(tmp_path, monkeypatch):
+    path = str(tmp_path / "pg.sqlite")
+    monkeypatch.setattr(
+        JsonStateStore, "_redis_client", lambda self: fakeredis.FakeStrictRedis()
+    )
+    store = RecordStore(
+        SCOPE, {"redis_url": "redis://x", "database_url": "postgresql://x", "key_prefix": "a b"},
+        env_prefix="X", default_key=KEY,
+    )
+    store._backends = [PostgresBackend(lambda: PgOverSqlite(path), SCOPE, KEY)]
+    store._built = True
+    store.save_changes([], [rec("anna", "1")])
+    assert store.load_all() == [rec("anna", "1")]
+
+
+# ---- a Redis that says no -----------------------------------------------------------------------
+
+
+class DeniedRedis:
+    """A client whose Redis refuses everything, as an ACL does (`NOPERM`)."""
+
+    def __init__(self, error):
+        self._error = error
+
+    def register_script(self, body):
+        def call(*args, **kwargs):
+            raise self._error
+
+        return call
+
+    def _refuse(self, *args, **kwargs):
+        raise self._error
+
+    smembers = hgetall = get = set = _refuse
+
+
+def denied(message="No permissions to access a key", kind=None):
+    redis = pytest.importorskip("redis")
+    return (kind or redis.exceptions.NoPermissionError)(message)
+
+
+def test_a_refusal_by_redis_is_logged_once_with_the_prefix_and_the_commands(caplog):
+    backend = RedisBackend(DeniedRedis(denied()), SCOPE, KEY, "hub-1:memory")
+    store = RecordStore(SCOPE, {}, env_prefix="X", default_key=KEY, backends=[backend])
+    with caplog.at_level("WARNING", logger="thalovant_skillkit.records"):
+        for _ in range(3):
+            assert store.load_all() is None
+            assert store.load_owner("anna") is None
+        for _ in range(2):
+            with pytest.raises(RecordStoreError) as raised:
+                store.save_changes([], [rec("anna", "1")])
+            assert raised.value.acl
+        assert store.load_all_with_legacy(LegacyDocument([rec("anna", "1")])) is None
+        assert store.load_all_with_legacy(LegacyDocument([rec("anna", "1")])) is None
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1, warnings
+    text = warnings[0]
+    assert "hub-1:memory:records:v1:" in text and "ACL" in text and "NoPermissionError" in text
+    assert "~hub-1:memory:*" in text and "key_prefix" in text
+    assert all(command in text for command in REDIS_ACL_COMMANDS)
+
+
+def test_other_failures_still_warn_each_time(caplog):
+    backend = RedisBackend(DeniedRedis(OSError("connection reset")), SCOPE, KEY)
+    store = RecordStore(SCOPE, {}, env_prefix="X", default_key=KEY, backends=[backend])
+    with caplog.at_level("WARNING", logger="thalovant_skillkit.records"):
+        for _ in range(3):
+            assert store.load_all() is None
+    assert len([r for r in caplog.records if r.levelname == "WARNING"]) == 3
+
+
+@pytest.mark.parametrize(
+    "message",
+    ["WRONGPASS invalid username-password pair", "NOAUTH Authentication required"],
+)
+def test_a_wrong_password_is_told_with_the_same_hint(message, caplog):
+    backend = RedisBackend(DeniedRedis(denied(message, kind=ConnectionError)), SCOPE, KEY)
+    store = RecordStore(SCOPE, {}, env_prefix="X", default_key=KEY, backends=[backend])
+    with caplog.at_level("WARNING", logger="thalovant_skillkit.records"):
+        store.load_all()
+        store.load_all()
+    warnings = [r.getMessage() for r in caplog.records]
+    assert len(warnings) == 1 and "ACL" in warnings[0] and "password" in warnings[0]
+
+
+def test_postgres_still_serves_when_redis_refuses(tmp_path, caplog):
+    cache = RedisBackend(DeniedRedis(denied()), SCOPE, KEY, "hub-1:memory")
+    durable = PostgresBackend(lambda: PgOverSqlite(str(tmp_path / "pg.sqlite")), SCOPE, KEY)
+    store = RecordStore(SCOPE, {}, env_prefix="X", default_key=KEY, backends=[cache, durable])
+    with caplog.at_level("WARNING", logger="thalovant_skillkit.records"):
+        with pytest.raises(RecordStoreError):
+            store.save_changes([], [rec("anna", "1")])
+        assert store.load_all() == [rec("anna", "1")], "PostgreSQL took it and serves it"
+        with pytest.raises(RecordStoreError):
+            store.save_changes([rec("anna", "1")], [rec("anna", "1", due=2)])
+    assert len([r for r in caplog.records if "ACL" in r.getMessage()]) == 1
+
+
+def test_a_redis_user_limited_by_an_acl_works_with_a_prefix_inside_it_and_says_no_outside():
+    """A real Redis, a user that may touch only `hub-1:*` and run only the documented commands."""
+    url = os.environ.get("THALOVANT_RECORDS_TEST_REDIS_URL")
+    if not url:
+        pytest.skip("no THALOVANT_RECORDS_TEST_REDIS_URL")
+    import logging
+    import urllib.parse
+
+    import redis
+
+    admin = redis.Redis.from_url(url)
+    admin.flushdb()
+    password = "p@ss:w/rd+1#?%"  # every character that breaks an unescaped URL
+    admin.acl_setuser(
+        "hubuser", enabled=True, passwords=[f"+{password}"], keys=["hub-1:*"],
+        commands=["-@all"] + [f"+{c.lower().replace(' ', '|')}" for c in REDIS_ACL_COMMANDS],
+        reset=True,
+    )
+    base = urllib.parse.urlsplit(url)
+    escaped = urllib.parse.quote(password, safe="")
+    # database 0 here; a URL naming another database also needs SELECT, which the list has.
+    limited = f"redis://hubuser:{escaped}@{base.hostname}:{base.port}/{base.path.strip('/') or 0}"
+    try:
+        inside = RecordStore(
+            "live",
+            {"redis_url": limited, "key_prefix": "hub-1:memory"},
+            env_prefix="THALOVANT_LIVE",
+            default_key="things",
+        )
+        records = [rec("anna", "1", due=1), rec("anna", "2"), rec("ben", "1")]
+        assert inside.load_all_with_legacy(LegacyDocument([rec("anna", "9")])) == [rec("anna", "9")]
+        inside.save_changes([rec("anna", "9")], records)
+        assert by_id(inside.load_all()) == by_id(records)
+        assert by_id(inside.load_owner("anna")) == by_id(records[:2])
+        inside.save_changes(records, records[:1])
+        assert inside.load_all() == records[:1] and inside.owners() == [owner_key("anna")]
+        assert all(k.decode().startswith("hub-1:memory:records:v1:") for k in admin.keys("*"))
+        # The default prefix is outside the user's keys: NOPERM, said once; the skill falls back.
+        records_log = logging.getLogger("thalovant_skillkit.records")
+        seen: list[str] = []
+        handler = logging.Handler()
+        handler.emit = lambda record: seen.append(record.getMessage())  # type: ignore[method-assign]
+        records_log.addHandler(handler)
+        try:
+            outside = RecordStore(
+                "live", {"redis_url": limited}, env_prefix="THALOVANT_LIVE", default_key="things"
+            )
+            assert outside.load_all() is None and outside.load_all() is None
+            with pytest.raises(RecordStoreError) as raised:
+                outside.save_changes([], [rec("anna", "1")])
+            assert raised.value.acl
+        finally:
+            records_log.removeHandler(handler)
+        hints = [m for m in seen if "ACL" in m]
+        assert len(hints) == 1 and "thalovant:records:v1:" in hints[0], seen
+    finally:
+        admin.acl_deluser("hubuser")
+        admin.flushdb()
+
+
+def test_the_shared_redis_url_sits_between_the_skills_own_and_the_generic_one(monkeypatch):
+    for name in ("THALOVANT_ALARM_REDIS_URL", "THALOVANT_RECORDS_REDIS_URL", "REDIS_URL"):
+        monkeypatch.delenv(name, raising=False)
+
+    def url(settings=None):
+        store = RecordStore(SCOPE, settings or {}, env_prefix="THALOVANT_ALARM", default_key=KEY)
+        return store._config.redis_url
+
+    assert url() == ""
+    monkeypatch.setenv("REDIS_URL", "redis://generic")
+    assert url() == "redis://generic"
+    monkeypatch.setenv("THALOVANT_RECORDS_REDIS_URL", "redis://shared")
+    assert url() == "redis://shared"
+    monkeypatch.setenv("THALOVANT_ALARM_REDIS_URL", "redis://own")
+    assert url() == "redis://own"
+    assert url({"redis_url": "redis://setting"}) == "redis://setting"
+    monkeypatch.delenv("THALOVANT_ALARM_REDIS_URL")
+    assert url({"redis_url": "redis://setting"}) == "redis://setting"
+

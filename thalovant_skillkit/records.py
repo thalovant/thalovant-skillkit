@@ -26,6 +26,12 @@ Where the data lives, chosen from the same settings and environment names as
 * With neither, `load_all` returns None and `save_changes` does nothing: the
   skill keeps its own settings, exactly as before.
 
+Redis keys start with `thalovant` unless the operator sets a key prefix
+(`key_prefix`, `<PREFIX>_KEY_PREFIX` or `THALOVANT_RECORDS_KEY_PREFIX`), so a
+Redis user whose ACL allows only `hub-<id>:*` can be given `hub-<id>:memory`.
+A refusal by Redis's ACL or password is logged once, with the hint, and the
+skill keeps its settings.
+
 An owner is a label (the hub connection's), turned into a 40-hex key by hashing
 (`owner_key`): no separator from a label ever reaches a key or a row, so "a" and
 "a:b", an empty label, unicode or a megabyte of text cannot reach another
@@ -42,6 +48,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import re
 import threading
 import time
 import uuid
@@ -56,10 +64,27 @@ from thalovant_skillkit.storage import JsonStateStore
 LOG = logging.getLogger(__name__)
 
 #: Every key and the table names carry this, so the layout can change without touching old data.
-PREFIX = "thalovant:records:v1"
+DEFAULT_KEY_PREFIX = "thalovant"
+PREFIX = f"{DEFAULT_KEY_PREFIX}:records:v1"
 TABLE = "thalovant_records"
 META_TABLE = "thalovant_records_meta"
 _SALT = b"thalovant-records/v1\0"
+
+#: A key prefix is colon-separated words of these characters: what a Redis ACL pattern such as
+#: `~hub-<id>:memory:*` can be written for, with nothing a glob or a script could read as more.
+_KEY_PREFIX = re.compile(r"[A-Za-z0-9_.-]+(?::[A-Za-z0-9_.-]+)*\Z")
+MAX_KEY_PREFIX = 200
+
+#: What the Redis backend asks of Redis, for an operator who limits the user with an ACL
+#: (`ACL SETUSER <user> on ><password> ~<prefix>:* -@all +evalsha +script|load ...`).
+#: The Lua scripts call HSET, HSETNX, HDEL, HLEN, SADD and SREM; the reads are HGETALL and
+#: SMEMBERS; the migration marker is GET and SET (with NX and EX); EVALSHA runs the scripts and
+#: SCRIPT LOAD is how the client puts them in once per Redis start. SELECT is only sent when the
+#: URL names a database other than 0.
+REDIS_ACL_COMMANDS = (
+    "EVALSHA", "SCRIPT LOAD", "HSET", "HSETNX", "HDEL", "HLEN", "HGETALL", "SADD", "SREM",
+    "SMEMBERS", "GET", "SET", "SELECT",
+)
 
 #: The bucket of a record with no owner field. Not a hash, so it cannot be an owner's key.
 UNOWNED = "_unowned"
@@ -77,10 +102,17 @@ LEGACY_RECHECK_SECONDS = 300.0
 class RecordStoreError(Exception):
     """Records could not be read or written.
 
+    `acl` is True when Redis refused the user or the key (a wrong password, or an ACL that does not
+    allow these keys or commands): the store has already logged that, once, with the hint.
+
     A save that raises this has not been made as a whole: the caller keeps its
     in-memory change, logs, and tries again at its next save (compare with the
     snapshot it last persisted, so the same change is sent again).
     """
+
+    def __init__(self, message: str = "", *, acl: bool = False):
+        super().__init__(message)
+        self.acl = acl
 
 
 def owner_key(label: Any) -> str:
@@ -98,6 +130,29 @@ class Changes:
 
     puts: int = 0
     deletes: int = 0
+
+
+def valid_key_prefix(prefix: Any) -> bool:
+    """Whether `prefix` can be a key prefix: words of letters, digits, `_`, `.` and `-` joined
+    by single colons, at most 200 characters (so no glob, space, brace, empty segment or
+    trailing colon)."""
+    return (
+        isinstance(prefix, str)
+        and 0 < len(prefix) <= MAX_KEY_PREFIX
+        and _KEY_PREFIX.match(prefix) is not None
+    )
+
+
+_ACL_ERRORS = {"NoPermissionError", "AuthenticationError", "AuthenticationWrongNumberOfArgsError"}
+_ACL_TEXT = ("NOPERM", "WRONGPASS", "NOAUTH", "NO PERMISSIONS", "INVALID USERNAME-PASSWORD")
+
+
+def _is_acl_error(error: BaseException) -> bool:
+    """Redis said no to who we are or what we asked for, rather than being down."""
+    if type(error).__name__ in _ACL_ERRORS:
+        return True
+    text = str(error).upper()
+    return any(marker in text for marker in _ACL_TEXT)
 
 
 def _text(value: Any) -> str:
@@ -233,18 +288,24 @@ return gone
 class RedisBackend:
     """A HASH per owner and a SET of the owners, changed by one Lua step per record.
 
-        thalovant:records:v1:<scope>:<key>:<owner key>   HASH id -> JSON body
-        thalovant:records:v1:<scope>:<key>:owners        SET  owner keys
-        thalovant:records:v1:<scope>:<key>:migration     STRING  running:<token> | done
+        <prefix>:records:v1:<scope>:<key>:<owner key>   HASH id -> JSON body
+        <prefix>:records:v1:<scope>:<key>:owners        SET  owner keys
+        <prefix>:records:v1:<scope>:<key>:migration     STRING  running:<token> | done
 
-    `scope` and `key` are percent-encoded, so no pair of them can spell another's keys.
+    `<prefix>` is `thalovant` unless the operator sets a key prefix (so a Redis user limited to
+    `hub-<id>:*` can be given `hub-<id>:memory`). `scope` and `key` are percent-encoded, so no
+    pair of them can spell another's keys.
     """
 
     name = "redis"
 
-    def __init__(self, client: Any, scope: str, key: str):
+    def __init__(self, client: Any, scope: str, key: str, prefix: str = DEFAULT_KEY_PREFIX):
+        if not valid_key_prefix(prefix):
+            raise ValueError(f"not a usable key prefix: {prefix!r}")
         self._client = client
-        self._base = f"{PREFIX}:{quote(scope, safe='')}:{quote(key, safe='')}"
+        self.prefix = prefix
+        self.namespace = f"{prefix}:records:v1:"
+        self._base = f"{self.namespace}{quote(scope, safe='')}:{quote(key, safe='')}"
         self._scripts = {
             name: client.register_script(body)
             for name, body in (("put", _PUT), ("put_nx", _PUT_NX), ("delete", _DELETE))
@@ -524,6 +585,25 @@ class RecordStore:
             scope, settings, env_prefix=env_prefix, default_key=default_key
         )
         self.key = self._config.key
+        # One variable for every record skill in a runtime, between the skill's own and the
+        # generic REDIS_URL (which other software in the pod may mean differently).
+        shared_url = os.getenv("THALOVANT_RECORDS_REDIS_URL", "").strip()
+        if (
+            shared_url
+            and not settings.get("redis_url")
+            and not os.getenv(f"{env_prefix}_REDIS_URL")
+        ):
+            self._config.redis_url = shared_url
+        # Where in Redis: the setting, then `<PREFIX>_KEY_PREFIX`, then
+        # THALOVANT_RECORDS_KEY_PREFIX, else `thalovant` (the keys then are what 0.31.0 wrote).
+        raw = (
+            settings.get("key_prefix")
+            or os.getenv(f"{env_prefix}_KEY_PREFIX")
+            or os.getenv("THALOVANT_RECORDS_KEY_PREFIX")
+            or ""
+        )
+        self.key_prefix = str(raw).strip() or DEFAULT_KEY_PREFIX
+        self._acl_warned = False
         self._backends: list[Any] | None = list(backends) if backends is not None else None
         self._built = backends is not None
         self._build_lock = threading.Lock()
@@ -539,11 +619,21 @@ class RecordStore:
                 found: list[Any] = []
                 config = self._config
                 if config.redis_url or config.redis_sentinel_urls:
-                    client = (
-                        config._redis_client()
-                    )  # the kit's builder: URL options, Sentinel, short timeouts
-                    if client is not None:
-                        found.append(RedisBackend(client, self.scope, self.key))
+                    if not valid_key_prefix(self.key_prefix):
+                        LOG.warning(
+                            "record store %s: %r is not a usable key prefix (colon-separated words "
+                            "of letters, digits, _ . -); Redis is not used",
+                            self.scope,
+                            self.key_prefix,
+                        )
+                    else:
+                        client = (
+                            config._redis_client()
+                        )  # the kit's builder: URL options, Sentinel, short timeouts
+                        if client is not None:
+                            found.append(
+                                RedisBackend(client, self.scope, self.key, self.key_prefix)
+                            )
                 if config.database_url:
                     url = config.database_url
                     found.append(
@@ -558,6 +648,42 @@ class RecordStore:
         if self._built:
             return bool(self._backends)
         return self._config.enabled
+
+    # -- when Redis or PostgreSQL says no ------------------------------------------
+
+    def _acl_hint(self, backend: Any) -> str:
+        prefix = getattr(backend, "prefix", self.key_prefix)
+        namespace = getattr(backend, "namespace", f"{prefix}:records:v1:")
+        return (
+            f"Redis refused the request. This store's keys are under {namespace!r}. If the Redis "
+            f"user is limited by an ACL, it needs the key pattern ~{prefix}:* (or a key prefix "
+            f"it may use: key_prefix or THALOVANT_RECORDS_KEY_PREFIX) and the commands "
+            f"{', '.join(REDIS_ACL_COMMANDS)}; check the user and password too. Until then the "
+            f"records stay in the skill's settings"
+        )
+
+    def _failed(self, backend: Any, what: str, error: BaseException) -> bool:
+        """Log a backend's failure. A refusal by Redis's ACL or password is one WARNING with the
+        hint, the first time, not on every call. Returns whether it was such a refusal."""
+        if getattr(backend, "name", "") == "redis" and _is_acl_error(error):
+            if not self._acl_warned:
+                self._acl_warned = True
+                LOG.warning(
+                    "record store %s: %s (%s: %s)",
+                    self.scope,
+                    self._acl_hint(backend),
+                    type(error).__name__,
+                    error,
+                )
+            return True
+        LOG.warning(
+            "record store %s: %s %s failed (%s)",
+            self.scope,
+            backend.name,
+            what,
+            type(error).__name__,
+        )
+        return False
 
     # -- reading -------------------------------------------------------------------
 
@@ -587,12 +713,7 @@ class RecordStore:
             try:
                 found = backend.load_all()
             except Exception as error:  # noqa: BLE001 - a backend that is down is skipped
-                LOG.warning(
-                    "record store %s: %s load failed (%s)",
-                    self.scope,
-                    backend.name,
-                    type(error).__name__,
-                )
+                self._failed(backend, "load", error)
                 continue
             answered = True
             if found:
@@ -606,12 +727,7 @@ class RecordStore:
                 try:
                     backend.put_if_absent(rows)
                 except Exception as error:  # noqa: BLE001 - a cache that cannot be refilled is only a cache
-                    LOG.warning(
-                        "record store %s: refilling %s failed (%s)",
-                        self.scope,
-                        backend.name,
-                        type(error).__name__,
-                    )
+                    self._failed(backend, "refill", error)
         return self._decode(rows)
 
     def load_owner(self, owner: Any) -> list[dict] | None:
@@ -625,12 +741,7 @@ class RecordStore:
             try:
                 rows = backend.load_owner(ok)
             except Exception as error:  # noqa: BLE001
-                LOG.warning(
-                    "record store %s: %s load failed (%s)",
-                    self.scope,
-                    backend.name,
-                    type(error).__name__,
-                )
+                self._failed(backend, "load", error)
                 continue
             answered = True
             if rows:
@@ -643,12 +754,7 @@ class RecordStore:
             try:
                 found = backend.owners()
             except Exception as error:  # noqa: BLE001
-                LOG.warning(
-                    "record store %s: %s owners failed (%s)",
-                    self.scope,
-                    backend.name,
-                    type(error).__name__,
-                )
+                self._failed(backend, "owners", error)
                 continue
             if found:
                 return found
@@ -719,19 +825,16 @@ class RecordStore:
         if not backends or not (puts or deletes):
             return Changes()
         failures: list[str] = []
+        refused = False
         for backend in backends:
             try:
                 backend.apply(puts, deletes)
             except Exception as error:  # noqa: BLE001 - reported below, the other backend is still tried
-                LOG.warning(
-                    "record store %s: %s save failed (%s)",
-                    self.scope,
-                    backend.name,
-                    type(error).__name__,
-                )
+                acl = self._failed(backend, "save", error)
+                refused = refused or acl
                 failures.append(f"{backend.name}: {type(error).__name__}: {error}")
         if failures:
-            raise RecordStoreError("; ".join(failures))
+            raise RecordStoreError("; ".join(failures), acl=refused)
         return Changes(len(puts), len(deletes))
 
     # -- from the whole document ---------------------------------------------------
@@ -778,8 +881,10 @@ class RecordStore:
         except RecordStoreError:
             raise
         except Exception as error:  # noqa: BLE001
+            refused = self._failed(primary, "migration", error)  # an ACL refusal: said once
             raise RecordStoreError(
-                f"migrating the whole-document records: {type(error).__name__}: {error}"
+                f"migrating the whole-document records: {type(error).__name__}: {error}",
+                acl=refused,
             ) from error
         LOG.info(
             "record store %s: imported %d record(s) from the whole document", self.scope, imported
@@ -793,5 +898,6 @@ class RecordStore:
         try:
             self.migrate_legacy(legacy)
         except RecordStoreError as error:
-            LOG.warning("record store %s: %s", self.scope, error)
+            if not error.acl:  # a refusal by Redis was logged, once, with its hint
+                LOG.warning("record store %s: %s", self.scope, error)
         return self.load_all()

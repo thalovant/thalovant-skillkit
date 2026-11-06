@@ -1,6 +1,13 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
-Previous:  Claude Code (Claude Fable 5.1) - 2026-11-05 - Motive: 0.30.0: the Python floor, the filelock advisories and combo-lock's cap, the review's open notes closed.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store (RecordStore) so no two owners or hub pods overwrite each other.
 # Audit
+
+## 2026-11-06 key prefix and a Redis that refuses (0.31.1)
+
+- Fixed (Major, silent fallback): a runtime whose Redis user is limited to `~hub-<id>:*` was refused every `RecordStore` key (`thalovant:records:v1:...`, `NOPERM`) and fell back to the skill's settings without a clear sign. The prefix is now configurable ([records.py](thalovant_skillkit/records.py) `RecordStore.__init__`, `RedisBackend`, `valid_key_prefix`) and a refusal is one warning naming the prefix and the ACL (`RecordStore._failed`, `REDIS_ACL_COMMANDS`). Evidence: `test_every_redis_key_goes_under_the_prefix`, `test_a_refusal_by_redis_is_logged_once_with_the_prefix_and_the_commands`, `test_a_redis_user_limited_by_an_acl_works_with_a_prefix_inside_it_and_says_no_outside` (real Redis 7, a user with `~hub-1:*` and only the listed commands, a password of `@ : / + # ? %`), 123 tests, none skipped with live Redis 7 and PostgreSQL 16.
+- Found: the operator recipe named `THALOVANT_RECORDS_REDIS_URL`, which nothing read; it now does (`RecordStore.__init__`).
+- Open (Minor): `JsonStateStore` keeps its fixed `thalovant:<scope>:<key>` key; a restricted user cannot read it, so `migrate_legacy` sees "no document" and retries at most every five minutes. Skills that still use `JsonStateStore` stay refused under such a user.
+- Open (Minor, operator): a prefix inside the journal's own (`hub-<id>:memory`) is only safe if the journal writer does not scan or expire everything beneath it; use a sibling prefix and `~hub-<id>:*` otherwise. A password with URL-special characters pasted by `$(VAR)` breaks the URL (documented).
 
 ## 2026-11-06 per-owner records (0.31.0)
 
