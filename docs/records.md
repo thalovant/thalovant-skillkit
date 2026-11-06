@@ -150,8 +150,8 @@ refused: the store uses no Redis, says so once, and PostgreSQL still works if
 configured. With no prefix the keys are exactly what 0.31.0 wrote. The PostgreSQL
 table names do not change, and the old whole-document key `JsonStateStore` uses
 (`thalovant:<scope>:<key>`) stays fixed: a restricted user cannot read it, so
-`load()` answers None and the import is retried at most every five minutes; it
-only matters if you still hold records there.
+`load()` answers None, the refusal is logged once and that process does not ask
+again; it only matters if you still hold records there.
 
 **Which prefix is right.** The final keys are `<prefix>:records:v1:...`, so the
 prefix must sit inside the ACL's key pattern. `hub-<id>:memory` (the journal's

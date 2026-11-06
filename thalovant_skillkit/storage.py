@@ -76,6 +76,9 @@ class JsonStateStore:
         self._redis = None
         self._pg = None
         self._pg_ready = False
+        #: Redis said this user may not read the key. That stays true until the ACL
+        #: changes, so a caller retrying a load can stop.
+        self.redis_refused = False
         self.enabled = bool(self.redis_url or self.redis_sentinel_urls or self.database_url)
 
     def load(self) -> list[dict] | None:
@@ -141,7 +144,10 @@ class JsonStateStore:
             raw = client.get(self._store_key())
             return json.loads(raw) if raw else None
         except Exception as error:
-            LOG.warning("State store Redis load failed (%s)", type(error).__name__)
+            refused = type(error).__name__ == "NoPermissionError"
+            if not (refused and self.redis_refused):
+                LOG.warning("State store Redis load failed (%s)", type(error).__name__)
+            self.redis_refused = self.redis_refused or refused
             return None
 
     def _save_redis(self, value: list[dict]):

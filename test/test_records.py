@@ -10,6 +10,7 @@ scratch servers); otherwise they are skipped.
 
 from __future__ import annotations
 
+import logging
 import os
 import sqlite3
 import threading
@@ -17,6 +18,7 @@ from contextlib import contextmanager
 
 import pytest
 
+from thalovant_skillkit import records
 from thalovant_skillkit.records import (
     DEFAULT_KEY_PREFIX,
     MAX_BODY_BYTES,
@@ -462,6 +464,48 @@ def test_two_pods_migrating_together_import_it_once(pods):
     assert len(pods().load_all()) == 20
 
 
+def test_a_refused_legacy_document_is_asked_for_once(pods, monkeypatch, caplog):
+    """A user limited to its own keys can never read the old `thalovant:` key. Asking every
+    five minutes for ever only fills the log and Redis's own refusal log."""
+
+    class NoPermissionError(Exception):
+        pass
+
+    class Refusing:
+        gets = 0
+
+        def get(self, key):
+            type(self).gets += 1
+            raise NoPermissionError("No permissions to access a key")
+
+    legacy = JsonStateStore(SCOPE, {"redis_url": "redis://x"}, env_prefix="X", default_key=KEY)
+    monkeypatch.setattr(legacy, "_redis_client", lambda: Refusing())
+    monkeypatch.setattr(records, "LEGACY_RECHECK_SECONDS", 0)
+    store = pods()
+    with caplog.at_level(logging.WARNING):
+        for _ in range(3):
+            assert store.migrate_legacy(legacy) == 0
+    assert Refusing.gets == 1
+    assert sum("Redis load failed" in r.getMessage() for r in caplog.records) == 1
+
+
+def test_an_unreachable_legacy_document_is_still_tried_again(pods, monkeypatch):
+    class Down:
+        gets = 0
+
+        def get(self, key):
+            type(self).gets += 1
+            raise ConnectionError("no route")
+
+    legacy = JsonStateStore(SCOPE, {"redis_url": "redis://x"}, env_prefix="X", default_key=KEY)
+    monkeypatch.setattr(legacy, "_redis_client", lambda: Down())
+    monkeypatch.setattr(records, "LEGACY_RECHECK_SECONDS", 0)
+    store = pods()
+    store.migrate_legacy(legacy)
+    store.migrate_legacy(legacy)
+    assert Down.gets == 2
+
+
 def test_an_empty_legacy_document_is_done_and_no_document_is_tried_again(pods):
     store = pods()
     assert store.migrate_legacy(LegacyDocument([])) == 0
@@ -887,6 +931,23 @@ def test_a_redis_user_limited_by_an_acl_works_with_a_prefix_inside_it_and_says_n
     finally:
         admin.acl_deluser("hubuser")
         admin.flushdb()
+
+
+def test_the_shared_redis_url_alone_switches_the_store_on(monkeypatch):
+    """Every record skill asks `enabled` first and returns when it is False, so a runtime
+    set up with this variable alone used to keep its records in settings, in silence."""
+    for name in ("THALOVANT_ALARM_REDIS_URL", "REDIS_URL", "DATABASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("THALOVANT_RECORDS_REDIS_URL", "redis://shared")
+    store = RecordStore(SCOPE, {}, env_prefix="THALOVANT_ALARM", default_key=KEY)
+    assert store.enabled
+
+
+def test_a_blank_shared_redis_url_leaves_the_store_off(monkeypatch):
+    for name in ("THALOVANT_ALARM_REDIS_URL", "REDIS_URL", "DATABASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("THALOVANT_RECORDS_REDIS_URL", "  ")
+    assert not RecordStore(SCOPE, {}, env_prefix="THALOVANT_ALARM", default_key=KEY).enabled
 
 
 def test_the_shared_redis_url_sits_between_the_skills_own_and_the_generic_one(monkeypatch):
