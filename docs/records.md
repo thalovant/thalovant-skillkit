@@ -1,5 +1,5 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: RecordStore uses no Lua, so a skill's Redis login needs no scripting right.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.0: a per-owner record store for the skills that keep a person's records.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The import marker in every backend, PostgreSQL re-read after a Redis refusal, and the guide's example keeps an unsaved change (CodeRabbit findings on #52 and #54).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: RecordStore uses no Lua, so a skill's Redis login needs no scripting right.
 
 # Per-owner records (`thalovant_skillkit.records`)
 
@@ -33,8 +33,8 @@ the generic `REDIS_URL`).
 
 | Backend | Layout |
 |---|---|
-| Redis | `<key prefix>:records:v1:<scope>:<key>:<owner key>` is a HASH, field = the record's id, value = its JSON. `<key prefix>:records:v1:<scope>:<key>:owners` is a SET of the owner keys. `...:migration` is the import marker. `<scope>` and `<key>` are percent-encoded. The key prefix is `thalovant` unless you set one (see the operator section below). Each change is one Lua script. |
-| PostgreSQL | Table `thalovant_records (seq, scope, key, owner_key, id, body jsonb, updated_at)`, primary key `(scope, key, owner_key, id)`; `thalovant_records_meta` holds the import marker. A save's puts and deletes are one transaction. Tables are created once, under an advisory lock. |
+| Redis | `<key prefix>:records:v1:<scope>:<key>:<owner key>` is a HASH, field = the record's id, value = its JSON. `<key prefix>:records:v1:<scope>:<key>:owners` is a SET of the owner keys. `...:migration` is the import marker. `<scope>` and `<key>` are percent-encoded. The key prefix is `thalovant` unless you set one (see the operator section below). Each record changes in one `MULTI` transaction; a delete also `WATCH`es the owner's hash. |
+| PostgreSQL | Table `thalovant_records (seq, scope, key, owner_key, id, body jsonb, updated_at)`, primary key `(scope, key, owner_key, id)`; `thalovant_records_meta` holds its copy of the import marker. A save's puts and deletes are one transaction. Tables are created once, under an advisory lock. |
 | Both | Redis is read first; PostgreSQL keeps a copy. A Redis that answers empty while PostgreSQL holds records is refilled from it. |
 | Neither | `load_all()` is None and `save_changes` does nothing: the skill keeps its settings, as it did. |
 
@@ -71,6 +71,11 @@ settings as the local fallback:
 import copy
 from thalovant_skillkit.records import RecordStore, RecordStoreError
 
+def initialize(self):                              # or __init__: before the first _load()
+    self._records = None                           # the store, made at first use
+    self._persisted = []
+    self._load()
+
 def _store(self):
     if self._records is None:
         self._records = RecordStore("alarm", self.settings,
@@ -94,13 +99,29 @@ def _save(self):                                   # replaces `.save(list)`
         # taken at the last success, so it sends this change again
     self._write_settings()                          # the local fallback, as before
 
+def _unsaved(self, owner):                         # this owner's change a save could not make
+    def mine(records):
+        return [r for r in records if r.get("owner") == owner]
+    puts, deletes = self._store().changes(mine(self._persisted),
+                                          mine(self.settings.get("alarms", [])))
+    return bool(puts or deletes)
+
 def _turn(self, owner):                            # read this owner afresh before acting
-    mine = self._store().load_owner(owner)
+    if self._unsaved(owner):                       # an earlier save failed: send it first,
+        self._save()                               # or the read below would replace it
+        if self._unsaved(owner):
+            return                                 # still not saved: act on what is in memory
+    store = self._store()
+    mine = store.load_owner(owner)
     if mine is not None:
-        store = self._store()
         self.settings["alarms"] = store.splice_owner(self.settings["alarms"], owner, mine)
         self._persisted = store.splice_owner(self._persisted, owner, mine)
 ```
+
+The read in `_turn` replaces both lists with what the database holds for that owner, so a
+change still waiting for a save would be lost there: `_unsaved` sends it first, and while the
+database still refuses it the turn works on what is in memory.
+`test_a_change_an_earlier_save_could_not_make_survives_the_next_turn` runs this loop.
 
 Keep the skill's ownership rule (the hub connection's label is the owner, never
 a client-supplied name) exactly as it is: the store only trusts the `owner`
@@ -129,6 +150,12 @@ Alarms and reminders of real people exist in the old whole-document key.
   legacy store that was merely unreachable (`JsonStateStore.load()` answers None
   for both "no document" and "no answer") is tried again, at most every five
   minutes per process, not on every load;
+- the marker is written to every backend (PostgreSQL's first) and read from all
+  of them: `done` in any is done, and a backend without it is given it. A Redis
+  that comes back empty after a restart has lost its marker, but PostgreSQL's
+  still stops the old document from being imported again over the records
+  people deleted since. If PostgreSQL cannot take the marker at the import, it is
+  given it at the next check, from Redis;
 - an old pod still running after the migration, and still saving whole
   documents, writes where the new code no longer reads. Roll the skills out
   together and restart the runtime pod (the kit stays in memory until then).
@@ -151,7 +178,9 @@ configured. With no prefix the keys are exactly what 0.31.0 wrote. The PostgreSQ
 table names do not change, and the old whole-document key `JsonStateStore` uses
 (`thalovant:<scope>:<key>`) stays fixed: a restricted user cannot read it, so
 `load()` answers None, the refusal is logged once and that process does not ask
-again; it only matters if you still hold records there.
+Redis again. PostgreSQL's copy of the old document, if one is configured, is
+still read (`JsonStateStore.load(redis=False)`), at most every five minutes,
+until it gives a document. It only matters if you still hold records there.
 
 **Which prefix is right.** The final keys are `<prefix>:records:v1:...`, so the
 prefix must sit inside the ACL's key pattern. `hub-<id>:memory` (the journal's
@@ -241,10 +270,11 @@ select id, body from thalovant_records
   moment: the later write stays. There is no version check. Two pods changing
   different records or different owners lose nothing.
 - **No transaction across records.** A save of several records is one transaction
-  in PostgreSQL, one script per record in Redis; with both backends, a failure of
-  one raises `RecordStoreError` while the other has been written. The next save
-  repeats the change.
-- **Redis Cluster is not supported** (a script touches two keys). Redis
+  in PostgreSQL, one transaction per record in Redis; with both backends, a failure
+  of one raises `RecordStoreError` while the other has been written, and in Redis
+  the records before the failure are written. Keep the snapshot of the last save
+  that succeeded: the next save repeats the change.
+- **Redis Cluster is not supported** (a transaction touches two keys). Redis
   with Sentinel is.
 - **Order is not guaranteed** across owners in Redis; sort by your own field.
 - It stores what the skill gives it: validate records, enforce ownership and keep

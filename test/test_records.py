@@ -10,6 +10,7 @@ scratch servers); otherwise they are skipped.
 
 from __future__ import annotations
 
+import copy
 import logging
 import os
 import sqlite3
@@ -283,42 +284,73 @@ def test_replace_owner_reads_one_owner_afresh(pods):
     assert by_id(merged) == by_id([rec("anna", "1", due=1), rec("anna", "2"), rec("ben", "1")])
 
 
+class GuideSkill:
+    """docs/records.md's "Moving a skill over": a working list, the snapshot last persisted, and
+    a read of the owner each turn that first sends what an earlier save could not."""
+
+    def __init__(self, store):
+        self.store, self.alarms = store, []
+        loaded = store.load_all_with_legacy(LegacyDocument(None))
+        if loaded is not None:
+            self.alarms = loaded
+        self.persisted = copy.deepcopy(self.alarms)
+
+    def unsaved(self, owner):  # a change of this owner's that an earlier save could not make
+        def mine(records):
+            return [r for r in records if r.get("owner") == owner]
+
+        puts, deletes = self.store.changes(mine(self.persisted), mine(self.alarms))
+        return bool(puts or deletes)
+
+    def turn(self, owner):  # read this owner's records afresh before acting
+        if self.unsaved(owner):
+            self.save()  # send it before reading over it
+            if self.unsaved(owner):
+                return  # still not saved: act on what is in memory
+        mine = self.store.load_owner(owner)
+        if mine is not None:
+            self.alarms = self.store.splice_owner(self.alarms, owner, mine)
+            self.persisted = self.store.splice_owner(self.persisted, owner, mine)
+
+    def save(self):
+        try:
+            self.store.save_changes(self.persisted, self.alarms)
+            self.persisted = copy.deepcopy(self.alarms)
+        except RecordStoreError:
+            pass  # the change stays in memory; the next save sends it again
+
+    def add(self, owner, rid, **more):
+        self.turn(owner)
+        self.alarms.append(rec(owner, rid, **more))
+        self.save()
+
+
 def test_the_pattern_a_skill_follows_keeps_two_pods_in_step(pods):
     """The migration guide's loop: a working list, a snapshot, a read of the owner each turn."""
-    import copy
-
-    class Skill:
-        def __init__(self, store):
-            self.store, self.alarms = store, []
-            loaded = store.load_all_with_legacy(LegacyDocument(None))
-            self.alarms = loaded or []
-            self.persisted = copy.deepcopy(self.alarms)
-
-        def turn(self, owner):  # read this owner's records afresh before acting
-            mine = self.store.load_owner(owner)
-            if mine is not None:
-                self.alarms = self.store.splice_owner(self.alarms, owner, mine)
-                self.persisted = self.store.splice_owner(self.persisted, owner, mine)
-
-        def save(self):
-            try:
-                self.store.save_changes(self.persisted, self.alarms)
-                self.persisted = copy.deepcopy(self.alarms)
-            except RecordStoreError:
-                pass  # the change stays in memory; the next save sends it again
-
-        def add(self, owner, rid, **more):
-            self.turn(owner)
-            self.alarms.append(rec(owner, rid, **more))
-            self.save()
-
-    one, two = Skill(pods()), Skill(pods())
+    one, two = GuideSkill(pods()), GuideSkill(pods())
     one.add("anna", "1")
     two.add("ben", "1")      # two started before anna's alarm existed
     two.add("anna", "2")     # reads anna afresh first: sees alarm 1, adds 2
     one.add("ben", "2")
     final = {(r["owner"], r["id"]) for r in pods().load_all()}
     assert final == {("anna", "1"), ("anna", "2"), ("ben", "1"), ("ben", "2")}
+
+
+def test_a_change_an_earlier_save_could_not_make_survives_the_next_turn():
+    """The guide used to read the owner afresh over both lists, so an alarm whose save had
+    failed was gone at that person's next turn, before the retry it promised."""
+    backend = MemoryBackend()
+    skill = GuideSkill(make(backend))
+    skill.add("anna", "1")
+    backend.fail = OSError("down")
+    skill.add("anna", "2")  # not saved: kept in memory
+    skill.turn("anna")  # still down: nothing is read over it
+    assert {r["id"] for r in skill.alarms} == {"1", "2"}
+    backend.fail = None
+    skill.turn("anna")  # back: sent first, then anna is read afresh
+    assert {r["id"] for r in skill.alarms} == {"1", "2"}
+    assert {r["id"] for r in make(backend).load_all()} == {"1", "2"}
+    assert not skill.unsaved("anna")
 
 
 def test_twenty_threads_over_two_pods_lose_nothing(pods):
@@ -507,6 +539,59 @@ def test_an_unreachable_legacy_document_is_still_tried_again(pods, monkeypatch):
     assert Down.gets == 2
 
 
+def test_after_a_refusal_postgres_is_still_read_until_it_answers(pods, monkeypatch):
+    """Redis refuses the old key for good, but PostgreSQL's copy of the document failing once
+    is not "no document": 0.31.2 stopped asking either, and the records stayed behind until the
+    process restarted."""
+
+    class NoPermissionError(Exception):
+        pass
+
+    class Refusing:
+        gets = 0
+
+        def get(self, key):
+            type(self).gets += 1
+            raise NoPermissionError("No permissions to access a key")
+
+        def set(self, *args, **kwargs):
+            raise AssertionError("the old key is never written")
+
+    class Connection:  # what JsonStateStore asks of psycopg; the first query fails
+        queries = 0
+
+        def cursor(self):
+            return self
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, sql, params):
+            type(self).queries += 1
+            if type(self).queries == 1:
+                raise OSError("server closed the connection unexpectedly")
+
+        def fetchone(self):
+            return ([rec("anna", "1"), rec("ben", "1")],)
+
+        def close(self):
+            pass
+
+    settings = {"redis_url": "redis://x", "database_url": "postgresql://x"}
+    legacy = JsonStateStore(SCOPE, settings, env_prefix="X", default_key=KEY)
+    monkeypatch.setattr(legacy, "_redis_client", lambda: Refusing())
+    monkeypatch.setattr(legacy, "_postgres", lambda: Connection())
+    monkeypatch.setattr(records, "LEGACY_RECHECK_SECONDS", 0)
+    store = pods()
+    assert store.migrate_legacy(legacy) == 0, "refused, and PostgreSQL did not answer"
+    assert store.migrate_legacy(legacy) == 2, "PostgreSQL answered: the records come over"
+    assert Refusing.gets == 1, "the refused key is asked for once"
+    assert store.migrate_legacy(legacy) == 0 and Connection.queries == 2, "done is done"
+
+
 def test_an_empty_legacy_document_is_done_and_no_document_is_tried_again(pods):
     store = pods()
     assert store.migrate_legacy(LegacyDocument([])) == 0
@@ -560,6 +645,111 @@ def test_load_all_with_legacy_migrates_then_reads(monkeypatch):
     other = make(MemoryBackend(), "alarm2", "alarms2")
     monkeypatch.setattr(other._config, "load", lambda: [rec("ben", "9")])
     assert other.load_all_with_legacy() == [rec("ben", "9")]
+
+
+def cache_and_durable(kind, tmp_path):
+    """Makers of a Redis backend and a PostgreSQL backend over shared data, and a way to empty
+    the Redis: fakeredis and the SQL over sqlite, or the live servers when they are named."""
+    if kind == "live":
+        redis_url = os.environ.get("THALOVANT_RECORDS_TEST_REDIS_URL")
+        database_url = os.environ.get("THALOVANT_RECORDS_TEST_DATABASE_URL")
+        if not (redis_url and database_url):
+            pytest.skip("no live servers named")
+        import psycopg
+        import redis
+
+        redis.Redis.from_url(redis_url).flushdb()
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            conn.execute("drop table if exists thalovant_records")
+            conn.execute("drop table if exists thalovant_records_meta")
+        return (
+            lambda: RedisBackend(redis.Redis.from_url(redis_url), SCOPE, KEY),
+            lambda: PostgresBackend(
+                lambda: psycopg.connect(database_url, autocommit=True), SCOPE, KEY
+            ),
+            lambda: redis.Redis.from_url(redis_url).flushdb(),
+        )
+    server = fakeredis.FakeServer()
+    path = str(tmp_path / "pg.sqlite")
+    return (
+        lambda: RedisBackend(fakeredis.FakeStrictRedis(server=server), SCOPE, KEY),
+        lambda: PostgresBackend(lambda: PgOverSqlite(path), SCOPE, KEY),
+        lambda: fakeredis.FakeStrictRedis(server=server).flushall(),
+    )
+
+
+def both(cache, durable):
+    return RecordStore(SCOPE, {}, env_prefix="X", default_key=KEY, backends=[cache, durable])
+
+
+@pytest.mark.parametrize("kind", ["fake", "live"])
+def test_a_redis_that_lost_its_data_does_not_bring_back_a_deleted_record(kind, tmp_path):
+    """The marker lived only in Redis: after a Redis restart without its data the old document
+    was imported again into both backends, and an alarm its owner had deleted came back."""
+    cache, durable, flush = cache_and_durable(kind, tmp_path)
+    legacy = LegacyDocument([rec("anna", "1"), rec("anna", "2"), rec("ben", "1")])
+    first = both(cache(), durable())
+    assert first.migrate_legacy(legacy) == 3
+    before = first.load_all()
+    first.save_changes(before, [r for r in before if (r["owner"], r["id"]) != ("anna", "2")])
+    flush()  # Redis comes back empty: the records, the owner set and the marker are gone
+    loads = legacy.loads
+    after = both(cache(), durable()).load_all_with_legacy(legacy)
+    assert by_id(after) == by_id([rec("anna", "1"), rec("ben", "1")]), "deleted stays deleted"
+    assert legacy.loads == loads, "the old document is not opened again"
+    assert cache().migration_state() == "done", "Redis is given the marker back"
+
+
+def test_a_marker_postgres_could_not_take_is_given_at_the_next_check(tmp_path, caplog):
+    cache, durable, flush = cache_and_durable("fake", tmp_path)
+    pg = durable()
+    real = pg.migration_finish
+
+    def down():
+        raise OSError("down")
+
+    pg.migration_finish = down
+    store = both(cache(), pg)
+    with caplog.at_level(logging.WARNING):
+        assert store.migrate_legacy(LegacyDocument([rec("anna", "1")])) == 1, "the import is in"
+    assert "postgres migration marker failed (OSError)" in caplog.text
+    assert cache().migration_state() == "done" and pg.migration_state() == "none"
+    pg.migration_finish = real
+    assert store.migrate_legacy(LegacyDocument([rec("anna", "1")])) == 0
+    assert pg.migration_state() == "done", "the next check gave PostgreSQL the marker"
+    store.save_changes([rec("anna", "1")], [])
+    flush()
+    assert both(cache(), durable()).load_all_with_legacy(LegacyDocument([rec("anna", "1")])) == []
+
+
+def test_the_marker_is_set_without_holding_the_claim(pods):
+    """Beside a Redis, PostgreSQL never holds the claim, so `done` must not need its row."""
+    store = pods()
+    store.backend.migration_finish()
+    assert store.backend.migration_state() == "done"
+    legacy = LegacyDocument([rec("anna", "1")])
+    assert store.migrate_legacy(legacy) == 0 and legacy.loads == 0
+
+
+def test_a_done_marker_in_any_backend_is_enough():
+    first, durable = MemoryBackend(), MemoryBackend()
+    durable.migration_finish()
+    first.fail = OSError("down")
+    legacy = LegacyDocument([rec("anna", "1")])
+    assert both(first, durable).migrate_legacy(legacy) == 0 and legacy.loads == 0
+    first.fail = None
+    assert both(first, durable).migrate_legacy(legacy) == 0
+    assert first.migration_state() == "done", "the first is given the marker back"
+
+
+def test_a_mirror_that_cannot_answer_does_not_hold_up_the_import_into_the_first():
+    """As before: with PostgreSQL down at the first start the records still reach Redis, and the
+    import is repeated until PostgreSQL has them too."""
+    first, mirror = MemoryBackend(), MemoryBackend()
+    mirror.fail = OSError("down")
+    with pytest.raises(RecordStoreError, match="migrating"):
+        both(first, mirror).migrate_legacy(LegacyDocument([rec("anna", "1")]))
+    assert first.data and first.migration_state() == "running"
 
 
 # ---- what is set up ----------------------------------------------------------------------------

@@ -948,9 +948,13 @@ needed for Alarm, Timer, Reminder or Stopwatch.
 
 (For several owners' records prefer `RecordStore`, below: this document is rewritten whole on every save.)
 
-A cache miss reads PostgreSQL and fills Redis. `save(list_of_records)` attempts
-both stores independently, without a success guarantee. Connection setup failures
-disable that backend for this store instance; rebuild the store to retry setup.
+A cache miss reads PostgreSQL and fills Redis; `load(redis=False)` reads PostgreSQL
+only and writes nothing back (for a caller Redis has refused the key, which sets
+`redis_refused`). `save(list_of_records)` attempts both stores independently,
+without a success guarantee. A PostgreSQL that cannot be reached is left alone for
+`POSTGRES_RETRY_SECONDS` (60 s) and then tried again, and a connection that fails a
+query is closed and replaced on the next call. A missing driver, or a Redis client
+that cannot be built, turns that backend off for this store instance.
 Skills must validate records, enforce speaker ownership and retain their existing
 local recovery path. This helper adds no in-memory copy or TTL that could hide a
 new state write. It is not a transactional database or a replacement for a

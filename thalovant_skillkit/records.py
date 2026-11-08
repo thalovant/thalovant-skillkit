@@ -547,10 +547,14 @@ class PostgresBackend:
         return bool(self._run(work))
 
     def migration_finish(self) -> None:
+        """Set the marker `done`, whether or not this backend held the claim (beside a Redis,
+        the claim is Redis's, and this row does not exist yet)."""
+
         def work(cur):
             cur.execute(
-                f"update {META_TABLE} set state = 'done', at = now() "
-                "where scope = %s and key = %s and name = 'migration'",
+                f"insert into {META_TABLE} (scope, key, name, state, at) "
+                "values (%s, %s, 'migration', 'done', now()) "
+                "on conflict (scope, key, name) do update set state = 'done', at = now()",
                 (self._scope, self._key),
             )
 
@@ -622,7 +626,6 @@ class RecordStore:
         self._built = backends is not None
         self._build_lock = threading.Lock()
         self._legacy_checked = 0.0
-        self._legacy_refused = False
 
     # -- what is configured --------------------------------------------------------
 
@@ -854,6 +857,60 @@ class RecordStore:
 
     # -- from the whole document ---------------------------------------------------
 
+    def _migration_done(self, backends: list[Any]) -> bool:
+        """Whether the import is done: any backend's marker says so.
+
+        Every backend is asked, not only the first. A Redis that lost its data (a restart
+        without persistence) lost the marker with it, and it is PostgreSQL's marker that keeps
+        the old document from being imported again over the records deleted since. A backend
+        without the marker while another has it is given it (a failure there is logged and
+        repaired at the next check). A backend that cannot answer is logged and left out; when
+        none says done and the first could not answer, its error is raised (the claim is made
+        there).
+        """
+        done = False
+        missing: list[Any] = []
+        first_error: BaseException | None = None
+        for index, backend in enumerate(backends):
+            try:
+                state = backend.migration_state()
+            except Exception as error:  # noqa: BLE001 - another backend may still know
+                if index == 0:
+                    first_error = error
+                else:
+                    self._failed(backend, "migration check", error)
+                continue
+            if state == "done":
+                done = True
+            else:
+                missing.append(backend)
+        if done:
+            for backend in missing:
+                try:
+                    backend.migration_finish()
+                except Exception as error:  # noqa: BLE001 - given again at the next check
+                    self._failed(backend, "migration marker", error)
+            return True
+        if first_error is not None:
+            raise first_error
+        return False
+
+    def _finish_migration(self, backends: list[Any]) -> None:
+        """Set the marker `done` in every backend: PostgreSQL's (the copy that outlives a Redis
+        restart) first, the claim's own backend last. One that cannot take it is logged and
+        given it at the next check, from another that has it; when none can, the error is
+        raised and the import is repeated later."""
+        failed: list[tuple[Any, BaseException]] = []
+        for backend in reversed(backends):
+            try:
+                backend.migration_finish()
+            except Exception as error:  # noqa: BLE001 - the others are still marked
+                failed.append((backend, error))
+        if len(failed) == len(backends):
+            raise failed[-1][1]  # the claim's backend, last: reported as the migration's failure
+        for backend, error in failed:
+            self._failed(backend, "migration marker", error)
+
     def migrate_legacy(self, legacy: JsonStateStore | None = None) -> int:
         """Bring the old whole-document records into the per-owner layout, once.
 
@@ -863,7 +920,10 @@ class RecordStore:
         not finished within five minutes may be taken over, and the import is
         then simply repeated); and the marker is set only after a document was
         read and imported, so a legacy store that was merely unreachable is
-        tried again. Returns how many records were put.
+        tried again. The marker is kept in every backend and read from all of
+        them, so a Redis that lost its data does not bring back records deleted
+        since. Once Redis has refused this user the old key, only PostgreSQL's
+        copy is read again. Returns how many records were put.
         """
         backends = self._backend_list()
         if not backends:
@@ -871,17 +931,19 @@ class RecordStore:
         primary = backends[0]
         legacy = legacy or self._config
         try:
-            if primary.migration_state() == "done":
+            if self._migration_done(backends):
                 return 0
             now = time.monotonic()
-            if self._legacy_refused:
-                return 0
             if self._legacy_checked and now - self._legacy_checked < LEGACY_RECHECK_SECONDS:
                 return 0
-            document = legacy.load()
+            # Redis refuses the same key until its ACL changes, and asking again only fills the
+            # log and Redis's own refusal log; a PostgreSQL that failed may answer next time.
+            if getattr(legacy, "redis_refused", False):
+                document = legacy.load(redis=False)
+            else:
+                document = legacy.load()
             if document is None:
                 self._legacy_checked = now
-                self._legacy_refused = bool(getattr(legacy, "redis_refused", False))
                 return 0
             if not primary.migration_claim(uuid.uuid4().hex, MIGRATION_CLAIM_SECONDS):
                 return 0
@@ -895,7 +957,7 @@ class RecordStore:
             for index, backend in enumerate(backends):
                 put = backend.put_if_absent(rows) if rows else 0
                 imported = put if index == 0 else imported
-            primary.migration_finish()
+            self._finish_migration(backends)
         except RecordStoreError:
             raise
         except Exception as error:  # noqa: BLE001
