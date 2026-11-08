@@ -1,5 +1,10 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins fell behind the release (CodeRabbit on #22).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+
+## 2026-11-08 the documented install pins
+
+- Fixed (Minor, docs): [README.md](README.md) and [docs/reference.md](docs/reference.md) pinned 0.31.1 after 0.31.2 and 0.32.0 were released. Each release bumps `pyproject.toml` and `version.py`, and nothing checked the docs. Evidence: `test_the_documented_install_pins_the_version_this_is` in [test/test_packaging.py](test/test_packaging.py), which fails on 9a0f734.
+- Checked, already fixed: CodeRabbit's nitpicks on #7 (one model load per `check_fleet` run: `fleet._load_model`) and #9 (the round-trip test asserts both `repo` and `sha`), both in 885a83a (#18); #22's 0.15.0 pin, in its own merge 0f3f5a3.
 
 ## 2026-11-08 the marker before any save (Unreleased)
 

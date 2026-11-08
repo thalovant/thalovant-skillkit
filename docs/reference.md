@@ -551,7 +551,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.31.1"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.32.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.

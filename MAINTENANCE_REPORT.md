@@ -1,5 +1,11 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Close the open CodeRabbit findings on #47, #48, #52 and #54.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins match the released version (CodeRabbit on #22), and the review-body items on #7 and #9 are answered.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+## 2026-11-08 — install pins, and the review-body items on #7, #9 and #22
+
+The README's Quickstart and the reference's `[testing]` install now pin 0.32.0, the published release; both had stayed at 0.31.1. A new test in `test/test_packaging.py` ties both pins to `__version__`, and it fails on 9a0f734. The nitpicks on #7 (model caching in `fleet.py`) and #9 (the `repo` assertion) were already fixed in 885a83a (#18). Verification: full suite and ruff, with results in the pull request.
+
+Transparency Report. AI Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code. Actions Taken: checked the three review bodies against `main`, bumped the two doc pins, wrote the guard test, updated CHANGELOG and AUDIT. Oversight: requested by the owner's lead agent; no human review before the PR.
+
 ## 2026-11-08 — the marker before any save (Unreleased)
 
 CodeRabbit's reply to #58 on the #52 marker thread pointed out a sequence #58 left open. PostgreSQL misses the marker at the import, a record is deleted from both backends, and Redis loses its data before the next check: the old document is imported again over the delete. Now a backend that owes the marker gets it at the start of its next save (`RecordStore.save_changes`, `_owe_marker`), and it takes nothing until it has it.
