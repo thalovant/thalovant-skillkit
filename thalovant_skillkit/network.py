@@ -81,8 +81,8 @@ class JsonServiceClient:
 
     Calls are attempted once: replaying an unknown POST may repeat an action.
     The one exception is a 401 from one of the platform's services when the
-    token file then holds a different token: the verifier refused the request
-    before the service saw it, so it is sent once more with the new token.
+    token file then holds a different token: the request was refused before it
+    was handled, so it is sent once more with the new token.
     Missing, oversized, malformed, non-object and failed responses return None;
     the skill decides the spoken fallback. A budget exhausted before a request
     does not mark a service unhealthy. No URL, payload, or credentials are logged.
