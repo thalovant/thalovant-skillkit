@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import json
 import math
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from threading import Lock
 from time import monotonic
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .service import request_headers
+from .service_auth import retry_headers, sent_token, with_service_token
 
 
 class RequestBudget:
@@ -79,9 +80,15 @@ class JsonServiceClient:
     """One skill's identified, bounded JSON requests and per-URL failure cooldown.
 
     Calls are attempted once: replaying an unknown POST may repeat an action.
+    The one exception is a 401 from one of the platform's services when the
+    token file then holds a different token: the request was refused before it
+    was handled, so it is sent once more with the new token.
     Missing, oversized, malformed, non-object and failed responses return None;
     the skill decides the spoken fallback. A budget exhausted before a request
     does not mark a service unhealthy. No URL, payload, or credentials are logged.
+
+    The service token goes only to the platform's in-cluster services, as a
+    header urllib does not copy onto a redirect (`service_auth`).
     """
 
     def __init__(self, skill_name: str, skill_version: str, *,
@@ -107,14 +114,20 @@ class JsonServiceClient:
         if timeout <= 0:
             return None
         headers = request_headers(self.skill_name, self.skill_version,
-                                  f"{self.skill_name}/{self.skill_version}")
+                                  f"{self.skill_name}/{self.skill_version}", url=url)
         headers.update({"Content-Type": "application/json", "Accept": "application/json"})
+        body = json.dumps(payload).encode("utf-8")
         try:
-            request = Request(url, data=json.dumps(payload).encode("utf-8"),
-                              headers=headers, method="POST")
-            with self.budget.limit(timeout):
-                with (opener or urlopen)(request, timeout=timeout) as response:
-                    value = json.loads(self.budget.read(response, max_bytes=self.max_bytes))
+            try:
+                value = self._send(url, body, headers, timeout, opener)
+            except HTTPError as refused:
+                with suppress(Exception):
+                    refused.close()
+                fresh = retry_headers(url, headers, refused.code)
+                timeout = self.budget.timeout(timeout)
+                if fresh is None or timeout <= 0:
+                    raise
+                value = self._send(url, body, fresh, timeout, opener)
             if not isinstance(value, dict):
                 raise ValueError("expected a JSON object")
             return value
@@ -124,3 +137,14 @@ class JsonServiceClient:
                     self._failures.pop(next(iter(self._failures)))
                 self._failures[url] = self.clock() + self.cooldown
             return None
+
+    def _send(self, url: str, body: bytes, headers: dict[str, str], timeout: float, opener):
+        token = sent_token(headers)
+        request = Request(url, data=body, headers=with_service_token("", headers), method="POST")
+        if token is not None:
+            # Unredirected: urllib copies ordinary headers onto a redirect,
+            # wherever it points, and this one must not leave the service.
+            request.add_unredirected_header("Authorization", f"Bearer {token}")
+        with self.budget.limit(timeout):
+            with (opener or urlopen)(request, timeout=timeout) as response:
+                return json.loads(self.budget.read(response, max_bytes=self.max_bytes))

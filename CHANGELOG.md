@@ -1,6 +1,23 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
 # Changelog
+
+## Unreleased
+
+- **The runtime group's service token reaches the platform's services.** A new
+  module, `service_auth`, reads the token from the file named by
+  `THALOVANT_SERVICE_TOKEN_FILE` and sends it as `Authorization: Bearer` to the
+  seven shared services in namespace `thalovant` (`SERVICE_HOSTS`), and to no
+  other host. `post_json`, `JsonServiceClient.post` and `ask_service` (so
+  `knowledge_reply` too) add it; `request_headers` adds it when given the new
+  `url=` keyword. Headers built for a service lose the token when sent anywhere
+  else, `JsonServiceClient` keeps it off redirects, and a caller's own
+  `Authorization` is left alone. Without the file nothing changes.
+- **A 401 from a service is asked once more** when the token file then holds a
+  different token (the file is also re-read whenever it changes). It does not
+  count as an attempt, and the same token is never sent twice.
+- **Skills that call a service with their own `requests` call** get no token
+  until they pass `url=` to `request_headers`.
 
 ## 0.32.0
 

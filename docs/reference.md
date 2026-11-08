@@ -670,9 +670,11 @@ arguments, including omitting both archives.
 
 ## Service and knowledge clients
 
-[`request_headers(skill_name, skill_version, user_agent)`](../thalovant_skillkit/service.py)
-sets User-Agent, a fresh X-Request-ID, skill name and version headers.
-It does not supply authentication.
+[`request_headers(skill_name, skill_version, user_agent, *, url=None)`](../thalovant_skillkit/service.py)
+sets User-Agent, a fresh X-Request-ID, skill name and version headers. With
+`url`, it also sets the runtime's service token when `url` is one of the
+platform's services (see [The service token](#the-service-token)); without
+`url`, or for any other host, it supplies no credential.
 
 `post_json(url, payload, *, headers=None, timeout=2.4, attempts=2, client=requests)`
 returns `response.json()` or `None` after failure. It makes at least one attempt,
@@ -681,6 +683,38 @@ HTTP 5xx and unusable JSON up to the attempt limit without backoff. Timeout is
 passed to each request; it is not a total wall-clock deadline. The decoded JSON
 is **not validated as a dictionary**, despite the return annotation. Validate
 the response your skill requires; `None` can also be a decoded JSON null.
+It sends the service token to the platform's services and drops one the kit
+set for any other URL; a 401 from a service is asked once more, outside the
+attempt count, only when the token file then holds a different token.
+
+### The service token
+
+[`service_auth`](../thalovant_skillkit/service_auth.py) reads the runtime
+group's token from the file named by `THALOVANT_SERVICE_TOKEN_FILE` (in a
+platform runtime, `/home/ovos/.config/thalovant/service-token/token`) and sends
+it as `Authorization: Bearer <token>`, only to these hosts, over http or https:
+`<service>.thalovant`, `<service>.thalovant.svc` and
+`<service>.thalovant.svc.cluster.local` for `thalovant-llm`,
+`thalovant-embedder`, `thalovant-knowledge-service`,
+`thalovant-weather-service`, `thalovant-joke-service`, `thalovant-news-service`
+and `thalovant-popculture-service` (`SERVICE_HOSTS`). Never to a bare service
+name, an address, a URL with userinfo, or a host an owner typed in.
+
+| Helper | What it does with the token |
+|---|---|
+| `request_headers(..., url=url)` | Adds it for a service URL. A skill that sends with its own `requests` call passes the URL it posts to. |
+| `post_json` | Adds it for a service URL; removes one the kit set (from `request_headers(url=...)`) for any other URL. |
+| `network.JsonServiceClient.post` | Adds it for a service URL as an unredirected header, so urllib never copies it onto a redirect. |
+| `knowledge.ask_service`, `knowledge_reply`, `knowledge_answer` | Add it to the caller's `headers` (unchanged dict) for a service URL. |
+| `service_auth.with_service_token(url, headers)` | Returns a copy of `headers` fit for `url`; a caller's own `Authorization` is left alone. |
+
+- No file, an empty file or one that does not hold a token: no header and no
+  error (a file that is not a token logs one warning, never its content).
+- The file is read again when it changes (inode, size or modification time),
+  so a renewed token is picked up without a restart; a 401 forces one re-read,
+  and the request is repeated once only with a different token.
+- `requests` already drops `Authorization` when a redirect leaves the host.
+- The token is never logged.
 
 [`knowledge_reply(...)`](../thalovant_skillkit/knowledge.py) makes one POST to
 `<service_url>/v1/knowledge/answer`, with no retry. Required keyword arguments:
@@ -863,6 +897,8 @@ Create the client once per skill instance so cooldown history survives turns.
 `post()` returns `None` for an empty URL, an exhausted budget, an active cooldown,
 network failure, invalid JSON, a non-object result or an oversized response.
 It does not retry a POST: the server might already have performed its action.
+The one exception is a 401 from a service after which the token file holds a
+different token: the request was refused before it was handled.
 Successful replies are **not cached**, and no response is shared between speakers.
 An exhausted preflight budget does not start a failure cooldown. A failure on one
 URL does not suppress another URL. Use stable, configured service URLs rather

@@ -1,5 +1,14 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-06 - Motive: Release 0.31.1: a key prefix for RecordStore, a one-time warning when Redis refuses, and the operator recipe for a per-hub Redis user.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+
+## 2026-11-07 the service token (Unreleased)
+
+- Added: the runtime group's token is sent as `Authorization: Bearer` by [service_auth.py](thalovant_skillkit/service_auth.py) (`with_service_token`, `is_service_url`), only to `SERVICE_HOSTS` (seven services, namespace `thalovant`, three name forms). Evidence: [test/test_service_auth.py](test/test_service_auth.py), 184 passed.
+- Guarded (owner-editable URLs): local-pulse sends request headers to feeds its owner configures, and every `service_url` can be edited, so the token is never attached by host suffix or by service name alone; a bare `thalovant-llm` is refused because it falls through the pod's DNS search list. `test_no_other_host_is`, `test_request_headers_never_carry_it_elsewhere`, `test_post_json_never_sends_it_elsewhere`, `test_ask_service_to_an_owner_set_url_sends_no_token`.
+- Guarded (redirects): urllib copies ordinary headers onto any redirect; `JsonServiceClient._send` uses `add_unredirected_header`. `requests` drops `Authorization` across hosts by itself. `test_json_client_redirected_elsewhere_does_not_take_the_token_along`, `test_a_service_redirecting_elsewhere_does_not_take_the_token_along`, `test_ask_service_redirected_elsewhere_does_not_take_the_token_along`.
+- Accepted: any code in the runtime can read the token file and send it anywhere; the helpers only make the shared paths safe. Skills calling a service with their own `requests` call send nothing until they pass `url=` (coming-soon, joke-garden, learning-lounge's joke call, local-pulse, on-this-day, pop-facts, pop-quiz, weather, what-next).
+- Accepted: a 401 is repeated once when the token changed, including from `JsonServiceClient`, whose POSTs are otherwise never repeated; a 401 is a refusal before the request is handled.
+- Not exercised: a real mounted Secret in a pod (the symlink layout is reproduced in `test_the_kubelets_symlink_swap_is_seen`).
 
 ## 2026-11-06 — RecordStore needed Lua, which could take down a shared Redis
 
