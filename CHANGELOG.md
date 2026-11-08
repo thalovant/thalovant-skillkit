@@ -1,5 +1,5 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54: the import marker in every backend, PostgreSQL retried after a Redis refusal, the records guide and the 0.31.0 entry corrected.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54: the import marker in every backend, PostgreSQL retried after a Redis refusal, the records guide and the 0.31.0 entry corrected.
 # Changelog
 
 ## Unreleased
@@ -26,7 +26,11 @@ Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime
   read from all of them: `done` in any one is done, and a backend without it is
   given it, which also repairs a marker PostgreSQL could not take at the import.
   `PostgresBackend.migration_finish` now inserts the row when PostgreSQL did not
-  hold the claim (beside a Redis it never does). (CodeRabbit on #52.)
+  hold the claim (beside a Redis it never does). A backend that could not take the
+  marker, or could not be asked, owes it: `save_changes` gives it the marker
+  before anything else, and until it has it that backend takes no save (its part
+  fails like any other, and the skill sends the change again), so a delete never
+  reaches PostgreSQL before its marker. (CodeRabbit on #52.)
 - **After Redis refuses the old document's key, PostgreSQL's copy is still read.**
   0.31.2 stopped the import for the life of the process at the first refusal,
   even when PostgreSQL had failed at the same moment, so the old records stayed

@@ -1,5 +1,10 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54.
+
+## 2026-11-08 the marker before any save (Unreleased)
+
+- Fixed (Major, data integrity; CodeRabbit's reply on #52 after #58): when PostgreSQL could not take the import marker, a delete could still reach it, and if Redis then lost its data before the next check the old document came back over the delete. `RecordStore.save_changes` now gives a backend that owes the marker (`_owe_marker`, set by `_finish_migration` and `_migration_done`) the marker before anything else; until then that backend takes no save. Evidence: `test_a_delete_does_not_reach_postgres_before_its_marker`, `test_a_backend_that_could_not_be_asked_is_given_the_marker_before_a_save`, both failing on 891e33f.
+- Remaining (the general limit, unchanged): a delete PostgreSQL did not take, because it owed the marker or was down, exists only in Redis. If Redis then loses its data, PostgreSQL's copy brings the record back, as with any save one backend failed; the skill's retry closes this while the process lives. The debt itself is kept in memory, and after a restart the start-up check (`load_all_with_legacy`) finds it again.
 
 ## 2026-11-07 the open CodeRabbit findings (Unreleased)
 
