@@ -28,6 +28,7 @@ import requests
 
 from .locale import SkillResources
 from .service import request_headers as request_headers
+from .service_auth import retry_headers, with_service_token
 
 AI_AUGMENTATION_DEFAULT = "auto"
 SUPPORTED_AUDIENCE_AGE_BOUNDARIES = (13, 16, 18, 21)
@@ -349,11 +350,17 @@ def ask_service(*, service_url: str, request_payload: dict, headers: dict[str, s
 
     Without a notice, or from a service that does not stream, this is the plain
     request it always was.
+
+    The caller's `headers` gain the runtime group's service token when
+    `service_url` is the platform's knowledge service, and lose one this kit
+    set for any other URL (`service_auth.with_service_token`). A 401 is asked
+    once more only if the token file now holds a different token.
     """
     url = f"{service_url.rstrip('/')}/v1/knowledge/answer"
+    headers = with_service_token(url, headers)
     notice = _CURRENT.get()
     if notice is None:
-        response = requests.post(url, json=request_payload, headers=headers, timeout=timeout)
+        response = _post(url, request_payload, headers, timeout)
         response.raise_for_status()
         return _document(response.json())
     events: queue.Queue = queue.Queue()
@@ -375,8 +382,7 @@ def _read_into(events: queue.Queue, url: str, request_payload: dict, headers: di
     the whole answer.
     """
     try:
-        response = requests.post(url, json=request_payload, headers=headers,
-                                 timeout=timeout, stream=True)
+        response = _post(url, request_payload, headers, timeout, stream=True)
         with response:
             response.raise_for_status()
             if not response.headers.get("Content-Type", "").startswith(NDJSON):
@@ -401,6 +407,20 @@ def _read_into(events: queue.Queue, url: str, request_payload: dict, headers: di
             "the knowledge service ended its stream without an answer")))
     except BaseException as error:  # noqa: BLE001 - whatever happened is the caller's to raise
         events.put(("raise", error))
+
+
+def _post(url: str, request_payload: dict, headers: dict[str, str], timeout: float,
+          **options):
+    """One POST, and one more after a 401 if the token file now holds another token."""
+    response = requests.post(url, json=request_payload, headers=headers, timeout=timeout,
+                             **options)
+    fresh = retry_headers(url, headers, getattr(response, "status_code", None))
+    if fresh is None:
+        return response
+    close = getattr(response, "close", None)
+    if callable(close):
+        close()
+    return requests.post(url, json=request_payload, headers=fresh, timeout=timeout, **options)
 
 
 def _wait_and_tell(events: queue.Queue, notice: LookupNotice, lang: str | None) -> dict:

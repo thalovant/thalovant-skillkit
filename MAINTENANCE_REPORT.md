@@ -1,5 +1,13 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.31.2: the shared Redis URL switches RecordStore on.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+## 2026-11-07 — the service token, to the platform's services only (Unreleased)
+
+`thalovant_skillkit/service_auth.py` (`ServiceToken`, `is_service_url`, `with_service_token`, `retry_headers`, `SERVICE_HOSTS`) reads the token file named by `THALOVANT_SERVICE_TOKEN_FILE`, cached by its stat, and decides per URL whether the token may go. Wired into `request_headers(..., url=)` and `post_json` (`service.py`), `JsonServiceClient.post` (`network.py`, as an unredirected header) and `ask_service` with its streamed reader (`knowledge.py`, `_post`). No version bump: the release is cut separately.
+
+Verification: `test/test_service_auth.py`, 184 cases: each service and host form allowed; 27 external, look-alike, userinfo, backslash, fragment, bare-name, address and malformed URLs refused through every helper; headers built for a service stripped on the way elsewhere; redirects (301/302/303/307/308 through `requests`, 301/302/303 through urllib's own handlers) never carry it off the host; the kubelet's `..data` symlink swap picked up; 401 retried once only with a new token; missing or malformed file sends nothing and logs no token. Eight mutations (ordinary urllib header, no strip, always retry, bare names allowed, userinfo allowed, `ask_service` unwired, no retry, no stat check) each fail 3 to 46 cases. Full suite: 967 passed, 64 skipped (Python 3.12); ruff clean.
+
+Transparency Report. AI Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code. Actions Taken: wrote `service_auth.py`, wired it into the four helpers, wrote the tests and the mutations, updated the reference, CHANGELOG and AUDIT. Oversight: requested by the owner's lead agent for stage 1 of shared-service authentication; no human review before the PR.
+
 ## 2026-11-06 — 0.32.0: RecordStore without Lua
 
 `RedisBackend` writes through transactions instead of Lua, because a login that can load a script can take down a shared Redis. Behaviour is unchanged: an owner still leaves the set with their last record, and `WATCH` covers the race the script closed. Redis Cluster stays unsupported.

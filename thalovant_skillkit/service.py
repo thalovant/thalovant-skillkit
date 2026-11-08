@@ -4,6 +4,9 @@ Five skills wrote `_request_headers` and each service call repeated the same
 timeout-and-retry shape around `requests`. The headers matter operationally:
 `X-Request-ID` is what makes one spoken answer findable in the service logs,
 and it was missing from whichever skill last copied the function without it.
+
+The runtime group's service token rides along only to the platform's own
+in-cluster services: see `service_auth`.
 """
 from __future__ import annotations
 
@@ -13,18 +16,29 @@ from typing import Any
 
 import requests
 
+from .service_auth import retry_headers, with_service_token
+
 LOG = logging.getLogger(__name__)
 
 
-def request_headers(skill_name: str, skill_version: str, user_agent: str) -> dict[str, str]:
+def request_headers(skill_name: str, skill_version: str, user_agent: str, *,
+                    url: str | None = None) -> dict[str, str]:
     """Identify the skill and give this call an id the service logs can be
-    searched by."""
-    return {
+    searched by.
+
+    With ``url``, the headers also carry the runtime group's service token
+    when ``url`` is one of the platform's in-cluster services and the runtime
+    has a token (`service_auth.with_service_token`); for any other URL, or
+    without ``url``, they carry no credential. Pass the URL the request goes
+    to, not a base URL kept for later.
+    """
+    headers = {
         "User-Agent": user_agent,
         "X-Request-ID": f"{skill_name}-{uuid.uuid4().hex}",
         "X-Thalovant-Skill": skill_name,
         "X-Thalovant-Skill-Version": skill_version,
     }
+    return with_service_token(url, headers) if url is not None else headers
 
 
 def post_json(
@@ -42,11 +56,24 @@ def post_json(
     reply: a skill that raises here says nothing at all, and a skill that says
     "I could not reach the service" is the honest outcome. The caller decides
     what to say; this only decides that there is nothing to say it about.
+
+    The service token is added for the platform's in-cluster services and
+    removed for any other URL (`service_auth.with_service_token`). A 401 from
+    a service makes one more request if the token file now holds a different
+    token; it does not count as an attempt.
     """
+    headers = with_service_token(url, headers)
+    reauthorized = False
     for attempt in range(max(1, attempts)):
         try:
             response = client.post(url, json=payload, timeout=timeout,
-                                   headers=headers or {})
+                                   headers=headers)
+            status = getattr(response, "status_code", None)
+            fresh = None if reauthorized else retry_headers(url, headers, status)
+            if fresh is not None:
+                reauthorized, headers = True, fresh
+                response = client.post(url, json=payload, timeout=timeout,
+                                       headers=headers)
         except Exception as failure:  # noqa: BLE001 - the caller speaks, not raises
             # The connection failed; another attempt may not. Logged rather
             # than dropped: returning None tells the caller nothing about why,
