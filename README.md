@@ -1,5 +1,5 @@
-<!-- Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The Quickstart pins the published 0.32.0 (CodeRabbit on #22: the pin had fallen behind again). -->
-<!-- Previous: Codex - 2026-11-07 - Motive: Add the canonical Thalovant logo with light and dark theme support. -->
+<!-- Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The Quickstart pins 0.33.0, the release this version bump cuts. -->
+<!-- Previous: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The Quickstart pins the published 0.32.0 (CodeRabbit on #22: the pin had fallen behind again). -->
 
 <p align="center">
   <picture>
@@ -28,7 +28,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.32.0"
+python -m pip install --pre "thalovant-skillkit==0.33.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -36,7 +36,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.32.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.33.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 

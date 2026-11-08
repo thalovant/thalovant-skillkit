@@ -1,8 +1,8 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0 (the Unreleased section becomes 0.33.0).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
 # Changelog
 
-## Unreleased
+## 0.33.0
 
 - **The runtime group's service token reaches the platform's services.** A new
   module, `service_auth`, reads the token from the file named by
@@ -52,7 +52,7 @@ Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that o
   failed save can leave written.
 - Docs: the README's Quickstart and the reference's `[testing]` install pinned
   0.31.1 through the 0.31.2 and 0.32.0 releases. A reader copying them got the
-  kit that still runs Lua on Redis. Both now pin 0.32.0, and
+  kit that still runs Lua on Redis. Both now pin the release they ship in, and
   `test_the_documented_install_pins_the_version_this_is` fails when a version
   bump leaves them behind. (CodeRabbit on #22 found the same thing at 0.14.0.)
 
