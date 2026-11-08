@@ -1,5 +1,5 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54: the import marker in every backend, PostgreSQL retried after a Redis refusal, the records guide and the 0.31.0 entry corrected.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
 # Changelog
 
 ## Unreleased
@@ -50,6 +50,11 @@ Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRab
   the guide no longer says Redis runs Lua. The 0.31.0 entry below said a failed
   save "leaves nothing half written", which was never true: it now says what a
   failed save can leave written.
+- Docs: the README's Quickstart and the reference's `[testing]` install pinned
+  0.31.1 through the 0.31.2 and 0.32.0 releases. A reader copying them got the
+  kit that still runs Lua on Redis. Both now pin 0.32.0, and
+  `test_the_documented_install_pins_the_version_this_is` fails when a version
+  bump leaves them behind. (CodeRabbit on #22 found the same thing at 0.14.0.)
 
 ## 0.32.0
 
