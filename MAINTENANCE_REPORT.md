@@ -1,5 +1,11 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins match the released version (CodeRabbit on #22), and the review-body items on #7 and #9 are answered.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins match the released version (CodeRabbit on #22), and the review-body items on #7 and #9 are answered.
+## 2026-11-08 — 0.33.0
+
+The version moves to 0.33.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`), the changelog's Unreleased section becomes 0.33.0, and the README's Quickstart and the reference's `[testing]` install pin 0.33.0, as `test_the_documented_install_pins_the_version_this_is` requires. It releases everything merged since 0.32.0: the import marker in every backend and owed before any save (#58, #59), `JsonStateStore`'s PostgreSQL retried after a failure (#58), the service token for the platform's services (#56) and the install-pin test (#60). Skills that use `RecordStore` need this version for the marker fix. Verification: full suite (985 passed, 69 skipped: the live Redis and PostgreSQL runs, which CI runs), ruff, and `uv lock --check --prerelease allow`.
+
+Transparency Report. AI Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code. Actions Taken: bumped the version files and the two doc pins, closed the changelog section, ran the suite. Oversight: release requested by the owner; no human review before the PR.
+
 ## 2026-11-08 — install pins, and the review-body items on #7, #9 and #22
 
 The README's Quickstart and the reference's `[testing]` install now pin 0.32.0, the published release; both had stayed at 0.31.1. A new test in `test/test_packaging.py` ties both pins to `__version__`, and it fails on 9a0f734. The nitpicks on #7 (model caching in `fleet.py`) and #9 (the `repo` assertion) were already fixed in 885a83a (#18). Verification: full suite and ruff, with results in the pull request.
