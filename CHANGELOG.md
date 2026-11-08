@@ -1,5 +1,5 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54: the import marker in every backend, PostgreSQL retried after a Redis refusal, the records guide and the 0.31.0 entry corrected.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
 # Changelog
 
 ## Unreleased
@@ -18,6 +18,34 @@ Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: 
   count as an attempt, and the same token is never sent twice.
 - **Skills that call a service with their own `requests` call** get no token
   until they pass `url=` to `request_headers`.
+- **A Redis that lost its data no longer brings back records people deleted.**
+  The import marker was kept only in the first backend, Redis. After a restart
+  without persistence it was gone, so `load_all_with_legacy` imported the old
+  document again into Redis and PostgreSQL, and an alarm deleted since the import
+  came back. The marker is now written to every backend (PostgreSQL's first) and
+  read from all of them: `done` in any one is done, and a backend without it is
+  given it, which also repairs a marker PostgreSQL could not take at the import.
+  `PostgresBackend.migration_finish` now inserts the row when PostgreSQL did not
+  hold the claim (beside a Redis it never does). (CodeRabbit on #52.)
+- **After Redis refuses the old document's key, PostgreSQL's copy is still read.**
+  0.31.2 stopped the import for the life of the process at the first refusal,
+  even when PostgreSQL had failed at the same moment, so the old records stayed
+  out until a restart. A refusal now only stops the Redis read:
+  `JsonStateStore.load(redis=False)` reads PostgreSQL alone, at most every five
+  minutes, as for any store that has not yet given a document. Redis is still
+  asked once. (CodeRabbit on #54.)
+- **`JsonStateStore`'s PostgreSQL comes back after a failure.** A failed connect
+  turned PostgreSQL off for the life of the store, and a connection PostgreSQL
+  closed (a restart, a failover) stayed in use, failing every load and save. A
+  connect that fails is now tried again after `POSTGRES_RETRY_SECONDS` (60 s), and
+  a connection that fails a query is closed and replaced on the next call. A
+  missing `psycopg` still turns it off, once.
+- Docs: `docs/records.md`'s example now sets `self._records` before the first
+  load, and its per-turn read sends a change an earlier save could not make
+  before it reads that owner afresh (the read used to replace it in both lists);
+  the guide no longer says Redis runs Lua. The 0.31.0 entry below said a failed
+  save "leaves nothing half written", which was never true: it now says what a
+  failed save can leave written.
 
 ## 0.32.0
 
@@ -73,7 +101,11 @@ Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: 
   `<PREFIX>_REDIS_URL`, `REDIS_URL`, `<PREFIX>_DATABASE_URL`, `DATABASE_URL`,
   `<PREFIX>_STATE_KEY`): an operator changes nothing. With no database it returns
   None and writes nothing, and the skill keeps its settings. A write that
-  cannot be made raises `RecordStoreError` and leaves nothing half written.
+  cannot be made raises `RecordStoreError`; it can leave part of the change
+  written (the other backend, or in Redis the records before the failure), so a
+  skill keeps the snapshot of its last successful save and the next save sends
+  the change again. *(Corrected after release: this said the write "leaves
+  nothing half written".)*
 - **The old document comes over once, and is left alone.** `migrate_legacy` (and
   `load_all_with_legacy`, the call a skill makes at its start) imports the
   whole-document records into the new layout: put only where absent, so anything

@@ -12,10 +12,17 @@ import json
 import logging
 import os
 import re
+import time
 import urllib.parse
+from contextlib import suppress
 from typing import Any
 
 LOG = logging.getLogger(__name__)
+
+#: After PostgreSQL could not be reached, how long a load or save leaves it alone before trying
+#: again. (A failed connect used to turn PostgreSQL off for the life of the process, so a pod
+#: that started while PostgreSQL was still coming up never used it.)
+POSTGRES_RETRY_SECONDS = 60.0
 
 
 def redis_sentinel_urls(value: Any) -> list[tuple[str, int]]:
@@ -76,19 +83,26 @@ class JsonStateStore:
         self._redis = None
         self._pg = None
         self._pg_ready = False
+        self._pg_retry_at = 0.0
         #: Redis said this user may not read the key. That stays true until the ACL
-        #: changes, so a caller retrying a load can stop.
+        #: changes, so a caller retrying a load can leave Redis out (`load(redis=False)`).
         self.redis_refused = False
         self.enabled = bool(self.redis_url or self.redis_sentinel_urls or self.database_url)
 
-    def load(self) -> list[dict] | None:
+    def load(self, *, redis: bool = True) -> list[dict] | None:
+        """The document: Redis first, then PostgreSQL (which refills Redis).
+
+        None means no document or no answer. `redis=False` reads PostgreSQL only and writes
+        nothing back, for a caller that already knows Redis refuses this user the key.
+        """
         if not self.enabled:
             return None
-        value = self._load_redis()
-        if value is not None:
-            return value
+        if redis:
+            value = self._load_redis()
+            if value is not None:
+                return value
         value = self._load_postgres()
-        if value is not None:
+        if value is not None and redis:
             self._save_redis(value)
         return value
 
@@ -160,17 +174,31 @@ class JsonStateStore:
             LOG.warning("State store Redis save failed (%s)", type(error).__name__)
 
     def _postgres(self):
+        """The connection, opened when there is none. None when PostgreSQL is not set up, its
+        driver is missing (for good), or a connect failed less than `POSTGRES_RETRY_SECONDS`
+        ago."""
         if not self.database_url:
             return None
         if self._pg is None:
+            if time.monotonic() < self._pg_retry_at:
+                return None
             try:
                 import psycopg
-
+            except ImportError as error:
+                LOG.warning("State store Postgres disabled (%s)", type(error).__name__)
+                self.database_url = ""
+                return None
+            try:
                 self._pg = psycopg.connect(self.database_url, connect_timeout=1)
                 self._pg.autocommit = True
             except Exception as error:
-                LOG.warning("State store Postgres disabled (%s)", type(error).__name__)
-                self.database_url = ""
+                self._drop_postgres()
+                self._pg_retry_at = time.monotonic() + POSTGRES_RETRY_SECONDS
+                LOG.warning(
+                    "State store Postgres unreachable (%s); trying again in %d s",
+                    type(error).__name__,
+                    POSTGRES_RETRY_SECONDS,
+                )
                 return None
         if not self._pg_ready:
             with self._pg.cursor() as cur:
@@ -181,6 +209,14 @@ class JsonStateStore:
                 )
             self._pg_ready = True
         return self._pg
+
+    def _drop_postgres(self) -> None:
+        """Forget a connection that failed, so the next call opens a new one (a connection
+        PostgreSQL closed, by a restart or a failover, would otherwise fail every call)."""
+        conn, self._pg, self._pg_ready = self._pg, None, False
+        if conn is not None:
+            with suppress(Exception):
+                conn.close()
 
     def _load_postgres(self) -> list[dict] | None:
         try:
@@ -194,6 +230,7 @@ class JsonStateStore:
             return row[0] if row else None
         except Exception as error:
             LOG.warning("State store Postgres load failed (%s)", type(error).__name__)
+            self._drop_postgres()
             return None
 
     def _save_postgres(self, value: list[dict]):
@@ -210,6 +247,7 @@ class JsonStateStore:
                 )
         except Exception as error:
             LOG.warning("State store Postgres save failed (%s)", type(error).__name__)
+            self._drop_postgres()
 
     def _store_key(self) -> str:
         return f"thalovant:{self.scope}:{self.key}"

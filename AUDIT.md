@@ -1,5 +1,15 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The open CodeRabbit findings on #47, #48, #52 and #54.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+
+## 2026-11-07 the open CodeRabbit findings (Unreleased)
+
+- Fixed (Major, data integrity): a deleted record came back after Redis lost its data, because the import marker was only in Redis and the old document was imported again into both backends. [records.py](thalovant_skillkit/records.py) `RecordStore._migration_done`, `RecordStore._finish_migration`, `PostgresBackend.migration_finish` (now an upsert). Evidence: `test_a_redis_that_lost_its_data_does_not_bring_back_a_deleted_record` (fakeredis with sqlite, and live Redis 8.2.9 with PostgreSQL 17), `test_a_marker_postgres_could_not_take_is_given_at_the_next_check`, `test_the_marker_is_set_without_holding_the_claim`, `test_a_done_marker_in_any_backend_is_enough`. All fail on `main`.
+- Fixed (Major, availability): when Redis refused the old key, a PostgreSQL failure at the same moment kept the old records out until a restart. `RecordStore.migrate_legacy` now reads only PostgreSQL after a refusal (`JsonStateStore.load(redis=False)`). Evidence: `test_after_a_refusal_postgres_is_still_read_until_it_answers`.
+- Fixed (Major, availability): `JsonStateStore` turned PostgreSQL off for good after one failed connect, and kept a connection PostgreSQL had closed. [storage.py](thalovant_skillkit/storage.py) `_postgres` (`POSTGRES_RETRY_SECONDS`), `_drop_postgres`. Evidence: `test_a_postgres_that_could_not_be_reached_is_tried_again_after_a_while`, `test_a_connection_postgres_closed_is_replaced_on_the_next_call` in [test/test_storage.py](test/test_storage.py).
+- Fixed (docs): [docs/records.md](docs/records.md)'s example raised `AttributeError` on `self._records` and lost a change at the next turn after a failed save (`test_a_change_an_earlier_save_could_not_make_survives_the_next_turn` runs the corrected loop). The 0.31.0 CHANGELOG entry overstated a failed save.
+- Accepted: if Redis loses its data and PostgreSQL cannot answer the marker check at the same moment, the import runs into Redis as it did before. A PostgreSQL that is down at the first start must not hold up people's records (`test_a_mirror_that_cannot_answer_does_not_hold_up_the_import_into_the_first`).
+- Accepted: while PostgreSQL is down, `JsonStateStore` tries a connect (one-second timeout) and logs one warning at most every 60 s, where before it gave up after the first.
+- Open (Minor, unchanged): last writer wins per record; there is no transaction across records.
 
 ## 2026-11-07 the service token (Unreleased)
 

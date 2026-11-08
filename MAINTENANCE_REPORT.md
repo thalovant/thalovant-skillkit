@@ -1,5 +1,21 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: Release 0.32.0: RecordStore uses no Lua.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Close the open CodeRabbit findings on #47, #48, #52 and #54.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+## 2026-11-07 — the open CodeRabbit findings on #47, #48, #52 and #54 (Unreleased)
+
+Every unresolved CodeRabbit thread and review-body item on those merged pull requests was read against `main` at 59852a8. Fixed here:
+
+- #52, `records.py` (Major): the import marker lived only in the first backend. `RecordStore._migration_done` now asks every backend (`done` in any is done, the others are given it) and `RecordStore._finish_migration` writes it to all of them, PostgreSQL's first; `PostgresBackend.migration_finish` inserts the row when PostgreSQL never held the claim.
+- #54, `records.py` (Major): a Redis refusal of the old key stopped the import for good, even when PostgreSQL had only failed. The refusal now only leaves Redis out (`JsonStateStore.load(redis=False)`). For PostgreSQL to come back at all, `JsonStateStore` now retries a failed connect after `POSTGRES_RETRY_SECONDS` and replaces a connection that failed a query (`_postgres`, `_drop_postgres`); a missing driver still turns it off.
+- #52, `docs/records.md` (Major, Minor): the example sets `self._records` before the first load, and its per-turn read sends an unsaved change before it reads that owner afresh.
+- #52, `CHANGELOG.md` (Minor): the 0.31.0 entry no longer claims a failed save leaves nothing half written.
+- Also corrected in the guide: three places still said Redis runs Lua (0.32.0 removed it).
+
+Already fixed on `main`: the four review-body items on #47 (b2ba47d in #49, and 7517a08 in #50) and the certifi line #48 asked for (7517a08). No version bump; the release is cut separately.
+
+Verification: each new test fails on `main`'s `records.py` or `storage.py` and passes here; the guide's loop test fails with the old `_turn`. Full suite on Python 3.12: 1023 passed, 28 skipped with live Redis 8.2.9 and PostgreSQL 17 containers; 982 passed, 69 skipped without them (main: 967 passed, 64 skipped). ruff clean.
+
+Transparency Report. AI Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code. Actions Taken: read every thread, sorted the findings, changed `records.py` and `storage.py`, wrote the tests, corrected the guide, the reference, CHANGELOG and AUDIT, and answered the threads. Oversight: requested by the owner's lead agent; no human review before the PR.
+
 ## 2026-11-07 — the service token, to the platform's services only (Unreleased)
 
 `thalovant_skillkit/service_auth.py` (`ServiceToken`, `is_service_url`, `with_service_token`, `retry_headers`, `SERVICE_HOSTS`) reads the token file named by `THALOVANT_SERVICE_TOKEN_FILE`, cached by its stat, and decides per URL whether the token may go. Wired into `request_headers(..., url=)` and `post_json` (`service.py`), `JsonServiceClient.post` (`network.py`, as an unredirected header) and `ask_service` with its streamed reader (`knowledge.py`, `_post`). No version bump: the release is cut separately.
