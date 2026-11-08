@@ -626,6 +626,9 @@ class RecordStore:
         self._built = backends is not None
         self._build_lock = threading.Lock()
         self._legacy_checked = 0.0
+        # Backends that must take the import marker before they take a save (see save_changes).
+        self._owed: list[Any] = []
+        self._owed_lock = threading.Lock()
 
     # -- what is configured --------------------------------------------------------
 
@@ -837,6 +840,12 @@ class RecordStore:
 
         Raises `RecordStoreError` when a backend could not take the change (the
         others are still tried). With no database set up it does nothing.
+
+        A backend that still owes the import marker (it could not take it, or could not be
+        asked, while another said done) is given it first, and takes nothing until it has it:
+        a delete must never reach PostgreSQL before its marker, or a Redis that then lost its
+        data would have the old document imported again over it. Until then its part of the
+        save fails like any other, and the caller sends the change again.
         """
         puts, deletes = self.changes(before, after)
         backends = self._backend_list()
@@ -846,6 +855,9 @@ class RecordStore:
         refused = False
         for backend in backends:
             try:
+                if self._owes_marker(backend):
+                    backend.migration_finish()
+                    self._settle_marker(backend)
                 backend.apply(puts, deletes)
             except Exception as error:  # noqa: BLE001 - reported below, the other backend is still tried
                 acl = self._failed(backend, "save", error)
@@ -857,19 +869,34 @@ class RecordStore:
 
     # -- from the whole document ---------------------------------------------------
 
+    def _owe_marker(self, backend: Any) -> None:
+        """Remember that `backend` must take the import marker before its next save."""
+        with self._owed_lock:
+            if not any(b is backend for b in self._owed):
+                self._owed.append(backend)
+
+    def _settle_marker(self, backend: Any) -> None:
+        with self._owed_lock:
+            self._owed = [b for b in self._owed if b is not backend]
+
+    def _owes_marker(self, backend: Any) -> bool:
+        with self._owed_lock:
+            return any(b is backend for b in self._owed)
+
     def _migration_done(self, backends: list[Any]) -> bool:
         """Whether the import is done: any backend's marker says so.
 
         Every backend is asked, not only the first. A Redis that lost its data (a restart
         without persistence) lost the marker with it, and it is PostgreSQL's marker that keeps
         the old document from being imported again over the records deleted since. A backend
-        without the marker while another has it is given it (a failure there is logged and
-        repaired at the next check). A backend that cannot answer is logged and left out; when
-        none says done and the first could not answer, its error is raised (the claim is made
-        there).
+        without the marker while another has it is given it; one that cannot take it, or could
+        not be asked, owes it and is given it before its next save. A backend that cannot answer
+        is logged and left out; when none says done and the first could not answer, its error
+        is raised (the claim is made there).
         """
         done = False
         missing: list[Any] = []
+        unknown: list[Any] = []
         first_error: BaseException | None = None
         for index, backend in enumerate(backends):
             try:
@@ -879,17 +906,23 @@ class RecordStore:
                     first_error = error
                 else:
                     self._failed(backend, "migration check", error)
+                unknown.append(backend)
                 continue
             if state == "done":
                 done = True
+                self._settle_marker(backend)
             else:
                 missing.append(backend)
         if done:
             for backend in missing:
                 try:
                     backend.migration_finish()
-                except Exception as error:  # noqa: BLE001 - given again at the next check
+                    self._settle_marker(backend)
+                except Exception as error:  # noqa: BLE001 - given before its next save
                     self._failed(backend, "migration marker", error)
+                    self._owe_marker(backend)
+            for backend in unknown:
+                self._owe_marker(backend)
             return True
         if first_error is not None:
             raise first_error
@@ -898,8 +931,8 @@ class RecordStore:
     def _finish_migration(self, backends: list[Any]) -> None:
         """Set the marker `done` in every backend: PostgreSQL's (the copy that outlives a Redis
         restart) first, the claim's own backend last. One that cannot take it is logged and
-        given it at the next check, from another that has it; when none can, the error is
-        raised and the import is repeated later."""
+        owes it: it is given it before it takes a save, and at the next check; when none can,
+        the error is raised and the import is repeated later."""
         failed: list[tuple[Any, BaseException]] = []
         for backend in reversed(backends):
             try:
@@ -910,6 +943,7 @@ class RecordStore:
             raise failed[-1][1]  # the claim's backend, last: reported as the migration's failure
         for backend, error in failed:
             self._failed(backend, "migration marker", error)
+            self._owe_marker(backend)
 
     def migrate_legacy(self, legacy: JsonStateStore | None = None) -> int:
         """Bring the old whole-document records into the per-owner layout, once.

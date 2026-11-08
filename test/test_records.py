@@ -752,6 +752,45 @@ def test_a_mirror_that_cannot_answer_does_not_hold_up_the_import_into_the_first(
     assert first.data and first.migration_state() == "running"
 
 
+def test_a_delete_does_not_reach_postgres_before_its_marker(tmp_path):
+    """The sequence CodeRabbit gave on #52 after #58: PostgreSQL could not take the marker at
+    the import, a record was then deleted from both backends, and Redis lost its data before
+    any later check. The old document came back over the delete."""
+    cache, durable, flush = cache_and_durable("fake", tmp_path)
+    pg = durable()
+    real = pg.migration_finish
+
+    def down():
+        raise OSError("down")
+
+    pg.migration_finish = down
+    store = both(cache(), pg)
+    legacy = LegacyDocument([rec("anna", "1"), rec("anna", "2")])
+    assert store.migrate_legacy(legacy) == 2
+    before = store.load_all()
+    kept = [r for r in before if r["id"] == "1"]
+    with pytest.raises(RecordStoreError, match="postgres"):
+        store.save_changes(before, kept)  # PostgreSQL still refuses the marker
+    assert sorted(rid for _, rid, _ in pg.load_all()) == ["1", "2"], "so it takes no delete"
+    pg.migration_finish = real
+    # The skill sends the same change again.
+    assert store.save_changes(before, kept) == Changes(puts=0, deletes=1)
+    assert pg.migration_state() == "done", "the marker went first"
+    flush()
+    assert both(cache(), durable()).load_all_with_legacy(legacy) == [rec("anna", "1")]
+
+
+def test_a_backend_that_could_not_be_asked_is_given_the_marker_before_a_save():
+    first, durable = MemoryBackend(), MemoryBackend()
+    first.migration_finish()
+    store = both(first, durable)
+    durable.fail = OSError("down")
+    assert store.migrate_legacy(LegacyDocument([rec("anna", "1")])) == 0, "done in the first"
+    durable.fail = None
+    store.save_changes([], [rec("anna", "1")])
+    assert durable.migration_state() == "done"
+
+
 # ---- what is set up ----------------------------------------------------------------------------
 
 

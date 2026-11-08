@@ -1,5 +1,5 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The import marker in every backend, PostgreSQL re-read after a Redis refusal, and the guide's example keeps an unsaved change (CodeRabbit findings on #52 and #54).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-06 - Motive: RecordStore uses no Lua, so a skill's Redis login needs no scripting right.
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The import marker in every backend, PostgreSQL re-read after a Redis refusal, and the guide's example keeps an unsaved change (CodeRabbit findings on #52 and #54).
 
 # Per-owner records (`thalovant_skillkit.records`)
 
@@ -154,8 +154,11 @@ Alarms and reminders of real people exist in the old whole-document key.
   of them: `done` in any is done, and a backend without it is given it. A Redis
   that comes back empty after a restart has lost its marker, but PostgreSQL's
   still stops the old document from being imported again over the records
-  people deleted since. If PostgreSQL cannot take the marker at the import, it is
-  given it at the next check, from Redis;
+  people deleted since. If PostgreSQL cannot take the marker at the import (or
+  cannot be asked at a later check), it owes it: the next `save_changes` gives it
+  the marker first, and PostgreSQL takes no save until it has it, so no delete
+  reaches it before its marker (that part of the save fails, and the skill sends
+  it again);
 - an old pod still running after the migration, and still saving whole
   documents, writes where the new code no longer reads. Roll the skills out
   together and restart the runtime pod (the kit stays in memory until then).

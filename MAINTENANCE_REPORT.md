@@ -1,5 +1,13 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Close the open CodeRabbit findings on #47, #48, #52 and #54.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Send the runtime group's service token to the platform's services only (service_auth).
+Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: Close the open CodeRabbit findings on #47, #48, #52 and #54.
+## 2026-11-08 — the marker before any save (Unreleased)
+
+CodeRabbit's reply to #58 on the #52 marker thread pointed out a sequence #58 left open. PostgreSQL misses the marker at the import, a record is deleted from both backends, and Redis loses its data before the next check: the old document is imported again over the delete. Now a backend that owes the marker gets it at the start of its next save (`RecordStore.save_changes`, `_owe_marker`), and it takes nothing until it has it.
+
+Verification: the two new tests in `test/test_records.py` fail on 891e33f and pass here. Results for the full suite are in the pull request.
+
+Transparency Report. AI Model: Claude Opus 5.5 (`claude-opus-5-5`) in Claude Code. Actions Taken: changed `records.py`, wrote the tests, updated the guide, CHANGELOG and AUDIT. Oversight: same lead-agent request as #58; no human review before the PR.
+
 ## 2026-11-07 — the open CodeRabbit findings on #47, #48, #52 and #54 (Unreleased)
 
 Every unresolved CodeRabbit thread and review-body item on those merged pull requests was read against `main` at 59852a8. Fixed here:
