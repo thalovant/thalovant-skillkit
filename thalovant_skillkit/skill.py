@@ -69,7 +69,7 @@ from .message import location as _location
 from .selection import ShuffleBagPool
 from .speech import emit_speech
 from .speech import speak_to as _speak_to
-from .ssml import carries_markup, render_line, speech_parts
+from .ssml import SpeechStyle, auto_twin, carries_markup, render_line, speech_parts
 from .text import fold
 
 # OVOS's renderer turns `{{name}}` into `{name}` before formatting a dialog.
@@ -94,11 +94,12 @@ def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw)
     try:
         values = data or {}
         resources = skill.locale_resources
-        if not carries_markup(values) and not resources.has_ssml(key):
+        style = getattr(skill, "SPEECH_STYLE", None)
+        if style is None and not carries_markup(values) and not resources.has_ssml(key):
             return None  # the common case, answered before asking for a language
         lang = skill.lang
         lines, twins = resources.dialog_twins(key, lang)
-        if not lines or (twins is None and not carries_markup(values)):
+        if not lines or (twins is None and style is None and not carries_markup(values)):
             return None
         if any(_ALTERNATIVES.search(line) for line in lines):
             return None
@@ -107,7 +108,10 @@ def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw)
         if framework is None or tuple(framework) != lines:
             return None
         index = lines.index(draw(lines, lang))
-        twin = _MUSTACHE.sub(r"{\1}", twins[index]) if twins else None
+        if twins:
+            twin = _MUSTACHE.sub(r"{\1}", twins[index])  # a hand-written twin wins
+        else:
+            twin = auto_twin(lines[index], style) if style is not None else None
         return render_line(lines[index], twin, values)
     except Exception:  # noqa: BLE001 - OVOS's own path is the fallback
         return None
@@ -119,6 +123,11 @@ class _SkillPlumbing:
     #: Where this skill's `locale/` tree lives. Found from the module the class
     #: is defined in, so a skill laid out like every other one sets nothing.
     LOCALE_DIR: Path | str | None = None
+
+    #: How this skill's replies are paced (`ssml.SpeechStyle`), applied to every
+    #: `speak_dialog` line that has no `.ssml` twin of its own. None sends plain
+    #: words, as before.
+    SPEECH_STYLE: SpeechStyle | None = None
 
     #: Whether this skill needs the network to be up before it can load. Most
     #: do not, and the thirteen-line RuntimeRequirements block every skill was

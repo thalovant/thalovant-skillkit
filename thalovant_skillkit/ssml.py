@@ -35,6 +35,8 @@ import re
 import threading
 import xml.etree.ElementTree as ET
 from collections.abc import Mapping
+from dataclasses import dataclass
+from functools import lru_cache
 from string import Formatter
 from typing import Any
 
@@ -42,6 +44,8 @@ __all__ = [
     "SSML_KEY",
     "SUPPORTED_TAGS",
     "Speech",
+    "SpeechStyle",
+    "auto_twin",
     "carries_markup",
     "digits",
     "emphasis",
@@ -568,6 +572,100 @@ def render_line(plain_template: str, ssml_template: str | None = None,
         return plain
     speech = Speech(plain, fragment)
     return speech if speech.ssml else plain
+
+
+# -- a skill's way of speaking -------------------------------------------------
+
+@dataclass(frozen=True)
+class SpeechStyle:
+    """How a skill's replies are paced, declared once instead of in every twin.
+
+    Set it on the skill class, `SPEECH_STYLE = SpeechStyle(sentence_break="350ms")`,
+    and every `speak_dialog` line is sent with markup derived from the line's
+    own words: a pause after each sentence, a slower pace, and so on. There is
+    no `.ssml` file to keep beside each `.dialog`, in every language, in step
+    with it. A `.ssml` twin still wins for the one line that needs more than a
+    rule can say (a spelled code, a word in another language).
+
+    Each field is None (off) or a value the voices read: `rate` is a
+    `<prosody rate>` such as "95%" or "slow"; the others are `<break time>`
+    durations such as "350ms". The rules read only the dialog's own words,
+    never what a `{placeholder}` is later filled with, so a value that holds a
+    full stop is not cut in two.
+    """
+
+    rate: str | None = None
+    sentence_break: str | None = None
+    colon_break: str | None = None
+    dash_break: str | None = None
+    comma_break: str | None = None
+
+    def __post_init__(self) -> None:
+        problems = []
+        if self.rate is not None:
+            problems += validate(f'<prosody rate="{self.rate}">x</prosody>')
+        for name in ("sentence_break", "colon_break", "dash_break", "comma_break"):
+            value = getattr(self, name)
+            if value is not None:
+                problems += validate(f'<break time="{value}"/>')
+        if problems:
+            raise ValueError("SpeechStyle: " + "; ".join(problems))
+
+
+_PLACEHOLDER = re.compile(r"\{[^{}]*\}")
+_STOP = "\x01"
+# A mark followed by space and more words. The mark decides the pause; text
+# that ends the line has nothing after it to pause for.
+_MARK = re.compile(
+    r"(?P<sentence>[.!?\u2026]+[\"')\u00bb\u201d]?)(?=\s+\S)|"
+    r"(?P<colon>:)(?=\s+\S)|(?P<semi>;)(?=\s+\S)|"
+    r"(?P<dash>\s[\u2014\u2013])(?=\s+\S)|(?P<comma>,)(?=\s+\S)"
+)
+
+
+@lru_cache(maxsize=2048)
+def auto_twin(template: str, style: SpeechStyle) -> str | None:
+    """The SSML for a dialog line under `style`, or None when it adds nothing.
+
+    `template` is one dialog line with `{placeholders}`, as `str.format` takes
+    it. The result is a template in turn, to be filled by `render_line` with
+    the values escaped. None means the line would be sent as plain words.
+    """
+    if "{{" in template or "}}" in template:
+        return None
+    holes: list[str] = []
+
+    def hide(match: re.Match[str]) -> str:
+        holes.append(match.group(0))
+        return _STOP
+
+    body = _PLACEHOLDER.sub(hide, template)
+    breaks = {"sentence": style.sentence_break, "colon": style.colon_break,
+              "semi": style.colon_break, "dash": style.dash_break,
+              "comma": style.comma_break}
+    added = 0
+
+    def mark(match: re.Match[str]) -> str:
+        nonlocal added
+        duration = breaks[match.lastgroup or ""]
+        if not duration:
+            return match.group(0)
+        added += 1
+        return f"{match.group(0)} \x02{duration}\x03"
+
+    # Marks are found in the words as written and escaped afterwards: the ';'
+    # that ends '&amp;' is not a mark.
+    spoken = _escape_text(_MARK.sub(mark, body))
+    if not added and not style.rate:
+        return None
+    spoken = re.sub("\x02(.*?)\x03", lambda m: f'<break time="{m.group(1)}"/>', spoken)
+    parts = iter(holes)
+    spoken = re.sub(_STOP, lambda _m: next(parts), spoken)
+    # "words. <break/>  More" -> one space either side of the break.
+    spoken = re.sub(r"(<break [^>]*/>)\s+", r"\1 ", spoken)
+    if style.rate:
+        spoken = f'<prosody rate="{style.rate}">{spoken}</prosody>'
+    return spoken
 
 
 # -- what goes on the bus ----------------------------------------------------

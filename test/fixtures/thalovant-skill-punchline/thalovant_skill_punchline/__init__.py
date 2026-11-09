@@ -11,7 +11,7 @@ a coffee with the French said in French. Each shows one way to add markup:
 * `order_coffee` builds its sentence in Python.
 """
 from thalovant_skillkit.skill import ThalovantFallbackSkill
-from thalovant_skillkit.ssml import foreign, pause, say, spell
+from thalovant_skillkit.ssml import SpeechStyle, foreign, pause, say, spell
 
 
 class PunchlineSkill(ThalovantFallbackSkill):
@@ -36,3 +36,10 @@ class PunchlineSkill(ThalovantFallbackSkill):
         return self.speak_to(message, say(
             "One", foreign("café au lait", "fr-FR"), "coming up.", pause("500ms"), "Enjoy.",
         ))
+
+
+class PacedPunchlineSkill(PunchlineSkill):
+    """The same skill with a speech style: no twin is needed for the pacing."""
+
+    SPEECH_STYLE = SpeechStyle(rate="95%", sentence_break="350ms", colon_break="300ms",
+                               dash_break="300ms", comma_break="250ms")

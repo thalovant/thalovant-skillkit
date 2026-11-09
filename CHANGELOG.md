@@ -1,6 +1,17 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0 (the Unreleased section becomes 0.33.0).
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-09 - Motive: SPEECH_STYLE (0.34.0): pace dialog without a .ssml twin per line.
 Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
 # Changelog
+
+## 0.34.0
+
+- **`SPEECH_STYLE`: pace a skill's replies without a `.ssml` twin per line.** A
+  skill class sets `SPEECH_STYLE = SpeechStyle(rate=..., sentence_break=...,
+  colon_break=..., dash_break=..., comma_break=...)` and `speak_dialog` sends
+  `utterance_ssml` derived from the dialog line's own words (`ssml.auto_twin`).
+  Rules read the template, never the filled-in values; a hand-written twin still
+  wins for its line; without the attribute nothing changes. Skills that copied
+  every line into a twin only to add pauses can delete the twins.
+- `checks.redundant_twins(root, style)` reports twins the style already says.
 
 ## 0.33.0
 
