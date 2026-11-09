@@ -305,9 +305,10 @@ class _SkillPlumbing:
         if no dialog is found. Missing formatting values leave the template
         visible instead of raising during an answer.
 
-        When `<name>.ssml` sits beside the dialog, or a value in `data` is an
-        `ssml.Speech` with markup, the result is a `Speech`: the same line,
-        plus its SSML rendered from the same variant and the same data.
+        When `<name>.ssml` sits beside the dialog, the skill declares a
+        `SPEECH_STYLE`, or a value in `data` is an `ssml.Speech` with markup,
+        the result is a `Speech`: the same line, plus its SSML rendered from the
+        same variant and the same data.
         Speaking it sends both; anything else sees the plain line.
         """
         lines, twins = self.locale_resources.dialog_twins(name, lang or self._own_lang())
@@ -316,7 +317,8 @@ class _SkillPlumbing:
         index = random.randrange(len(lines))  # noqa: S311 - variety, not secrecy
         template = lines[index]
         values = data or {}
-        if twins is None and not carries_markup(values):
+        style = self.SPEECH_STYLE
+        if twins is None and style is None and not carries_markup(values):
             try:
                 return template.format(**values).replace("\\n", "\n")
             except (KeyError, IndexError, ValueError):
@@ -327,9 +329,13 @@ class _SkillPlumbing:
                 # crashing a spoken reply over -- the skill says the raw line and
                 # the mistake is audible.
                 return template.replace("\\n", "\n")
-        twin = twins[index].replace("\\n", "\n") if twins else None
+        template = template.replace("\\n", "\n")
+        if twins:
+            twin = twins[index].replace("\\n", "\n")  # a hand-written twin wins
+        else:
+            twin = auto_twin(template, style) if style is not None else None
         try:
-            return render_line(template.replace("\\n", "\n"), twin, values)
+            return render_line(template, twin, values)
         except (KeyError, IndexError, ValueError):
             return template.replace("\\n", "\n")
 

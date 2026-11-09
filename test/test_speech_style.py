@@ -127,3 +127,12 @@ def test_a_twin_the_style_already_says_is_reported(tmp_path):
     assert redundant_twins(tmp_path, style) == [
         "locale/en-US/dialog/a.ssml repeats what the skill's SPEECH_STYLE already says; delete it"
     ]
+
+
+def test_dialog_returns_the_styled_line_for_a_skill_that_says_it_itself(styled):
+    with skill_harness(styled, skill_id="style.test", scheduler=False) as harness:
+        line = harness.skill.dialog("briefing", "en-US", {"name": "Ada"})
+        joke = harness.skill.dialog("joke", "en-US")
+    assert str(line) == "Two things: say hello to Ada. Then, say goodbye."
+    assert line.ssml.count("<break") == 3 and line.document.startswith("<speak>")
+    assert "<prosody" not in joke.ssml  # its own twin wins
