@@ -269,6 +269,29 @@ The twin is left out, and OVOS renders the dialog exactly as before, when:
 - the twin's line count differs from the dialog's, or a filled-in line does not
   parse. That is logged once.
 
+### Pacing every line without twins: `SPEECH_STYLE`
+
+A skill that only wants its replies paced (a pause after each sentence, after a
+colon or a dash, a slower rate) declares it once on the class instead of writing
+a twin per dialog per language:
+
+```python
+from thalovant_skillkit.ssml import SpeechStyle
+
+class WeatherSkill(ThalovantFallbackSkill):
+    SPEECH_STYLE = SpeechStyle(rate="95%", sentence_break="350ms", colon_break="300ms")
+```
+
+`speak_dialog` then sends `utterance_ssml` derived from the dialog line's own
+words (`ssml.auto_twin(template, style)`): the rules read the template, never
+what a `{placeholder}` is filled with, so a value that contains a full stop is
+not cut in two, and values are escaped as for any twin. A hand-written `.ssml`
+twin still wins for its line. `checks.redundant_twins(root, style)` lists twins
+that say nothing the style does not, so a skill's tests can keep them deleted.
+Fields: `rate`, `sentence_break`, `colon_break` (also `;`), `dash_break` (`—`,
+`–`), `comma_break`. Unset fields do nothing; with no `SPEECH_STYLE` a skill is
+sent exactly as before.
+
 Why `.ssml` and not `.ssml.dialog`: OVOS reads every `.dialog` file as a plain
 template in which `<name>` names a vocabulary. It would load
 `joke.ssml.dialog` as a dialog called `joke.ssml` and raise on the first
@@ -551,7 +574,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.33.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.34.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.

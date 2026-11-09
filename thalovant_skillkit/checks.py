@@ -28,7 +28,7 @@ from pathlib import Path
 
 from .intents import MalformedTemplate, expand, vocabularies
 from .regions import regional_sources, sync_regions
-from .ssml import looks_like_ssml, to_plain, validate
+from .ssml import SpeechStyle, auto_twin, looks_like_ssml, to_plain, validate
 from .text import fold_words
 
 PLACEHOLDER = re.compile(r"\{[A-Za-z_][A-Za-z0-9_]*\}|<[A-Za-z_][A-Za-z0-9_.-]*>")
@@ -590,6 +590,33 @@ def check_ssml(skill_root: Path) -> list[str]:
                 problems.extend(_ssml_line_problems(f"locale/{relative}:{number}",
                                                     plain_line, ssml_line))
     return problems
+
+
+def redundant_twins(skill_root: Path, style: SpeechStyle) -> list[str]:
+    """The `.ssml` twins that say nothing the skill's `SPEECH_STYLE` does not.
+
+    A twin whose every line equals the markup `style` derives from the plain
+    line is a second copy of the dialog to keep in step in every language, and
+    can be deleted. Not part of `check_all`, which reads files and not the
+    skill's class: a skill's tests call it with the style they declare, e.g.
+    `assert redundant_twins(ROOT, WeatherSkill.SPEECH_STYLE) == []`.
+    """
+    package = find_package(Path(skill_root))
+    if package is None or not (package / "locale").is_dir():
+        return []
+    locale_root = package / "locale"
+    found: list[str] = []
+    for path in sorted(locale_root.rglob(f"*{SSML_SUFFIX}")):
+        plain_path = path.with_suffix(".dialog")
+        if not plain_path.is_file():
+            continue
+        plain, twins = _resource_lines(plain_path), _resource_lines(path)
+        if len(plain) == len(twins) and all(
+                " ".join((auto_twin(p, style) or p).split()) == " ".join(t.split())
+                for (_, p), (_, t) in zip(plain, twins, strict=True)):
+            found.append(f"locale/{path.relative_to(locale_root)} repeats what the skill's "
+                         "SPEECH_STYLE already says; delete it")
+    return found
 
 
 def check_all(skill_root: Path) -> list[str]:

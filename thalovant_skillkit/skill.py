@@ -69,7 +69,7 @@ from .message import location as _location
 from .selection import ShuffleBagPool
 from .speech import emit_speech
 from .speech import speak_to as _speak_to
-from .ssml import carries_markup, render_line, speech_parts
+from .ssml import SpeechStyle, auto_twin, carries_markup, render_line, speech_parts
 from .text import fold
 
 # OVOS's renderer turns `{{name}}` into `{name}` before formatting a dialog.
@@ -94,11 +94,12 @@ def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw)
     try:
         values = data or {}
         resources = skill.locale_resources
-        if not carries_markup(values) and not resources.has_ssml(key):
+        style = getattr(skill, "SPEECH_STYLE", None)
+        if style is None and not carries_markup(values) and not resources.has_ssml(key):
             return None  # the common case, answered before asking for a language
         lang = skill.lang
         lines, twins = resources.dialog_twins(key, lang)
-        if not lines or (twins is None and not carries_markup(values)):
+        if not lines or (twins is None and style is None and not carries_markup(values)):
             return None
         if any(_ALTERNATIVES.search(line) for line in lines):
             return None
@@ -107,7 +108,10 @@ def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw)
         if framework is None or tuple(framework) != lines:
             return None
         index = lines.index(draw(lines, lang))
-        twin = _MUSTACHE.sub(r"{\1}", twins[index]) if twins else None
+        if twins:
+            twin = _MUSTACHE.sub(r"{\1}", twins[index])  # a hand-written twin wins
+        else:
+            twin = auto_twin(lines[index], style) if style is not None else None
         return render_line(lines[index], twin, values)
     except Exception:  # noqa: BLE001 - OVOS's own path is the fallback
         return None
@@ -119,6 +123,11 @@ class _SkillPlumbing:
     #: Where this skill's `locale/` tree lives. Found from the module the class
     #: is defined in, so a skill laid out like every other one sets nothing.
     LOCALE_DIR: Path | str | None = None
+
+    #: How this skill's replies are paced (`ssml.SpeechStyle`), applied to every
+    #: `speak_dialog` line that has no `.ssml` twin of its own. None sends plain
+    #: words, as before.
+    SPEECH_STYLE: SpeechStyle | None = None
 
     #: Whether this skill needs the network to be up before it can load. Most
     #: do not, and the thirteen-line RuntimeRequirements block every skill was
@@ -296,9 +305,10 @@ class _SkillPlumbing:
         if no dialog is found. Missing formatting values leave the template
         visible instead of raising during an answer.
 
-        When `<name>.ssml` sits beside the dialog, or a value in `data` is an
-        `ssml.Speech` with markup, the result is a `Speech`: the same line,
-        plus its SSML rendered from the same variant and the same data.
+        When `<name>.ssml` sits beside the dialog, the skill declares a
+        `SPEECH_STYLE`, or a value in `data` is an `ssml.Speech` with markup,
+        the result is a `Speech`: the same line, plus its SSML rendered from the
+        same variant and the same data.
         Speaking it sends both; anything else sees the plain line.
         """
         lines, twins = self.locale_resources.dialog_twins(name, lang or self._own_lang())
@@ -307,7 +317,8 @@ class _SkillPlumbing:
         index = random.randrange(len(lines))  # noqa: S311 - variety, not secrecy
         template = lines[index]
         values = data or {}
-        if twins is None and not carries_markup(values):
+        style = self.SPEECH_STYLE
+        if twins is None and style is None and not carries_markup(values):
             try:
                 return template.format(**values).replace("\\n", "\n")
             except (KeyError, IndexError, ValueError):
@@ -318,9 +329,13 @@ class _SkillPlumbing:
                 # crashing a spoken reply over -- the skill says the raw line and
                 # the mistake is audible.
                 return template.replace("\\n", "\n")
-        twin = twins[index].replace("\\n", "\n") if twins else None
+        template = template.replace("\\n", "\n")
+        if twins:
+            twin = twins[index].replace("\\n", "\n")  # a hand-written twin wins
+        else:
+            twin = auto_twin(template, style) if style is not None else None
         try:
-            return render_line(template.replace("\\n", "\n"), twin, values)
+            return render_line(template, twin, values)
         except (KeyError, IndexError, ValueError):
             return template.replace("\\n", "\n")
 
