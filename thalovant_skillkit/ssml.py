@@ -414,7 +414,8 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
             problems.append(f'<amazon:auto-breaths duration="{duration}"> is not one of '
                             + ", ".join(sorted(BREATH_DURATIONS)))
         if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
-            problems.append(f'<amazon:auto-breaths volume="{volume}"> is not a named volume or dB change')
+            problems.append(f'<amazon:auto-breaths volume="{volume}"> is not a named volume '
+                            "or dB change")
     elif tag == "amazon:breath":
         if len(element) or (element.text or "").strip():
             problems.append("<amazon:breath> takes no words; close it with <amazon:breath/>")
@@ -620,7 +621,7 @@ def cardinal(text: Any) -> Speech:
 
 
 def ordinal(text: Any) -> Speech:
-    """Say `text` as an ordinal: `ordinal(3)` is "third", `ordinal(21)` in French "vingt-et-unième"."""
+    """Say `text` as an ordinal: `ordinal(3)` is "third"."""
     return _say_as(text, "ordinal")
 
 
@@ -640,7 +641,7 @@ def currency(text: Any) -> Speech:
 
 
 def address(text: Any) -> Speech:
-    """Say a street address: abbreviations are spelled out and house numbers read as people say them."""
+    """Say a street address: abbreviations spelled out, house numbers read as people say them."""
     return _say_as(text, "address")
 
 
@@ -657,11 +658,12 @@ def expletive(text: Any) -> Speech:
 def _formatted(text: Any, kind: str, fmt: str | None) -> Speech:
     plain = _part(text)[0]
     attribute = f' format="{escape(fmt)}"' if fmt else ""
-    return _checked(plain, f'<say-as interpret-as="{kind}"{attribute}>{_escape_text(plain)}</say-as>')
+    return _checked(
+        plain, f'<say-as interpret-as="{kind}"{attribute}>{_escape_text(plain)}</say-as>')
 
 
 def as_date(text: Any, format: str | None = None) -> Speech:  # noqa: A002 - SSML's attribute name
-    """Say `text` as a date. `format` orders the fields when the text is numeric: "mdy", "dmy", "ymd"."""
+    """Say `text` as a date. `format` orders numeric fields: "mdy", "dmy" or "ymd"."""
     return _formatted(text, "date", format)
 
 
@@ -699,7 +701,7 @@ def prosody(text: Any, *, rate: str | None = None, pitch: str | None = None,  # 
 
 
 def pitch(text: Any, value: str) -> Speech:
-    """Say `text` higher or lower: `pitch("Really?", "+2st")`. Moves the audio, so keep it modest."""
+    """Say `text` higher or lower: `pitch("Really?", "+2st")`. Keep it modest."""
     return prosody(text, pitch=value)
 
 
@@ -724,7 +726,7 @@ def compress(text: Any) -> Speech:
 
 
 def vocal_tract(text: Any, percent: str) -> Speech:
-    """Say `text` with a longer ("+20%") or shorter ("-15%") vocal tract: a lower or higher voice."""
+    """Say `text` with a longer ("+20%") or shorter ("-15%") vocal tract: lower or higher."""
     return _effect(text, f'vocal-tract-length="{escape(percent)}"')
 
 
@@ -738,7 +740,7 @@ def breath(duration: str | None = None, volume: str | None = None) -> Speech:
 
 def auto_breaths(text: Any, frequency: str = "medium", duration: str | None = None,
                  volume: str | None = None) -> Speech:
-    """Say `text` with a breath between its sentences, as often as `frequency` ("low" ... "x-high")."""
+    """Say `text` with a breath between sentences, as often as `frequency` ("low" to "x-high")."""
     attributes = f' frequency="{escape(frequency)}"' + "".join(
         f' {name}="{escape(value)}"' for name, value in (("duration", duration), ("volume", volume))
         if value is not None)
@@ -839,15 +841,16 @@ class SpeechStyle:
     def __post_init__(self) -> None:
         problems = []
         if self.rate is not None:
-            problems += validate(f'<prosody rate="{self.rate}">x</prosody>')
+            problems += validate(f'<prosody rate="{escape(self.rate)}">x</prosody>')
         if self.pitch is not None:
-            problems += validate(f'<prosody pitch="{self.pitch}">x</prosody>')
+            problems += validate(f'<prosody pitch="{escape(self.pitch)}">x</prosody>')
         if self.breaths is not None:
-            problems += validate(f'<amazon:auto-breaths frequency="{self.breaths}">x</amazon:auto-breaths>')
+            problems += validate(
+                f'<amazon:auto-breaths frequency="{escape(self.breaths)}">x</amazon:auto-breaths>')
         for name in ("sentence_break", "colon_break", "dash_break", "comma_break"):
             value = getattr(self, name)
             if value is not None:
-                problems += validate(f'<break time="{value}"/>')
+                problems += validate(f'<break time="{escape(value)}"/>')
         if problems:
             raise ValueError("SpeechStyle: " + "; ".join(problems))
 
@@ -891,7 +894,7 @@ def auto_twin(template: str, style: SpeechStyle) -> str | None:
         if not duration:
             return match.group(0)
         added += 1
-        return f"{match.group(0)} \x02{duration}\x03"
+        return f"{match.group(0)} \x02{escape(duration)}\x03"
 
     # Marks are found in the words as written and escaped afterwards: the ';'
     # that ends '&amp;' is not a mark.
@@ -903,12 +906,13 @@ def auto_twin(template: str, style: SpeechStyle) -> str | None:
     spoken = re.sub(_STOP, lambda _m: next(parts), spoken)
     # "words. <break/>  More" -> one space either side of the break.
     spoken = re.sub(r"(<break [^>]*/>)\s+", r"\1 ", spoken)
-    attributes = "".join(f' {name}="{value}"' for name, value in
+    attributes = "".join(f' {name}="{escape(value)}"' for name, value in
                          (("rate", style.rate), ("pitch", style.pitch)) if value)
     if attributes:
         spoken = f"<prosody{attributes}>{spoken}</prosody>"
     if style.breaths:
-        spoken = f'<amazon:auto-breaths frequency="{style.breaths}">{spoken}</amazon:auto-breaths>'
+        spoken = (f'<amazon:auto-breaths frequency="{escape(style.breaths)}">'
+                  f"{spoken}</amazon:auto-breaths>")
     return spoken
 
 
