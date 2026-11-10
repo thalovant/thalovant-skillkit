@@ -163,3 +163,26 @@ def test_module_exports_every_helper():
 def test_speech_style_refuses_values_that_would_break_out_of_the_markup(field, value):
     with pytest.raises(ValueError, match="SpeechStyle"):
         SpeechStyle(**{field: value})
+
+
+@pytest.mark.parametrize("text", [
+    "CBC Montreal — CBCの地域ニュースを再生します。ソース: 音声",  # ja
+    "今天天气很好，适合出门。明天会下雨：带上伞。",  # zh: comma, stop, colon
+    "यह एक परीक्षण है।यह दूसरा वाक्य है।",  # hi: danda
+    "هذا اختبار؟نعم هذا جيد۔وهذا آخر",  # ar
+    "彼は言った。「行こう」。それから出た。",  # a closing quote after the mark
+])
+def test_pacing_never_changes_the_words_of_a_script_without_spaces(text):
+    """kit 0.36.0 read back "。 ソース" for "。ソース": a pause is not a space in the words."""
+    from thalovant_skillkit.ssml import SpeechStyle, auto_twin, to_plain
+    style = SpeechStyle(sentence_break="250ms", colon_break="300ms", comma_break="120ms")
+    twin = auto_twin(text, style, "ja")
+    assert twin is not None and "<break" in twin
+    assert to_plain(twin) == text
+
+
+def test_a_pause_still_reads_back_as_one_space_where_the_language_writes_one():
+    from thalovant_skillkit.ssml import SpeechStyle, auto_twin, to_plain
+    text = "It is six degrees. The high is eight."
+    twin = auto_twin(text, SpeechStyle(sentence_break="250ms"), "en")
+    assert to_plain(twin) == text

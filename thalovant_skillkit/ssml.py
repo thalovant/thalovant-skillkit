@@ -237,6 +237,10 @@ def strip_tags(text: str) -> str:
     return _normalize(html.unescape(_ANY_TAG.sub(" ", text or "")))
 
 
+#: Marks of the scripts that write no space after them (CJK, Devanagari, Arabic, Armenian ...).
+_BARE_MARKS = frozenset("。！？｡؟۔।॥։።။។‼⁇⁈⁉，、､،၊：；؛」』）】》〉")
+
+
 def to_plain(ssml: str, *, alias: bool = True) -> str:
     """The words of an SSML string: what `utterance` should say.
 
@@ -255,7 +259,10 @@ def to_plain(ssml: str, *, alias: bool = True) -> str:
     def walk(element: ET.Element) -> None:
         tag = _local(element.tag)
         if tag == "break":
-            parts.append(_BOUNDARY)
+            # "。<break/>ソース": the pause paces the voice, it is not a space in the words.
+            # A script that writes no space after its mark must read back as written.
+            if not (parts and parts[-1][-1:] in _BARE_MARKS):
+                parts.append(_BOUNDARY)
             return
         if tag == "sub":
             spoken = element.get("alias")
