@@ -104,6 +104,7 @@ SUPPORTED_TAGS: dict[str, frozenset[str]] = {
     "voice": frozenset({"xml:lang"}),
     "say-as": frozenset({"interpret-as", "format", "detail"}),
     "sub": frozenset({"alias"}),
+    "w": frozenset({"role"}),
     "phoneme": frozenset({"alphabet", "ph"}),
     "mark": frozenset({"name"}),
     "amazon:effect": frozenset({"name", "phonation", "vocal-tract-length"}),
@@ -113,7 +114,7 @@ SUPPORTED_TAGS: dict[str, frozenset[str]] = {
 }
 SAY_AS = frozenset({"characters", "spell-out", "digits", "telephone", "cardinal", "number",
                     "ordinal", "fraction", "unit", "date", "time", "currency", "address",
-                    "expletive", "interjection"})
+                    "expletive", "interjection", "letters", "verbatim"})
 BREAK_STRENGTHS = frozenset({"none", "x-weak", "weak", "medium", "strong", "x-strong"})
 RATES = frozenset({"x-slow", "slow", "medium", "fast", "x-fast", "default"})
 VOLUMES = frozenset({"silent", "x-soft", "soft", "medium", "loud", "x-loud", "default"})
@@ -157,15 +158,25 @@ _BOUNDARY = "\x00"
 
 # -- escaping -----------------------------------------------------------------
 
+# Characters XML 1.0 cannot carry at all, not even as an entity: a NUL or a stray escape
+# byte in a value from a service would make the whole line "not well-formed" and cost the
+# reply its markup. They are said as nothing, which is what a voice would do with them.
+_XML_ILLEGAL = re.compile("[\x00-\x08\x0b\x0c\x0e-\x1f\ud800-\udfff\ufffe\uffff]")
+
+
 def escape(value: Any) -> str:
     """`value` as text that is safe anywhere in SSML, attribute values included."""
-    return (str(value).replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-            .replace('"', "&quot;").replace("'", "&apos;"))
+    return (_XML_ILLEGAL.sub("", str(value)).replace("&", "&amp;").replace("<", "&lt;")
+            .replace(">", "&gt;").replace('"', "&quot;").replace("'", "&apos;"))
+
+
+def _entities(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
 def _escape_text(text: str) -> str:
     """Words for an element's text. Quotes stay readable there."""
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return _entities(_XML_ILLEGAL.sub("", text))
 
 
 # -- reading markup ----------------------------------------------------------
@@ -333,7 +344,13 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
         if time is not None:
             ms = _duration_ms(time)
             if ms is None:
-                problems.append(f'<break time="{time}"> needs a unit, as in "500ms" or "1s"')
+                if time.startswith("-"):
+                    problems.append(f'<break time="{time}"> is negative; a pause cannot be')
+                elif re.match(r"\d+(?:\.\d+)?", time):
+                    problems.append(f'<break time="{time}"> needs a unit, as in "500ms" or "1s"')
+                else:
+                    problems.append(f'<break time="{time}"> is not a duration such as "500ms" '
+                                    'or "1.5s"')
             elif ms > MAX_BREAK_MS:
                 problems.append(f'<break time="{time}"> is longer than the 10s a voice allows')
         strength = given("strength")
@@ -342,6 +359,8 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
                             + ", ".join(sorted(BREAK_STRENGTHS)))
     elif tag == "prosody":
         rate, volume = given("rate"), given("volume")
+        if not ({"rate", "volume", "pitch"} & attributes.keys()):
+            problems.append("<prosody> needs rate, pitch or volume, or it changes nothing")
         if rate is not None and rate not in RATES and not _PERCENT.match(rate):
             problems.append(f'<prosody rate="{rate}"> is not a named rate or a percentage')
         if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
@@ -373,6 +392,10 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
         if len(element):
             problems.append("<say-as> holds words, not other tags")
         fmt = given("format")
+        if fmt is not None and kind is not None and "{" not in kind \
+                and kind not in ("date", "time"):
+            problems.append(f'<say-as interpret-as="{kind}"> takes no format; '
+                            "format is for date and time")
         if fmt is not None and kind == "date" and not _DATE_FORMAT.match(fmt.lower()):
             problems.append(f'<say-as format="{fmt}"> is not a date order such as "mdy" or "dmy"')
         if fmt is not None and kind == "time" and fmt.lower() not in _TIME_FORMATS:
@@ -385,6 +408,13 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
     elif tag == "phoneme":
         if "ph" not in attributes:
             problems.append("<phoneme> needs ph, the pronunciation in IPA or X-SAMPA")
+        elif "{" not in attributes["ph"] and not attributes["ph"].strip():
+            problems.append("<phoneme ph> is empty; write the pronunciation in IPA or X-SAMPA")
+        elif "[[" in attributes["ph"] or "]]" in attributes["ph"]:
+            problems.append("<phoneme ph> must not contain [[ or ]], which a voice reads as "
+                            "the start and end of phonemes")
+        if len(element):
+            problems.append("<phoneme> holds words, not other tags")
         alphabet = given("alphabet")
         if alphabet is not None and alphabet.lower() not in ALPHABETS:
             problems.append(f'<phoneme alphabet="{alphabet}"> must be "ipa" or "x-sampa"')
@@ -837,6 +867,7 @@ class SpeechStyle:
     colon_break: str | None = None
     dash_break: str | None = None
     comma_break: str | None = None
+    say_as: bool = True
 
     def __post_init__(self) -> None:
         problems = []
@@ -857,22 +888,150 @@ class SpeechStyle:
 
 _PLACEHOLDER = re.compile(r"\{[^{}]*\}")
 _STOP = "\x01"
-# A mark followed by space and more words. The mark decides the pause; text
-# that ends the line has nothing after it to pause for.
+_OPEN, _CLOSE = "\x02", "\x03"
+_SPAN_OPEN, _SPAN_CLOSE = "\x04", "\x05"
+
+# What ends a sentence, a clause or a phrase, in the scripts the skills ship. Latin marks
+# need a space and more words after them ("3.5" and "e.g." are not ends); the marks of
+# scripts that do not put a space after a full stop (Japanese, Chinese, Thai-less Indic and
+# Arabic text) are marks wherever they stand, as long as more words follow.
+_CLOSERS = "\"')»”」』）】》〉"
+_SENTENCE_SPACED = "[.!?…]+"
+_SENTENCE_BARE = ("[。！？｡؟۔।॥։።။។"
+                  "‼⁇-⁉]+")
+_COMMA_BARE = "[，、､،၊]"
+_COLON_BARE = "[：]"
+_SEMI_BARE = "[；؛]"
+# A mark followed by more words. The mark decides the pause; text that ends the line has
+# nothing after it to pause for.
 _MARK = re.compile(
-    r"(?P<sentence>[.!?\u2026]+[\"')\u00bb\u201d]?)(?=\s+\S)|"
+    rf"(?P<sentence>{_SENTENCE_SPACED}[{_CLOSERS}]?)(?=\s+\S)|"
+    rf"(?P<sentence_bare>{_SENTENCE_BARE}[{_CLOSERS}]?)(?=\s*\S)|"
     r"(?P<colon>:)(?=\s+\S)|(?P<semi>;)(?=\s+\S)|"
-    r"(?P<dash>\s[\u2014\u2013])(?=\s+\S)|(?P<comma>,)(?=\s+\S)"
+    r"(?P<dash>\s[—–])(?=\s+\S)|(?P<comma>,)(?=\s+\S)|"
+    rf"(?P<colon_bare>{_COLON_BARE})(?=\s*\S)|(?P<semi_bare>{_SEMI_BARE})(?=\s*\S)|"
+    rf"(?P<comma_bare>{_COMMA_BARE})(?=\s*\S)"
 )
+
+# A full stop after these is part of the word, not the end of the sentence. Titles and
+# honorifics never end one; the others do only when a capital letter follows ("Nov. 9" and
+# "9 a.m. on Monday" go on, "It was 9 a.m. Then" stops).
+_ALWAYS_ABBREVIATION = frozenset({
+    "mr", "mrs", "ms", "mx", "dr", "prof", "mme", "mmes", "mlle", "mlles", "mgr", "st", "ste",
+    "mt", "sr", "sra", "sres", "srta", "dra", "hr", "dipl", "ing", "noº"})
+_SOMETIMES_ABBREVIATION = frozenset({
+    "jr", "vs", "etc", "approx", "ca", "cf", "ex", "no", "nr", "env", "av", "bd", "bld", "ave",
+    "blvd", "rd", "apt", "dept", "inc", "ltd", "co", "corp", "fig", "vol", "ch", "pp", "tel",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+    "janv", "févr", "avr", "juil", "déc", "mon", "tue", "wed", "thu", "fri", "sat",
+    "sun", "lun", "mer", "jeu", "ven", "sam", "dim", "ene", "abr", "ago", "dic", "bzw",
+    "usw", "evtl", "ggf", "inkl", "max", "min"})
+# "9. November": a number and a full stop is an ordinal in these languages.
+_ORDINAL_DOT = frozenset({"de", "cs", "sk", "da", "nb", "nn", "no", "fi", "hu", "sl", "hr", "bs",
+                          "sr", "is", "et", "lv", "tr", "fo", "mk", "sq"})
+_LAST_WORD = re.compile(r"([^\s(\[{\"'«“]+)$")
+_DOTTED = re.compile(r"^(?:\w\.)+\w$")
+
+
+def _primary(lang: str | None) -> str:
+    return (lang or "").replace("_", "-").split("-")[0].lower()
+
+
+def _stops_here(before: str, after: str, lang: str | None, spans: list[str]) -> bool:
+    """Whether the full stop that follows `before` ends a sentence (False: an abbreviation)."""
+    found = _LAST_WORD.search(before)
+    word = found.group(1) if found else ""
+    if word.startswith(_SPAN_OPEN):  # a quantity: "9 a.m" keeps its dots, "9 pm" does not
+        word = _span_text(spans, int(word.strip(_SPAN_OPEN + _SPAN_CLOSE))).rsplit(" ", 1)[-1]
+        if not _DOTTED.match(word):
+            return True
+    word = word.strip(".")
+    follows = after.lstrip()[:1]
+    if not word:
+        return True
+    bare = word.lower()
+    if bare in _ALWAYS_ABBREVIATION:
+        return False
+    if len(word) == 1 and word.isalpha():
+        # An initial ("J. Smith", "M. Dupont") or a unit/page letter ("p. 5"); the words
+        # "I" and "a" end sentences as often as they start them.
+        if word.isupper():
+            return word in ("I", "A")
+        return not (follows.isdigit() or follows.islower())
+    if bare in _SOMETIMES_ABBREVIATION or _DOTTED.match(word):
+        return follows.isupper() and not follows.isdigit()
+    if word.isdigit() and _primary(lang) in _ORDINAL_DOT:
+        return not follows.isalpha()
+    return True
+
+
+# -- numbers, times, dates and units the voice should read as such --------------------------
+#
+# A literal "14 h 30", "3,50 €" or "23 °C" in a dialog is read by a voice's own text
+# normalizer, which is weak where it matters: phoonnx says "quatorze h trente", "trois virgule
+# cinq euros", "un deux cents" for "1 200" and "7:30 P M". Wrapped in `<say-as>` the voice reads
+# it with the language's own number, date and unit rules. Only languages phoonnx's say-as has
+# word tables for are wrapped; in the others the voice's own reading is left alone.
+SAY_AS_LANGUAGES = frozenset({"en", "fr", "de", "es", "it", "pt", "nl"})
+_UNIT_SYMBOL = r"(?:°\s?[CFK]|℃|℉|%|km/h|km|cm|kg)(?![\w°])"
+_MONEY_SYMBOL = r"(?:US\$|CA\$|C\$|R\$|[$€£¥])"
+_MONEY_CODE = r"(?:EUR|USD|GBP|CAD|CHF|JPY)"
+_AMOUNT = r"\d(?:[\d.,  ]*\d)?"
+_QUANTITY = re.compile(
+    r"(?P<date>(?<![\w/.:-])(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/.]\d{1,2}[/.]\d{4})(?![\w/-]))|"
+    r"(?P<time>(?<![\w:.,])(?:\d{1,2}:\d{2}(?::\d{2})?(?:\s?[AaPp]\.?[Mm])?"
+    r"|\d{1,2}\s?h\s?\d{2})(?![\w:]))|"
+    rf"(?P<currency>(?<![\w.,])(?:{_MONEY_SYMBOL}\s?{_AMOUNT}|{_AMOUNT}\s?"
+    rf"(?:{_MONEY_SYMBOL}|{_MONEY_CODE}\b)|\x01\s?{_MONEY_SYMBOL}|{_MONEY_SYMBOL}\s?\x01))|"
+    rf"(?P<unit>(?:(?<![\w.,])-?\d+(?:[.,]\d+)?|\x01)\s?{_UNIT_SYMBOL})|"
+    r"(?P<ordinal>(?<![\w])\d+(?:st|nd|rd|th|er|re|ere|e|ème|è|nd|nde)(?![\w]))|"
+    r"(?P<cardinal>(?<![\d.,])\d{1,3}(?:[,  ]\d{3})+(?:\.\d+)?(?![\d,]))"
+)
+_ORDINAL_SUFFIX = {
+    "en": re.compile(r"^\d+(?:st|nd|rd|th)$"),
+    "fr": re.compile(r"^\d+(?:er|re|ere|e|ème|è|nd|nde)$"),
+}
+
+
+def _quantities(body: str, lang: str | None, spans: list[str]) -> str:
+    """`body` with each quantity the voice should read as such held back as a numbered span."""
+    short = _primary(lang)
+    if short not in SAY_AS_LANGUAGES:
+        return body
+
+    def hold(match: re.Match[str]) -> str:
+        kind, text = match.lastgroup or "", match.group(0)
+        if kind == "ordinal":
+            pattern = _ORDINAL_SUFFIX.get(short)
+            if pattern is None or not pattern.match(text):
+                return text
+        if kind == "cardinal" and "," in text and short != "en":
+            return text  # a comma is the decimal mark there: "1,200" is one and a fifth
+        if kind == "unit" and text.startswith(_STOP) and "%" not in text and "°" not in text:
+            return text
+        spans.append(f"{kind}\x00{text}")
+        return f"{_SPAN_OPEN}{len(spans) - 1}{_SPAN_CLOSE}"
+
+    return _QUANTITY.sub(hold, body)
+
+
+def _span_text(spans: list[str], index: int) -> str:
+    return spans[index].split("\x00", 1)[1]
 
 
 @lru_cache(maxsize=2048)
-def auto_twin(template: str, style: SpeechStyle) -> str | None:
+def auto_twin(template: str, style: SpeechStyle, lang: str | None = None) -> str | None:
     """The SSML for a dialog line under `style`, or None when it adds nothing.
 
     `template` is one dialog line with `{placeholders}`, as `str.format` takes
     it. The result is a template in turn, to be filled by `render_line` with
     the values escaped. None means the line would be sent as plain words.
+
+    `lang` is the language of the line. It lets the rules know that "9. November"
+    is a date in German and not the end of a sentence, and, with `style.say_as`,
+    wraps the literal times, dates, amounts, units, ordinals and thousands in the
+    line in `<say-as>` (see `SAY_AS_LANGUAGES`). Without it only the pauses and the
+    pace are derived.
     """
     if "{{" in template or "}}" in template:
         return None
@@ -882,26 +1041,42 @@ def auto_twin(template: str, style: SpeechStyle) -> str | None:
         holes.append(match.group(0))
         return _STOP
 
-    body = _PLACEHOLDER.sub(hide, template)
-    breaks = {"sentence": style.sentence_break, "colon": style.colon_break,
-              "semi": style.colon_break, "dash": style.dash_break,
-              "comma": style.comma_break}
+    body = _PLACEHOLDER.sub(hide, _XML_ILLEGAL.sub("", template))
+    spans: list[str] = []
+    if style.say_as and lang:
+        body = _quantities(body, lang, spans)
+    breaks = {"sentence": style.sentence_break, "sentence_bare": style.sentence_break,
+              "colon": style.colon_break, "colon_bare": style.colon_break,
+              "semi": style.colon_break, "semi_bare": style.colon_break,
+              "dash": style.dash_break, "comma": style.comma_break,
+              "comma_bare": style.comma_break}
     added = 0
 
     def mark(match: re.Match[str]) -> str:
         nonlocal added
-        duration = breaks[match.lastgroup or ""]
+        kind = match.lastgroup or ""
+        duration = breaks[kind]
         if not duration:
             return match.group(0)
+        text = match.group(0)
+        if kind == "sentence" and text == "." and not _stops_here(
+                match.string[:match.start()], match.string[match.end():], lang, spans):
+            return text
+        if kind == "dash" and match.string[match.end():].lstrip()[:1].isdigit() \
+                and match.string[:match.start()][-1:].isdigit():
+            return text  # "9 – 5" is a range
         added += 1
-        return f"{match.group(0)} \x02{escape(duration)}\x03"
+        spaced = match.string[match.end():match.end() + 1].isspace()
+        return f"{text}{' ' if spaced else ''}{_OPEN}{escape(duration)}{_CLOSE}"
 
     # Marks are found in the words as written and escaped afterwards: the ';'
     # that ends '&amp;' is not a mark.
-    spoken = _escape_text(_MARK.sub(mark, body))
-    if not added and not (style.rate or style.pitch or style.breaths):
+    spoken = _entities(_MARK.sub(mark, body))
+    if not added and not spans and not (style.rate or style.pitch or style.breaths):
         return None
-    spoken = re.sub("\x02(.*?)\x03", lambda m: f'<break time="{m.group(1)}"/>', spoken)
+    spoken = re.sub(f"{_OPEN}(.*?){_CLOSE}", lambda m: f'<break time="{m.group(1)}"/>', spoken)
+    spoken = re.sub(f"{_SPAN_OPEN}(\\d+){_SPAN_CLOSE}", lambda m: _wrapped(spans, int(m.group(1))),
+                    spoken)
     parts = iter(holes)
     spoken = re.sub(_STOP, lambda _m: next(parts), spoken)
     # "words. <break/>  More" -> one space either side of the break.
@@ -914,6 +1089,11 @@ def auto_twin(template: str, style: SpeechStyle) -> str | None:
         spoken = (f'<amazon:auto-breaths frequency="{escape(style.breaths)}">'
                   f"{spoken}</amazon:auto-breaths>")
     return spoken
+
+
+def _wrapped(spans: list[str], index: int) -> str:
+    kind = spans[index].split("\x00", 1)[0]
+    return f'<say-as interpret-as="{kind}">{_entities(_span_text(spans, index))}</say-as>'
 
 
 # -- what goes on the bus ----------------------------------------------------

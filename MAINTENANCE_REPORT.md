@@ -1,5 +1,14 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins match the released version (CodeRabbit on #22), and the review-body items on #7 and #9 are answered.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit.
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0.
+## 2026-11-10 — 0.36.0 (the SSML audit)
+
+The version moves to 0.36.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the README and reference pins). It releases the audit of the SSML support added in 0.34.0 and 0.35.0: `thalovant_skillkit.compat`, `SPEECH_STYLE` that reads every script and quantity, a more precise validator, escaping that drops what XML cannot carry, and the feature matrix as tests (`test/ssml_matrix.py`, `test/test_ssml_matrix.py`, `test/test_ssml_phoonnx.py`, `test/test_speech_style_languages.py`, `test/test_compat.py`). Verification: the full suite in the kit's virtualenv, the phoonnx tests in a virtualenv with phoonnx 1.96.2a2 (and through the real `en_US-hfc_female` and `fr_FR-siwis` voices), ruff as CI runs it. [AUDIT.md](AUDIT.md) lists what was found.
+
+### Transparency Report
+
+- **AI Model**: Claude Sonnet 5.5.
+- **Actions Taken**: Audited `ssml.py` against `phoonnx.ssml.parse_ssml` and the satellite's `thalovant_voice.ssml.pieces`; rewrote `auto_twin`; wrote `compat.py`, the matrix tests and the documentation.
+- **Oversight**: Every documented code sample was run. A human reviews the pull request before release.
 ## 2026-11-08 — 0.33.0
 
 The version moves to 0.33.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`), the changelog's Unreleased section becomes 0.33.0, and the README's Quickstart and the reference's `[testing]` install pin 0.33.0, as `test_the_documented_install_pins_the_version_this_is` requires. It releases everything merged since 0.32.0: the import marker in every backend and owed before any save (#58, #59), `JsonStateStore`'s PostgreSQL retried after a failure (#58), the service token for the platform's services (#56) and the install-pin test (#60). Skills that use `RecordStore` need this version for the marker fix. Verification: full suite (985 passed, 69 skipped: the live Redis and PostgreSQL runs, which CI runs), ruff, and `uv lock --check --prerelease allow`.

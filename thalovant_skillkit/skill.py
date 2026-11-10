@@ -111,7 +111,7 @@ def _twin_speech(skill: Any, key: str, data: dict | None, framework_lines, draw)
         if twins:
             twin = _MUSTACHE.sub(r"{\1}", twins[index])  # a hand-written twin wins
         else:
-            twin = auto_twin(lines[index], style) if style is not None else None
+            twin = auto_twin(lines[index], style, lang) if style is not None else None
         return render_line(lines[index], twin, values)
     except Exception:  # noqa: BLE001 - OVOS's own path is the fallback
         return None
@@ -311,7 +311,8 @@ class _SkillPlumbing:
         same variant and the same data.
         Speaking it sends both; anything else sees the plain line.
         """
-        lines, twins = self.locale_resources.dialog_twins(name, lang or self._own_lang())
+        lang = lang or self._own_lang()
+        lines, twins = self.locale_resources.dialog_twins(name, lang)
         if not lines:
             return name
         index = random.randrange(len(lines))  # noqa: S311 - variety, not secrecy
@@ -333,7 +334,7 @@ class _SkillPlumbing:
         if twins:
             twin = twins[index].replace("\\n", "\n")  # a hand-written twin wins
         else:
-            twin = auto_twin(template, style) if style is not None else None
+            twin = auto_twin(template, style, lang) if style is not None else None
         try:
             return render_line(template, twin, values)
         except (KeyError, IndexError, ValueError):

@@ -1,3 +1,5 @@
+<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0 documents the SSML feature matrix, the no-SSML fallback, the language rules of SPEECH_STYLE and the compat shim. -->
+
 # SkillKit reference
 
 Practical contracts for the released Python API and CLI. Start with the
@@ -282,20 +284,115 @@ class WeatherSkill(ThalovantFallbackSkill):
     SPEECH_STYLE = SpeechStyle(rate="95%", sentence_break="350ms", colon_break="300ms")
 ```
 
-`speak_dialog` then sends `utterance_ssml` derived from the dialog line's own
-words (`ssml.auto_twin(template, style)`): the rules read the template, never
-what a `{placeholder}` is filled with, so a value that contains a full stop is
-not cut in two, and values are escaped as for any twin. A hand-written `.ssml`
-twin still wins for its line. `checks.redundant_twins(root, style)` lists twins
-that say nothing the style does not, so a skill's tests can keep them deleted.
-Fields: `rate`, `pitch`, `breaths` (the `auto_breaths` frequency), `sentence_break`, `colon_break` (also `;`), `dash_break` (`—`,
-`–`), `comma_break`. Unset fields do nothing; with no `SPEECH_STYLE` a skill is
-sent exactly as before.
+`speak_dialog` and `dialog()` then send `utterance_ssml` derived from the dialog
+line's own words (`ssml.auto_twin(template, style, lang)`): the rules read the
+template, never what a `{placeholder}` is filled with, so a value that contains a
+full stop is not cut in two, and values are escaped as for any twin. A
+hand-written `.ssml` twin still wins for its line. `checks.redundant_twins(root,
+style)` lists twins that say nothing the style does not, so a skill's tests can
+keep them deleted.
+
+Fields: `rate`, `pitch`, `breaths` (the `auto_breaths` frequency),
+`sentence_break`, `colon_break` (also `;`), `dash_break` (`—`, `–`), `comma_break`,
+and `say_as` (on by default; see below). Unset fields do nothing; with no
+`SPEECH_STYLE` a skill is sent exactly as before.
+
+**Where the pauses go, in every language the skills ship.** A sentence ends at
+`.`, `!`, `?` or `…` followed by a space and more words, and also, with no space
+needed, at the marks of the scripts that do not write one: `。！？` (Japanese,
+Chinese), `।` (Hindi, Bengali), `؟` (Arabic, Persian), `۔`, `։`, `።` and `။`.
+`，、` `،` and `；` `؛` `：` are the matching commas, semicolons and colons. No
+space is added where the language wrote none. A full stop that is not the end of a
+sentence gets no pause: after a title (`Dr.`, `Mr.`, `M.`, `Mme`, `Sra.`, `St.`), an
+initial (`J. R. Smith`), a dotted abbreviation or a month, day or `no.` when a
+lower-case word or a number follows (`9 a.m. on Monday`, `Nov. 9`), and after a
+number in the languages that write an ordinal that way (`am 9. November`: German,
+Czech, Danish, Norwegian, Finnish, Hungarian and others). A spaced en dash between
+two numbers is a range (`9 – 5`), not a pause. These are heuristics, read from the
+template alone: a line that must be paced differently gets a `.ssml` twin.
+
+**Numbers, times, dates, amounts and units.** A literal `14 h 30`, `3,50 €` or
+`23 °C` in a dialog is read by the voice's own text normalizer, which says
+"quatorze h trente", "trois virgule cinq euros" and "un deux cents" for `1 200`.
+With `say_as` on and the line's language in `ssml.SAY_AS_LANGUAGES` (English,
+French, German, Spanish, Italian, Portuguese, Dutch: the languages phoonnx has word
+tables for), the kit wraps what it can read unambiguously in `<say-as>`, and the
+voice reads it with the language's own rules:
+
+| In the dialog | Wrapped as | Examples |
+|---|---|---|
+| A clock | `time` | `7:30 pm`, `14:30`, `14 h 30`, `14h30` (not a bare `9 am` or `9 h`) |
+| A numeric date | `date` | `2026-11-09`, `11/09/2026`, `09.11.2026` (the order follows the language) |
+| An amount | `currency` | `$12.50`, `3,50 €`, `12,99 $`, `£4.20`, `5 EUR` |
+| A quantity | `unit` | `23°C`, `23 °C`, `15 km/h`, `5 km`, `10 %`, and a placeholder before `%` or `°C`: `{chance}%` |
+| An ordinal | `ordinal` | `3rd`, `21st` in English; `1er`, `2e`, `3ème` in French |
+| Thousands | `cardinal` | `1,200` in English; `1 200` with a no-break space elsewhere |
+
+A French comma is a decimal mark, so `1,200` is left alone there; a placeholder
+is wrapped only when it stands directly before `%` or a degree sign, since its value
+is unknown; and a language outside the list, or no language at all, gets the
+pauses only. The plain words never change: the wrapped text is the written text.
+`SpeechStyle(say_as=False)` turns it off. A value that arrives at run time is
+wrapped by the skill itself: `self.speak_dialog("ready", {"time": ssml.as_time(value)})`.
 
 Why `.ssml` and not `.ssml.dialog`: OVOS reads every `.dialog` file as a plain
 template in which `<name>` names a vocabulary. It would load
 `joke.ssml.dialog` as a dialog called `joke.ssml` and raise on the first
 `<break/>`, and `ovos-spec-lint` reports it. OVOS ignores a `.ssml` file.
+
+### Older kits: guard what you import
+
+A hub installs a new skill release by itself, but the running `ovos-core` keeps
+the SkillKit it imported at boot until the pod restarts. A skill whose module does
+`from thalovant_skillkit.ssml import SpeechStyle` against a kit from before 0.34
+then raises `ImportError` while it loads, and the whole skill stops answering (the
+weather skill was gone for twelve hours that way). Any name a skill uses that is
+newer than its kit floor is a nicety, and a nicety is imported behind a guard. Keep
+the floor in `requirements.txt` as it is, and use one of these.
+
+Anywhere, on every kit, with nothing from SkillKit's newer modules:
+
+```python
+try:
+    from thalovant_skillkit.ssml import SpeechStyle
+except ImportError:  # a kit before 0.34, still loaded on a hub that upgraded in place
+    SpeechStyle = None
+
+
+class GardenSkill(ThalovantFallbackSkill):
+    SPEECH_STYLE = SpeechStyle(sentence_break="350ms") if SpeechStyle else None
+```
+
+From kit 0.36, `thalovant_skillkit.compat` does the lookup for you. It imports nothing
+that may be missing: each function asks the kit that is *loaded*, so it also works when
+the files on disk are newer than the kit in memory, which is what an in-place upgrade
+leaves.
+
+| Function | Returns |
+|---|---|
+| `speech_style_or_none(**fields)` | `ssml.SpeechStyle(**fields)`, or `None` when the loaded kit has no `SpeechStyle`. A field the loaded kit does not know is left out (logged at debug level); a value no voice reads is still a `ValueError`. |
+| `ssml_helper(name)` | The kit's `ssml.<name>` helper, or a stand-in that takes the same arguments and returns the plain words as a `str` (nothing for `pause`, `mark` and `breath`). A name that is not an `ssml` helper at all raises `ValueError`, so a typo is not taken for an old kit. |
+| `kit_attr(module, name, default=None)` | `thalovant_skillkit.<module>.<name>`, or `default` |
+| `kit_version()`, `kit_at_least("0.34")` | The loaded version as a tuple, and whether it is at least that |
+
+```python
+from thalovant_skillkit.compat import speech_style_or_none, ssml_helper
+
+cardinal = ssml_helper("cardinal")  # the kit's helper, or the text as written
+
+
+class GardenSkill(ThalovantFallbackSkill):
+    SPEECH_STYLE = speech_style_or_none(rate="95%", sentence_break="350ms")
+
+    def tell_total(self, total):
+        self.speak_dialog("count", {"total": cardinal(f"{total:,}")})
+```
+
+A kit older than 0.36 has no `compat`, so a skill that still supports one imports
+`compat` behind the same `try`/`except ImportError`, or uses the plain guard above.
+The skill's tests should run once against its kit floor (a virtualenv with
+`thalovant-skillkit==<floor>`): `import` is where this fails, and nothing else
+catches it.
 
 ### Markup from Python
 
@@ -341,6 +438,25 @@ plain words are what a client without SSML says aloud. `<say-as>` and
 language and the voice, and a screen shows the same words. A `<break>`, `<p>` or
 `<s>` becomes a single space. Entities are read.
 
+**A voice without SSML.** `utterance` is always the plain words: no tag, no
+`speak`, no entity (`&amp;` is `&`). A TTS that ignores `utterance_ssml` says them
+as written, and its own text normalizer reads `5km`, `$12.50` or `7:30 pm` as best
+it can. What it says for each helper:
+
+| Helper | Said without SSML |
+|---|---|
+| `spell`, `digits`, `telephone`, `cardinal`, `ordinal`, `fraction`, `unit`, `currency`, `address`, `as_date`, `as_time`, `interjection` | The text as written |
+| `emphasis`, `prosody`, `pitch`, `whisper`, `soft`, `compress`, `vocal_tract`, `auto_breaths`, `foreign`, `phoneme` | The text as written, in the voice's own tone, language and pronunciation |
+| `sub(written, spoken)` | The `spoken` words |
+| `expletive` | The word itself: it is bleeped only by a voice that reads SSML, so use it where a screen or a plain TTS saying the word is acceptable |
+| `pause`, `mark`, `breath` | Nothing |
+
+A skill that wants a time or a date said in words by every client, SSML or not,
+writes the words itself: `moments.time_text(value, lang, use_24hour)` and
+`moments.date_text(value, lang, now)` return the spoken form.
+A voice built on an older phoonnx reads the markup it does not know as the same
+plain words, so a skill never needs two code paths.
+
 If a skill passes SSML as a plain string to `speak`, `speak_to` or
 `speak_dialog`, the markup is moved to `utterance_ssml`, the plain words are sent
 as `utterance`, and a warning is logged once per skill. Markup that does not
@@ -356,17 +472,18 @@ parse loses its tags and keeps its words.
 | `<prosody>` | `rate` (named or a percentage), `volume` (named or dB), `pitch` (named, `+2st` or a percentage; Hz is not rendered) |
 | `<emphasis>` | `level`: `strong`, `moderate`, `reduced` or `none` |
 | `<lang>`, `<voice>` | `xml:lang` |
-| `<say-as>` | `interpret-as`: `characters`, `spell-out`, `digits`, `telephone`, `cardinal`, `number`, `ordinal`, `fraction`, `unit`, `date` (`format` such as `mdy`), `time` (`format` `hms12` or `hms24`), `currency`, `address`, `expletive` or `interjection` |
+| `<say-as>` | `interpret-as`: `characters`, `spell-out`, `digits`, `telephone`, `cardinal`, `number`, `ordinal`, `fraction`, `unit`, `date` (`format` such as `mdy`), `time` (`format` `hms12` or `hms24`), `currency`, `address`, `expletive`, `interjection`, `letters` or `verbatim` (the last two read like `characters`). `format` belongs to `date` and `time` only |
 | `<sub>` | `alias` |
-| `<phoneme>` | `ph`, and `alphabet="ipa"` or `"x-sampa"` |
+| `<w>` | `role`; the words are read as they are |
+| `<phoneme>` | `ph`, and `alphabet="ipa"` or `"x-sampa"`. `ph` must not contain `[[` or `]]`. X-SAMPA writes `{` for "æ": in a `.ssml` twin or a `markup()` template write `{{`, as in any format string |
 | `<mark>` | `name` |
 | `<amazon:effect>` | `name` (`whispered`, `drc`), `phonation="soft"`, `vocal-tract-length` (a percentage) |
 | `<amazon:auto-breaths>` | `frequency`, `duration`, `volume` |
 | `<amazon:breath>` | `duration`, `volume` |
 | `<amazon:domain>` | `name`; the words are read as they are |
 
-Thalovant voices read `<audio>` and any other prefixed tag as plain words, so the
-check reports them. Pitch, whisper, soft, compression, breaths and bleeps are
+Thalovant voices read `<audio>` and any other prefixed tag as plain words (an
+`<audio src>` is never fetched), so the check reports them. Pitch, whisper, soft, compression, breaths and bleeps are
 applied to the finished audio and need a voice built on phoonnx with SSML support
 (phoonnx PR #539); on an older voice they are read as plain words. Emotions and
 speaking styles are not something these voices do.
@@ -379,7 +496,11 @@ speaking styles are not something these voices do.
 - a plain `.dialog` line that holds an SSML tag;
 - a `.ssml` file with no `.dialog` beside it, or a different number of lines;
 - a twin line that is not well-formed XML, or uses an unsupported tag,
-  attribute or value;
+  attribute or value, each named: a `<break>` without a unit, with a negative
+  time or one over ten seconds; a `<prosody>` with nothing to change; a
+  `<say-as>` with an unknown `interpret-as`, a `format` that is not a date order or
+  `hms12`/`hms24`, or a `format` on anything but a date or a time; a `<phoneme>`
+  with no or an empty `ph`, or one holding `[[`;
 - a twin line whose `{placeholders}` differ from its plain line;
 - `(a|b)` or `[optional]` in a dialog that has a twin;
 - a twin line that does not say the same words as its plain line. Punctuation,
@@ -590,7 +711,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.35.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.36.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.

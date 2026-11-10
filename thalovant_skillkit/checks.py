@@ -611,8 +611,9 @@ def redundant_twins(skill_root: Path, style: SpeechStyle) -> list[str]:
         if not plain_path.is_file():
             continue
         plain, twins = _resource_lines(plain_path), _resource_lines(path)
+        lang = path.parent.parent.name
         if len(plain) == len(twins) and all(
-                " ".join((auto_twin(p, style) or p).split()) == " ".join(t.split())
+                " ".join((auto_twin(p, style, lang) or p).split()) == " ".join(t.split())
                 for (_, p), (_, t) in zip(plain, twins, strict=True)):
             found.append(f"locale/{path.relative_to(locale_root)} repeats what the skill's "
                          "SPEECH_STYLE already says; delete it")

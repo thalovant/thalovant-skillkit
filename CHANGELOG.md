@@ -1,6 +1,40 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit: a feature matrix tested against phoonnx, SPEECH_STYLE that reads every script and quantity, and `compat`.
+Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
 # Changelog
+
+## 0.36.0
+
+- **`thalovant_skillkit.compat`: use a kit name without making the skill unloadable.** A hub keeps
+  the kit it imported at boot while it installs a newer skill, so a module-level
+  `from thalovant_skillkit.ssml import SpeechStyle` against an older loaded kit raised
+  `ImportError` and the skill stopped answering. `speech_style_or_none(**fields)` and
+  `ssml_helper(name)` ask the *loaded* kit (so they also work when the files on disk are newer);
+  `kit_attr`, `kit_version` and `kit_at_least` are the building blocks. No existing name changed.
+- **`SPEECH_STYLE` pauses in every script the skills ship.** The sentence, comma, colon and
+  semicolon marks of Japanese, Chinese, Hindi, Arabic and others (`。！？ ， 、 ； ： । ؟ ، ؛ ۔`) are
+  marks without a space after them, so a line in `ja`, `zh` or `hi` was never paced (about 40
+  of the weather skill's lines gained a pause). No space is added where the language wrote none.
+- **`SPEECH_STYLE` no longer pauses inside an abbreviation.** `Dr. Smith`, `M. Dupont`, `St. Louis`,
+  `J. R. Smith`, `9 a.m. on Monday`, `Nov. 9`, `am 9. November` and `9 – 5` are not sentence or
+  clause ends; `It was 9 p.m. Then it rained.` still is.
+- **`SpeechStyle(say_as=True)` (the default) wraps literal quantities in `<say-as>`.** A `14 h 30`,
+  `7:30 pm`, `3,50 €`, `$12.50`, `23 °C`, `15 km/h`, `10 %`, `1er`, `3rd`, `1,200` or numeric date in
+  a dialog is read with the language's own rules instead of the voice's text normalizer, which
+  says "quatorze h trente", "trois virgule cinq euros" and "un deux cents". Only English, French,
+  German, Spanish, Italian, Portuguese and Dutch (`ssml.SAY_AS_LANGUAGES`); a placeholder is
+  wrapped only directly before `%` or `°C`. `auto_twin(template, style, lang=None)` takes the
+  language; without it the pauses are all that is derived.
+- **The validator names each mistake precisely.** A `<break>` with a negative time is "negative",
+  not "needs a unit"; a `<prosody>` with nothing to change, a `<phoneme>` with an empty `ph` or one
+  holding `[[`/`]]`, a `<say-as format>` on anything but a date or time, and a `<phoneme>` holding
+  tags are reported. `<w role>` and `interpret-as` `letters` and `verbatim`, which phoonnx reads,
+  are accepted.
+- **Values lose what XML cannot carry.** A NUL or other control character in a value from a
+  service made the whole line "not well-formed" and cost it its markup; `escape` and the helpers
+  now drop them from the SSML (the plain words are unchanged).
+- **Tests:** one parametrised matrix (`test/ssml_matrix.py`) of every construct, run against the
+  kit alone and against phoonnx's own `parse_ssml` (CI job `ssml_phoonnx`, 1.96.2a2), plus
+  synthesis through a real English and French voice when one is at hand.
 
 ## 0.35.0
 

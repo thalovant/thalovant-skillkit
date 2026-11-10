@@ -1,5 +1,5 @@
-<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: The Quickstart pins 0.35.0, the release this version bump cuts. -->
-<!-- Previous: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The Quickstart pins the published 0.32.0 (CodeRabbit on #22: the pin had fallen behind again). -->
+<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0: the speech markup section lists the number helpers, the plain-words fallback and the guarded import. -->
+<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: The Quickstart pins 0.35.0, the release this version bump cuts. -->
 
 <p align="center">
   <picture>
@@ -28,7 +28,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.35.0"
+python -m pip install --pre "thalovant-skillkit==0.36.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -36,7 +36,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.35.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.36.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -98,10 +98,38 @@ from thalovant_skillkit.ssml import foreign, say
 self.speak_to(message, say("One", foreign("café au lait", "fr-FR"), "coming up."))
 ```
 
+**Numbers, dates, amounts and units.** Say how a value is read, and the voice reads it
+in the language of the reply:
+
+```python
+from thalovant_skillkit.ssml import as_time, cardinal, currency, say, unit
+
+say("Dinner is at", as_time("7:30 pm"), "for", cardinal("1,200"), "people at",
+    currency("$12.50"), "each, outside at", unit("23 °C"))
+# English: "half past seven p.m.", "one thousand, two hundred", "twelve dollars and fifty
+# cents", "twenty three degrees celsius"; the plain words are the text as written.
+```
+
+**Pacing every line.** `SPEECH_STYLE = SpeechStyle(sentence_break="350ms")` on the skill class
+paces every dialog in every language with no twin per line, and wraps the literal times, amounts
+and units of a line so the voice reads them correctly.
+
+**A skill that must load on an older kit.** A hub keeps the kit it loaded at boot while it
+installs a newer skill, so import anything newer than your floor behind a guard, or through
+`thalovant_skillkit.compat` (0.36):
+
+```python
+from thalovant_skillkit.compat import speech_style_or_none, ssml_helper
+
+cardinal = ssml_helper("cardinal")  # the kit's helper, or the text as written
+SPEECH_STYLE = speech_style_or_none(sentence_break="350ms")  # None on a kit without it
+```
+
 A plain string passed to these helpers is escaped, so what a user said can never
-become markup. `thalovant-skillkit check` checks every twin, and so does
-`check --fleet-only`. The [reference](docs/reference.md#speech-markup) lists the
-helpers, the tags a voice renders and the rules.
+become markup. A client without SSML says the plain words, with no tag in them.
+`thalovant-skillkit check` checks every twin, and so does `check --fleet-only`. The
+[reference](docs/reference.md#speech-markup) lists the helpers, the tags a voice renders,
+the rules of `SPEECH_STYLE` and what each helper comes to without SSML.
 
 ## What the screen shows
 

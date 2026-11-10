@@ -1,5 +1,20 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins fell behind the release (CodeRabbit on #22).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit (feature matrix, SPEECH_STYLE per language, guarded imports).
+Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins fell behind the release (CodeRabbit on #22).
+## 2026-11-10 the SSML audit (0.36.0)
+
+Method: every construct `phoonnx.ssml.parse_ssml` (1.96.2a2) and the satellite's `thalovant_voice.ssml.pieces` read was written with the kit's helper, validated, read by phoonnx in `en-US` and `fr-FR`, and synthesized through `en_US-hfc_female` and `fr_FR-siwis`; the same for hostile values. The matrix is [test/ssml_matrix.py](test/ssml_matrix.py), run by [test/test_ssml_matrix.py](test/test_ssml_matrix.py) and [test/test_ssml_phoonnx.py](test/test_ssml_phoonnx.py).
+
+- Fixed (Major, availability): a skill that imports a kit name newer than the kit a hub still has loaded cannot be imported (weather, 2026-11-09, twelve hours). [compat.py](thalovant_skillkit/compat.py) `speech_style_or_none`, `ssml_helper`; evidence `test_a_skill_with_the_documented_guard_loads_on_an_older_kit_and_one_without_it_does_not` in [test/test_compat.py](test/test_compat.py), which reproduces the failure with a stand-in old kit.
+- Fixed (Major, speech): `auto_twin` never paced a line in Japanese, Chinese, Hindi or Arabic, because it needed a space after the mark and those scripts write none (weather: `。` in 32 dialog files, `।` in 32, `，` in 18). [ssml.py](thalovant_skillkit/ssml.py) `_MARK`; evidence `test_the_pauses_follow_the_language_of_the_line[ja, zh, hi, ar]` in [test/test_speech_style_languages.py](test/test_speech_style_languages.py).
+- Fixed (Major, speech): `auto_twin` paused after `Dr.`, `St.`, `9 a.m.` and `am 9. November`. `_stops_here`; same file.
+- Fixed (Major, speech): a literal `14 h 30`, `3,50 €` or `1 200` in a dialog was left to the voice's normalizer, which says "quatorze h trente", "trois virgule cinq euros", "un deux cents" (measured with `phoonnx.normalization.text.normalize`). `SpeechStyle.say_as`, `_quantities`; evidence `test_a_derived_line_is_read_in_the_words_of_its_language` in [test/test_ssml_phoonnx.py](test/test_ssml_phoonnx.py).
+- Fixed (Minor, validator): a negative `<break time>` was reported as "needs a unit"; `<prosody>` with nothing to change, `<phoneme ph="">`, a `ph` holding `[[` (which phoonnx reads as the end of a phoneme block) and a `<say-as format>` on a cardinal passed. `validate`; evidence `test_each_way_to_get_it_wrong_has_one_precise_message`.
+- Fixed (Minor, escaping): a NUL or other control character in a value from a service made the line "not well-formed" and dropped its markup. `escape`, `_escape_text`; evidence `test_control_characters_are_dropped_from_markup_but_not_from_the_plain_words`.
+- Fixed (Minor): `<w>`, `interpret-as="letters"` and `"verbatim"` are read by phoonnx and were refused by the kit.
+- Open (phoonnx, not the kit): `say-as time` in English answers "half past seven p.m." with its own full stop, so a sentence that ends there is read "p.m..". The bare hour with am or pm (`9 pm`) and a French "7:30 pm" ("sept heures et demi", not "demie") are read as written or misgendered. Reported in the final summary for the phoonnx owner.
+- Open (Minor): X-SAMPA's `{` must be written `{{` in a `.ssml` twin and in a `markup()` template (any format string); documented, not changeable.
+- Open (Minor, by design): `expletive()` leaves the word in the plain text, so a client without SSML says it; documented in [docs/reference.md](docs/reference.md#the-plain-words).
+- Checked, sound: `escape` for `&`, `<`, `>`, quotes and Unicode in text and attributes; `markup()` never reads a value as a tag; `speech_parts` keeps tags out of `utterance`; a voice without SSML says exactly the plain words for every helper; the satellite's built-in reader and its phoonnx delegation read every row without a tag leaking.
 
 ## 2026-11-08 the documented install pins
 
