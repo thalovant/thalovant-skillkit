@@ -45,7 +45,27 @@ __all__ = [
     "SUPPORTED_TAGS",
     "Speech",
     "SpeechStyle",
+    "address",
+    "as_date",
+    "as_time",
+    "auto_breaths",
     "auto_twin",
+    "breath",
+    "cardinal",
+    "compress",
+    "currency",
+    "expletive",
+    "fraction",
+    "interjection",
+    "mark",
+    "ordinal",
+    "phoneme",
+    "pitch",
+    "prosody",
+    "soft",
+    "unit",
+    "vocal_tract",
+    "whisper",
     "carries_markup",
     "digits",
     "emphasis",
@@ -78,19 +98,32 @@ SUPPORTED_TAGS: dict[str, frozenset[str]] = {
     "break": frozenset({"time", "strength"}),
     "p": frozenset(),
     "s": frozenset(),
-    "prosody": frozenset({"rate", "volume"}),
+    "prosody": frozenset({"rate", "volume", "pitch"}),
     "emphasis": frozenset({"level"}),
     "lang": frozenset({"xml:lang"}),
     "voice": frozenset({"xml:lang"}),
-    "say-as": frozenset({"interpret-as"}),
+    "say-as": frozenset({"interpret-as", "format", "detail"}),
     "sub": frozenset({"alias"}),
     "phoneme": frozenset({"alphabet", "ph"}),
+    "mark": frozenset({"name"}),
+    "amazon:effect": frozenset({"name", "phonation", "vocal-tract-length"}),
+    "amazon:auto-breaths": frozenset({"volume", "frequency", "duration"}),
+    "amazon:breath": frozenset({"volume", "duration"}),
+    "amazon:domain": frozenset({"name"}),
 }
-SAY_AS = frozenset({"characters", "spell-out", "digits", "telephone"})
+SAY_AS = frozenset({"characters", "spell-out", "digits", "telephone", "cardinal", "number",
+                    "ordinal", "fraction", "unit", "date", "time", "currency", "address",
+                    "expletive", "interjection"})
 BREAK_STRENGTHS = frozenset({"none", "x-weak", "weak", "medium", "strong", "x-strong"})
 RATES = frozenset({"x-slow", "slow", "medium", "fast", "x-fast", "default"})
 VOLUMES = frozenset({"silent", "x-soft", "soft", "medium", "loud", "x-loud", "default"})
+PITCHES = frozenset({"x-low", "low", "medium", "high", "x-high", "default"})
 EMPHASIS_LEVELS = frozenset({"strong", "moderate", "reduced", "none"})
+ALPHABETS = frozenset({"ipa", "x-sampa"})
+EFFECT_NAMES = frozenset({"whispered", "drc"})
+PHONATIONS = frozenset({"soft"})
+BREATH_FREQUENCIES = frozenset({"off", "x-low", "low", "medium", "high", "x-high", "default"})
+BREATH_DURATIONS = frozenset({"x-short", "short", "medium", "long", "x-long", "default"})
 #: thalovant-voice caps a pause at ten seconds; a longer one reads as a hang.
 MAX_BREAK_MS = 10_000
 
@@ -111,6 +144,12 @@ _XML_LANG_ATTRIBUTE = re.compile(r"""\bxml:lang\s*=\s*(["'])(.*?)\1""")
 _DECLARATION = re.compile(r"^\s*<\?xml[^>]*\?>")
 _DURATION = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*(ms|s)\s*$")
 _PERCENT = re.compile(r"^[+-]?\d+(?:\.\d+)?%$")
+_SEMITONES = re.compile(r"^[+-]?\d+(?:\.\d+)?st$")
+_DATE_FORMAT = re.compile(r"^(?:ymd|ydm|mdy|myd|dmy|dym|ym|my|md|dm|y|m|d)$")
+_TIME_FORMATS = frozenset({"hms12", "hms24"})
+#: `<amazon:effect>` and friends are read; any other prefix nobody declares is not.
+_AMAZON = re.compile(r"(<\s*/?\s*)amazon:([A-Za-z-]+)", re.IGNORECASE)
+_PREFIXED_OK = frozenset(name for name in SUPPORTED_TAGS if name.startswith("amazon:"))
 _DECIBELS = re.compile(r"^[+-]?\d+(?:\.\d+)?dB$", re.IGNORECASE)
 _LANG_TAG = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z0-9]{1,8})*$")
 _BOUNDARY = "\x00"
@@ -156,15 +195,26 @@ def _inner(ssml: str) -> str:
     return words
 
 
+def _namespaced(source: str) -> str:
+    """`source` with the prefixed tags the kit reads (`amazon:effect`) made parseable.
+
+    XML refuses a prefix nobody declared, so `amazon:effect` is parsed as
+    `amazon-effect`; `_local` turns the name back.
+    """
+    return _AMAZON.sub(lambda m: f"{m.group(1)}amazon-{m.group(2)}"
+                       if f"amazon:{m.group(2).lower()}" in _PREFIXED_OK else m.group(0), source)
+
+
 def _parse(fragment: str) -> ET.Element | None:
     try:
-        return ET.fromstring(f"<speak>{fragment}</speak>")
+        return ET.fromstring(f"<speak>{_namespaced(fragment)}</speak>")
     except ET.ParseError:
         return None
 
 
 def _local(tag: Any) -> str:
-    return str(tag).rsplit("}", 1)[-1].lower()
+    name = str(tag).rsplit("}", 1)[-1].lower()
+    return "amazon:" + name[len("amazon-"):] if name.startswith("amazon-") else name
 
 
 def _normalize(text: str) -> str:
@@ -238,9 +288,11 @@ def validate(ssml: str) -> list[str]:
     """
     source = _DECLARATION.sub("", ssml or "").strip()
     prefixed = sorted({f"{m.group(1)}:{m.group(2)}" for m in _PREFIXED.finditer(source)
-                       if m.group(1).lower() != "xml"})
+                       if m.group(1).lower() != "xml"
+                       and f"{m.group(1)}:{m.group(2)}".lower() not in _PREFIXED_OK})
     if prefixed:
         return [f"<{name}> is not read by Thalovant voices" for name in prefixed]
+    source = _namespaced(source)
     wrapped = not re.match(r"<\s*speak\b", source)
     try:
         root = ET.fromstring(f"<speak>{source}</speak>" if wrapped else source)
@@ -262,9 +314,7 @@ def validate(ssml: str) -> list[str]:
             problems.append("<speak> goes around the whole line, not inside it")
         attributes = {_attribute_name(name): value for name, value in element.attrib.items()}
         for name in sorted(attributes.keys() - SUPPORTED_TAGS[tag]):
-            reason = ("pitch is not rendered by Thalovant voices" if name == "pitch"
-                      else f"<{tag}> takes no {name!r} attribute")
-            problems.append(reason)
+            problems.append(f"<{tag}> takes no {name!r} attribute")
         problems.extend(_value_problems(tag, element, attributes))
     return problems
 
@@ -296,6 +346,11 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
             problems.append(f'<prosody rate="{rate}"> is not a named rate or a percentage')
         if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
             problems.append(f'<prosody volume="{volume}"> is not a named volume or dB change')
+        pitch = given("pitch")
+        if pitch is not None and pitch not in PITCHES and not _PERCENT.match(pitch) \
+                and not _SEMITONES.match(pitch):
+            problems.append(f'<prosody pitch="{pitch}"> is not a named pitch, a percentage or '
+                            "semitones such as \"+2st\" (Hz is not rendered)")
     elif tag == "emphasis":
         level = given("level")
         if level is not None and level not in EMPHASIS_LEVELS:
@@ -317,6 +372,11 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
                             + ", ".join(sorted(SAY_AS)))
         if len(element):
             problems.append("<say-as> holds words, not other tags")
+        fmt = given("format")
+        if fmt is not None and kind == "date" and not _DATE_FORMAT.match(fmt.lower()):
+            problems.append(f'<say-as format="{fmt}"> is not a date order such as "mdy" or "dmy"')
+        if fmt is not None and kind == "time" and fmt.lower() not in _TIME_FORMATS:
+            problems.append(f'<say-as format="{fmt}"> is not "hms12" or "hms24"')
     elif tag == "sub":
         if "alias" not in attributes:
             problems.append("<sub> needs alias, the words to say instead")
@@ -324,10 +384,45 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
             problems.append("<sub> holds words, not other tags")
     elif tag == "phoneme":
         if "ph" not in attributes:
-            problems.append("<phoneme> needs ph, the pronunciation in IPA")
+            problems.append("<phoneme> needs ph, the pronunciation in IPA or X-SAMPA")
         alphabet = given("alphabet")
-        if alphabet is not None and alphabet.lower() != "ipa":
-            problems.append(f'<phoneme alphabet="{alphabet}"> must be "ipa"')
+        if alphabet is not None and alphabet.lower() not in ALPHABETS:
+            problems.append(f'<phoneme alphabet="{alphabet}"> must be "ipa" or "x-sampa"')
+    elif tag == "mark":
+        if not attributes.get("name"):
+            problems.append("<mark> needs name, the label the event carries")
+    elif tag == "amazon:effect":
+        name, phonation = given("name"), given("phonation")
+        tract = given("vocal-tract-length")
+        if name is None and phonation is None and tract is None:
+            problems.append('<amazon:effect> needs name="whispered" or "drc", phonation="soft" '
+                            "or vocal-tract-length")
+        if name is not None and name not in EFFECT_NAMES:
+            problems.append(f'<amazon:effect name="{name}"> is not one of '
+                            + ", ".join(sorted(EFFECT_NAMES)))
+        if phonation is not None and phonation not in PHONATIONS:
+            problems.append(f'<amazon:effect phonation="{phonation}"> must be "soft"')
+        if tract is not None and not _PERCENT.match(tract):
+            problems.append(f'<amazon:effect vocal-tract-length="{tract}"> must be a percentage '
+                            'such as "+10%"')
+    elif tag == "amazon:auto-breaths":
+        frequency, duration, volume = given("frequency"), given("duration"), given("volume")
+        if frequency is not None and frequency not in BREATH_FREQUENCIES:
+            problems.append(f'<amazon:auto-breaths frequency="{frequency}"> is not one of '
+                            + ", ".join(sorted(BREATH_FREQUENCIES)))
+        if duration is not None and duration not in BREATH_DURATIONS:
+            problems.append(f'<amazon:auto-breaths duration="{duration}"> is not one of '
+                            + ", ".join(sorted(BREATH_DURATIONS)))
+        if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
+            problems.append(f'<amazon:auto-breaths volume="{volume}"> is not a named volume '
+                            "or dB change")
+    elif tag == "amazon:breath":
+        if len(element) or (element.text or "").strip():
+            problems.append("<amazon:breath> takes no words; close it with <amazon:breath/>")
+        duration = given("duration")
+        if duration is not None and duration not in BREATH_DURATIONS:
+            problems.append(f'<amazon:breath duration="{duration}"> is not one of '
+                            + ", ".join(sorted(BREATH_DURATIONS)))
     return problems
 
 
@@ -512,6 +607,147 @@ def sub(written: Any, spoken: Any) -> Speech:
     return Speech(said, f'<sub alias="{escape(said)}">{_escape_text(shown)}</sub>')
 
 
+def _checked(plain: str, fragment: str) -> Speech:
+    """A Speech built by a helper: refused here when a voice would not read it."""
+    problems = validate(fragment)
+    if problems:
+        raise ValueError("; ".join(problems))
+    return Speech(plain, fragment)
+
+
+def cardinal(text: Any) -> Speech:
+    """Say `text` as a number: `cardinal("1,200")` is "one thousand, two hundred"."""
+    return _say_as(text, "cardinal")
+
+
+def ordinal(text: Any) -> Speech:
+    """Say `text` as an ordinal: `ordinal(3)` is "third"."""
+    return _say_as(text, "ordinal")
+
+
+def fraction(text: Any) -> Speech:
+    """Say `text` as a fraction: "1/2" is "one half", "2 3/4" is "two and three quarters"."""
+    return _say_as(text, "fraction")
+
+
+def unit(text: Any) -> Speech:
+    """Say a quantity with its unit: `unit("5km")` is "five kilometers"."""
+    return _say_as(text, "unit")
+
+
+def currency(text: Any) -> Speech:
+    """Say an amount of money: `currency("$12.50")` is "twelve dollars and fifty cents"."""
+    return _say_as(text, "currency")
+
+
+def address(text: Any) -> Speech:
+    """Say a street address: abbreviations spelled out, house numbers read as people say them."""
+    return _say_as(text, "address")
+
+
+def interjection(text: Any) -> Speech:
+    """Mark `text` as an interjection ("wow", "oh"), said as written."""
+    return _say_as(text, "interjection")
+
+
+def expletive(text: Any) -> Speech:
+    """Bleep `text` out of the spoken reply. The plain text keeps the word for a screen."""
+    return _say_as(text, "expletive")
+
+
+def _formatted(text: Any, kind: str, fmt: str | None) -> Speech:
+    plain = _part(text)[0]
+    attribute = f' format="{escape(fmt)}"' if fmt else ""
+    return _checked(
+        plain, f'<say-as interpret-as="{kind}"{attribute}>{_escape_text(plain)}</say-as>')
+
+
+def as_date(text: Any, format: str | None = None) -> Speech:  # noqa: A002 - SSML's attribute name
+    """Say `text` as a date. `format` orders numeric fields: "mdy", "dmy" or "ymd"."""
+    return _formatted(text, "date", format)
+
+
+def as_time(text: Any, format: str | None = None) -> Speech:  # noqa: A002
+    """Say `text` as a clock time. `format` is "hms12" or "hms24"."""
+    return _formatted(text, "time", format)
+
+
+def phoneme(text: Any, ph: str, alphabet: str = "ipa") -> Speech:
+    """Say `text` with the pronunciation `ph`, written in IPA or X-SAMPA (`alphabet="x-sampa"`)."""
+    plain, fragment = _part(text)
+    return _checked(plain, f'<phoneme alphabet="{escape(alphabet)}" ph="{escape(ph)}">'
+                           f"{fragment}</phoneme>")
+
+
+def mark(name: str) -> Speech:
+    """A named point in the speech: the voice reports when its audio reaches it."""
+    return _checked("", f'<mark name="{escape(name)}"/>')
+
+
+def prosody(text: Any, *, rate: str | None = None, pitch: str | None = None,  # noqa: A002
+            volume: str | None = None) -> Speech:
+    """Say `text` at another pace, pitch or volume.
+
+    `rate` is a name ("slow") or a percentage ("90%"); `pitch` a name ("high"), semitones ("+2st")
+    or a percentage ("-10%"); `volume` a name ("soft") or a dB change ("-6dB").
+    """
+    attributes = "".join(f' {name}="{escape(value)}"'
+                         for name, value in (("rate", rate), ("pitch", pitch), ("volume", volume))
+                         if value is not None)
+    if not attributes:
+        raise ValueError("prosody needs a rate, a pitch or a volume")
+    plain, fragment = _part(text)
+    return _checked(plain, f"<prosody{attributes}>{fragment}</prosody>")
+
+
+def pitch(text: Any, value: str) -> Speech:
+    """Say `text` higher or lower: `pitch("Really?", "+2st")`. Keep it modest."""
+    return prosody(text, pitch=value)
+
+
+def _effect(text: Any, attributes: str) -> Speech:
+    plain, fragment = _part(text)
+    return _checked(plain, f"<amazon:effect {attributes}>{fragment}</amazon:effect>")
+
+
+def whisper(text: Any) -> Speech:
+    """Say `text` whispered (the words with the voicing removed; an approximation)."""
+    return _effect(text, 'name="whispered"')
+
+
+def soft(text: Any) -> Speech:
+    """Say `text` in a soft, quieter, breathier voice."""
+    return _effect(text, 'phonation="soft"')
+
+
+def compress(text: Any) -> Speech:
+    """Say `text` with its loudness evened out (dynamic range compression)."""
+    return _effect(text, 'name="drc"')
+
+
+def vocal_tract(text: Any, percent: str) -> Speech:
+    """Say `text` with a longer ("+20%") or shorter ("-15%") vocal tract: lower or higher."""
+    return _effect(text, f'vocal-tract-length="{escape(percent)}"')
+
+
+def breath(duration: str | None = None, volume: str | None = None) -> Speech:
+    """A breath at this point. `duration` is "short", "medium" or "long"; `volume` a name or dB."""
+    attributes = "".join(f' {name}="{escape(value)}"'
+                         for name, value in (("duration", duration), ("volume", volume))
+                         if value is not None)
+    return _checked("", f"<amazon:breath{attributes}/>")
+
+
+def auto_breaths(text: Any, frequency: str = "medium", duration: str | None = None,
+                 volume: str | None = None) -> Speech:
+    """Say `text` with a breath between sentences, as often as `frequency` ("low" to "x-high")."""
+    attributes = f' frequency="{escape(frequency)}"' + "".join(
+        f' {name}="{escape(value)}"' for name, value in (("duration", duration), ("volume", volume))
+        if value is not None)
+    plain, fragment = _part(text)
+    return _checked(plain, f"<amazon:auto-breaths{attributes}>{fragment}</amazon:auto-breaths>")
+
+
 class _SSMLFormatter(Formatter):
     """`str.format` for SSML: data is escaped, a Speech brings its markup."""
 
@@ -595,6 +831,8 @@ class SpeechStyle:
     """
 
     rate: str | None = None
+    pitch: str | None = None
+    breaths: str | None = None
     sentence_break: str | None = None
     colon_break: str | None = None
     dash_break: str | None = None
@@ -603,11 +841,16 @@ class SpeechStyle:
     def __post_init__(self) -> None:
         problems = []
         if self.rate is not None:
-            problems += validate(f'<prosody rate="{self.rate}">x</prosody>')
+            problems += validate(f'<prosody rate="{escape(self.rate)}">x</prosody>')
+        if self.pitch is not None:
+            problems += validate(f'<prosody pitch="{escape(self.pitch)}">x</prosody>')
+        if self.breaths is not None:
+            problems += validate(
+                f'<amazon:auto-breaths frequency="{escape(self.breaths)}">x</amazon:auto-breaths>')
         for name in ("sentence_break", "colon_break", "dash_break", "comma_break"):
             value = getattr(self, name)
             if value is not None:
-                problems += validate(f'<break time="{value}"/>')
+                problems += validate(f'<break time="{escape(value)}"/>')
         if problems:
             raise ValueError("SpeechStyle: " + "; ".join(problems))
 
@@ -651,20 +894,25 @@ def auto_twin(template: str, style: SpeechStyle) -> str | None:
         if not duration:
             return match.group(0)
         added += 1
-        return f"{match.group(0)} \x02{duration}\x03"
+        return f"{match.group(0)} \x02{escape(duration)}\x03"
 
     # Marks are found in the words as written and escaped afterwards: the ';'
     # that ends '&amp;' is not a mark.
     spoken = _escape_text(_MARK.sub(mark, body))
-    if not added and not style.rate:
+    if not added and not (style.rate or style.pitch or style.breaths):
         return None
     spoken = re.sub("\x02(.*?)\x03", lambda m: f'<break time="{m.group(1)}"/>', spoken)
     parts = iter(holes)
     spoken = re.sub(_STOP, lambda _m: next(parts), spoken)
     # "words. <break/>  More" -> one space either side of the break.
     spoken = re.sub(r"(<break [^>]*/>)\s+", r"\1 ", spoken)
-    if style.rate:
-        spoken = f'<prosody rate="{style.rate}">{spoken}</prosody>'
+    attributes = "".join(f' {name}="{escape(value)}"' for name, value in
+                         (("rate", style.rate), ("pitch", style.pitch)) if value)
+    if attributes:
+        spoken = f"<prosody{attributes}>{spoken}</prosody>"
+    if style.breaths:
+        spoken = (f'<amazon:auto-breaths frequency="{escape(style.breaths)}">'
+                  f"{spoken}</amazon:auto-breaths>")
     return spoken
 
 

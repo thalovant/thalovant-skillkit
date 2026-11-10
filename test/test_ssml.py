@@ -135,7 +135,7 @@ def test_markup_takes_a_speech_value_as_markup():
 def test_markup_refuses_what_a_voice_does_not_read():
     """A mistake in the skill's own markup fails in its tests, not on air."""
     with pytest.raises(ValueError, match="pitch"):
-        markup('<prosody pitch="high">hi</prosody>')
+        markup('<prosody pitch="shrill">hi</prosody>')
     with pytest.raises(ValueError, match="well-formed"):
         markup("<s>unclosed")
 
@@ -209,19 +209,27 @@ def test_ssml_is_told_apart_from_a_sentence_with_a_less_than_sign():
     ('<break time="20"/>', "unit"),
     ('<break strength="loud"/>', "strength"),
     ("<break>words</break>", "no words"),
-    ('<prosody pitch="high">x</prosody>', "pitch"),
+    ('<prosody pitch="shrill">x</prosody>', "pitch"),
+    ('<prosody pitch="200Hz">x</prosody>', "Hz is not rendered"),
     ('<prosody rate="warp">x</prosody>', "rate"),
     ('<prosody volume="11">x</prosody>', "volume"),
-    ('<say-as interpret-as="date">1/2</say-as>', "interpret-as"),
+    ('<say-as interpret-as="timezone">UTC</say-as>', "interpret-as"),
+    ('<say-as interpret-as="date" format="xyz">1/2</say-as>', "date order"),
+    ('<say-as interpret-as="time" format="hms99">1:02</say-as>', "hms12"),
     ("<say-as>1</say-as>", "needs interpret-as"),
     ("<sub>x</sub>", "alias"),
-    ('<phoneme alphabet="x-sampa" ph="a">a</phoneme>', "ipa"),
+    ('<phoneme alphabet="arpabet" ph="a">a</phoneme>', "x-sampa"),
+    ("<mark/>", "needs name"),
+    ("<amazon:effect>x</amazon:effect>", "needs name"),
+    ('<amazon:effect name="shout">x</amazon:effect>', "whispered"),
+    ('<amazon:auto-breaths frequency="often">x</amazon:auto-breaths>', "frequency"),
+    ("<amazon:breath>words</amazon:breath>", "no words"),
     ("<phoneme>a</phoneme>", "ph"),
     ("<lang>oui</lang>", "xml:lang"),
     ('<lang xml:lang="not a tag">oui</lang>', "language tag"),
     ('<emphasis level="max">x</emphasis>', "level"),
     ('<audio src="x.wav"/>', "not rendered"),
-    ("<amazon:effect>x</amazon:effect>", "not read"),
+    ("<amazon:voice>x</amazon:voice>", "not read"),
     ("<s>one <speak>two</speak></s>", "whole line"),
     ("<s>unclosed", "well-formed"),
     ("fish & chips", "well-formed"),
