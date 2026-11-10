@@ -182,3 +182,31 @@ def test_a_derived_line_renders_to_audio_through_a_real_voice(voice):
         line = render_line(template, auto_twin(template, STYLE, reading_lang), values)
         chunks = list(found.synthesize_ssml(line.document, lang=lang))
         assert sum(len(chunk.audio_float_array) for chunk in chunks) > 0, template
+
+
+# -- known upstream defects in phoonnx 1.96.2a2 -------------------------------------------------
+# Each test states what the kit's markup should be read as. While phoonnx still reads it wrongly
+# the test skips, naming the defect; once a phoonnx release reads it right, it is a real test.
+# The CI pin stays on 1.96.2a2 until a release carries the fixes.
+
+def _skip_until_fixed(defect: str, said: str, wanted: str) -> None:
+    if said != wanted:
+        pytest.skip(f"phoonnx defect ({defect}): said {said!r}, should say {wanted!r}")
+
+
+def test_a_sentence_that_ends_on_an_english_time_has_one_full_stop():
+    line = render_line("It is 7:30 pm.", auto_twin("It is 7:30 pm.", SpeechStyle(), "en-US"), {})
+    said = words(parse_ssml(line.document, "en-US"))
+    _skip_until_fixed('english say-as time answers "p.m." and the sentence adds a second dot',
+                      said, "It is half past seven p.m.")
+
+
+def test_a_french_time_with_pm_says_demie():
+    said = words(parse_ssml(ssml.as_time("7:30 pm").document, "fr-FR"))
+    _skip_until_fixed('french half hour is feminine: "demie"', said, "sept heures et demie du soir")
+
+
+def test_a_bare_hour_with_pm_is_a_time():
+    said = words(parse_ssml(ssml.as_time("9 pm").document, "en-US"))
+    _skip_until_fixed("say-as time needs a colon or an h, so a bare hour is said as written",
+                      said, "nine p.m.")
