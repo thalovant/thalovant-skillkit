@@ -288,7 +288,7 @@ what a `{placeholder}` is filled with, so a value that contains a full stop is
 not cut in two, and values are escaped as for any twin. A hand-written `.ssml`
 twin still wins for its line. `checks.redundant_twins(root, style)` lists twins
 that say nothing the style does not, so a skill's tests can keep them deleted.
-Fields: `rate`, `sentence_break`, `colon_break` (also `;`), `dash_break` (`—`,
+Fields: `rate`, `pitch`, `breaths` (the `auto_breaths` frequency), `sentence_break`, `colon_break` (also `;`), `dash_break` (`—`,
 `–`), `comma_break`. Unset fields do nothing; with no `SPEECH_STYLE` a skill is
 sent exactly as before.
 
@@ -313,6 +313,14 @@ It goes wherever a string goes. `+` keeps the markup on either side; f-strings,
 | `foreign(text, "fr-FR")` | `<lang xml:lang="fr-FR">` | `text` |
 | `emphasis(text, level="moderate")` | `<emphasis>` | `text` |
 | `sub(written, spoken)` | `<sub alias="spoken">written</sub>` | `spoken` |
+| `cardinal(text)`, `ordinal(text)`, `fraction(text)`, `unit(text)`, `currency(text)`, `address(text)` | `<say-as interpret-as="cardinal">`, `"ordinal"`, `"fraction"`, `"unit"`, `"currency"`, `"address"` | `text` |
+| `as_date(text, format=None)`, `as_time(text, format=None)` | `<say-as interpret-as="date">`, `"time"` (`format="mdy"`, `"hms24"`) | `text` |
+| `interjection(text)`, `expletive(text)` | `<say-as interpret-as="interjection">`, `"expletive"` (a bleep) | `text` |
+| `phoneme(text, ph, alphabet="ipa")` | `<phoneme>`, IPA or `"x-sampa"` | `text` |
+| `prosody(text, rate=, pitch=, volume=)`, `pitch(text, "+2st")` | `<prosody>` | `text` |
+| `whisper(text)`, `soft(text)`, `compress(text)`, `vocal_tract(text, "+20%")` | `<amazon:effect>` (`name="whispered"`, `phonation="soft"`, `name="drc"`, `vocal-tract-length`) | `text` |
+| `auto_breaths(text, frequency="medium")`, `breath("short")` | `<amazon:auto-breaths>`, `<amazon:breath/>` | `text`, nothing |
+| `mark("name")` | `<mark name>`: the voice reports when its audio reaches it | Nothing |
 | `markup(template, **values)` | The template, values escaped | Read from the SSML |
 
 A `Speech` passed as a dialog value marks up that value even when the dialog has
@@ -345,15 +353,23 @@ parse loses its tags and keeps its words.
 | `<speak>` | `xml:lang`, around the whole line only. It is sent as a `<lang>` inside the one `<speak>` the message gets, since SSML forbids nesting. |
 | `<break>` | `time` (`500ms`, `1s`, at most 10 seconds) or `strength` |
 | `<p>`, `<s>` | none |
-| `<prosody>` | `rate` (named or a percentage), `volume` (named or dB) |
+| `<prosody>` | `rate` (named or a percentage), `volume` (named or dB), `pitch` (named, `+2st` or a percentage; Hz is not rendered) |
 | `<emphasis>` | `level`: `strong`, `moderate`, `reduced` or `none` |
 | `<lang>`, `<voice>` | `xml:lang` |
-| `<say-as>` | `interpret-as`: `characters`, `spell-out`, `digits` or `telephone` |
+| `<say-as>` | `interpret-as`: `characters`, `spell-out`, `digits`, `telephone`, `cardinal`, `number`, `ordinal`, `fraction`, `unit`, `date` (`format` such as `mdy`), `time` (`format` `hms12` or `hms24`), `currency`, `address`, `expletive` or `interjection` |
 | `<sub>` | `alias` |
-| `<phoneme>` | `ph`, and `alphabet="ipa"` |
+| `<phoneme>` | `ph`, and `alphabet="ipa"` or `"x-sampa"` |
+| `<mark>` | `name` |
+| `<amazon:effect>` | `name` (`whispered`, `drc`), `phonation="soft"`, `vocal-tract-length` (a percentage) |
+| `<amazon:auto-breaths>` | `frequency`, `duration`, `volume` |
+| `<amazon:breath>` | `duration`, `volume` |
+| `<amazon:domain>` | `name`; the words are read as they are |
 
-Thalovant voices read `pitch`, `<audio>`, `<mark>` and `amazon:*` as plain
-words, so the check reports them.
+Thalovant voices read `<audio>` and any other prefixed tag as plain words, so the
+check reports them. Pitch, whisper, soft, compression, breaths and bleeps are
+applied to the finished audio and need a voice built on phoonnx with SSML support
+(phoonnx PR #539); on an older voice they are read as plain words. Emotions and
+speaking styles are not something these voices do.
 
 ### What the check reports
 
@@ -574,7 +590,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.34.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.35.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.

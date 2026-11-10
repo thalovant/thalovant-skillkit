@@ -1,6 +1,22 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-09 - Motive: SPEECH_STYLE (0.34.0): pace dialog without a .ssml twin per line.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
 Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented installs pin the published 0.32.0, and a test keeps them on the version (CodeRabbit on #22).
 # Changelog
+
+## 0.35.0
+
+- **Everything phoonnx can speak is something a skill can write.** `validate`, `check` and
+  `markup` now accept `<prosody pitch>` (`+2st`, a percentage or a name), `<say-as>` with
+  `cardinal`, `ordinal`, `fraction`, `unit`, `date` (+`format`), `time`, `currency`, `address`,
+  `expletive` and `interjection`, `<phoneme alphabet="x-sampa">`, `<mark>`, `<amazon:effect>`
+  (whispered, drc, soft, vocal-tract-length), `<amazon:auto-breaths>`, `<amazon:breath>` and
+  `<amazon:domain>`. Other prefixed tags, `<audio>` and Hz pitches are still reported.
+- **Helpers for each:** `cardinal`, `ordinal`, `fraction`, `unit`, `currency`, `address`,
+  `interjection`, `expletive`, `as_date`, `as_time`, `phoneme`, `prosody`, `pitch`, `whisper`,
+  `soft`, `compress`, `vocal_tract`, `breath`, `auto_breaths`, `mark`. Each refuses what a voice
+  would not read, and its plain words are the written text.
+- `SpeechStyle` gains `pitch` and `breaths`.
+- The voice needs phoonnx with SSML support to speak them; on an older voice they are read as
+  plain words, and the plain `utterance` is unchanged either way.
 
 ## 0.34.0
 

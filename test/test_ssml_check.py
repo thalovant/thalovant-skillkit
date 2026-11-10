@@ -64,7 +64,7 @@ def test_a_twin_is_optional_in_every_other_locale(skill):
 @pytest.mark.parametrize("line, expected", [
     ('Why did the scarecrow win an award? <break time="1 minute"/> Because he was '
      "outstanding in his field.", "needs a unit"),
-    ('<prosody pitch="high">Why</prosody> did the scarecrow win an award? Because he was '
+    ('<prosody pitch="shrill">Why</prosody> did the scarecrow win an award? Because he was '
      "outstanding in his field.", "pitch"),
     ('<audio src="drum.wav"/> Why did the scarecrow win an award? Because he was outstanding '
      "in his field.", "<audio> is not rendered"),
