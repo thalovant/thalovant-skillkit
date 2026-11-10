@@ -1,6 +1,15 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit: a feature matrix tested against phoonnx, SPEECH_STYLE that reads every script and quantity, and `compat`.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.1, pacing no longer changes the words of a script written without spaces.
+Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit: a feature matrix tested against phoonnx, SPEECH_STYLE that reads every script and quantity, and `compat`.
 Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
 # Changelog
+
+## 0.36.1
+
+- **Fix: the pacing of scripts written without spaces no longer changes the words.** 0.36.0 paced Japanese,
+  Chinese, Hindi and Arabic lines, and `to_plain` turned each pause into a space: `。ソース` read back
+  as `。 ソース`. A skill that shows or compares the plain text (the news and custos-fallback tests did)
+  saw text that differed from its dialog. A pause after a mark of such a script (`。！？।؟、，：；` and
+  closing quotes) now adds no space; where the dialog wrote a space, it stays.
 
 ## 0.36.0
 
