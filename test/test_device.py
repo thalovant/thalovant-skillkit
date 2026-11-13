@@ -138,6 +138,24 @@ def test_a_broken_allow_list_is_a_no_not_an_error():
     assert device_allowed(STAMPED, endless()) is False
 
 
+def test_a_scalar_is_not_a_list():
+    """A bare string read as characters would allow the devices "1", "5", "8", "0" for "1580"."""
+    for stamp_device in ("1", "5", "8", "0", "1580"):
+        ctx = {"thalovant_home": {"device": stamp_device, "device_name": "Den"}}
+        assert device_allowed(ctx, "1580") is False and device_allowed(ctx, b"1580") is False
+        assert device_allowed(ctx, ["1580"]) is (stamp_device == "1580")
+    assert device_allowed(STAMPED, "Kitchen") is False
+
+
+@pytest.mark.parametrize("error", [RuntimeError, ValueError, KeyError, OSError])
+def test_an_allow_list_that_raises_after_an_entry_is_a_no(error):
+    def partly():
+        yield "Kitchen"  # it would have allowed this device
+        raise error("boom")
+
+    assert device_allowed(STAMPED, partly()) is False
+
+
 def test_an_identity_may_have_only_an_id():
     assert DeviceIdentity("7", None).keys == ("7",)
     assert DeviceIdentity(None, None).keys == ()

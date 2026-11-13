@@ -15,6 +15,7 @@ reconciled, most careful copy. Pure functions: no OVOS, no network except `vette
 A skill whose kit floor is older than this module imports it behind a guard (`docs/reference.md`,
 "Older kits"); the guard's fallback strips tags and addresses itself.
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -28,6 +29,7 @@ __all__ = [
     "MAX_SPOKEN_NAME",
     "UnsafeAddress",
     "address_problem",
+    "canonical_host",
     "contains_url",
     "normalize_base_url",
     "speakable",
@@ -102,6 +104,38 @@ def normalize_base_url(raw: str) -> str:
     return urlunsplit((scheme, netloc, parts.path.rstrip("/"), "", ""))
 
 
+#: Unicode full stops the IDNA codec reads as label separators ("kubernetes.default。svc").
+_UNICODE_DOTS = str.maketrans({"\u3002": ".", "\uff0e": ".", "\uff61": "."})
+#: Numbers-and-dots hosts that `getaddrinfo` accepts on Linux (`inet_aton`: `134744072`, `0x7f.1`).
+_NUMERIC_HOST = re.compile(r"^(?:0x[0-9a-f]+|[0-9]+)(?:\.(?:0x[0-9a-f]+|[0-9]+)){0,3}$")
+
+
+def canonical_host(host: str) -> str | None:
+    """The host as the resolver will read it: lower case, ASCII (IDNA), no trailing dot, and a
+    numbers-and-dots form (`134744072`) as the dotted quad it means. "" for no host, None for a name
+    that cannot be encoded (a label over 63 characters, an invalid code point)."""
+    if not isinstance(host, str):
+        return None
+    host = host.translate(_UNICODE_DOTS).lower().rstrip(".")
+    if not host or ":" in host:  # empty, or an IPv6 literal (judged as an address)
+        return host
+    try:
+        host = host.encode("idna").decode("ascii")
+    except UnicodeError:
+        return None
+    if _NUMERIC_HOST.match(host):
+        try:
+            return socket.inet_ntoa(socket.inet_aton(host))
+        except OSError:
+            return None
+    return host
+
+
+def _lan_address(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    mapped = getattr(address, "ipv4_mapped", None) or address
+    return bool(mapped.is_private or mapped.is_loopback)
+
+
 def address_problem(address: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
     """Why `address` is never a server's, or "" when it may be dialled.
 
@@ -127,11 +161,18 @@ def url_problem(url: str) -> str:
       LAN name (`.local`, `.lan`, `.home.arpa`, `.home`, a single label): the token would cross the
       internet in clear.
 
-    A name is not resolved here (a name can change its answer): a client that dials it calls
-    `vetted_addresses` at the moment of the call and connects to what that returns.
+    The host is read as the resolver will read it (`canonical_host`): Unicode full stops and IDNA
+    labels are folded to ASCII, and a numbers-and-dots host (`134744072`) is the address it means.
+
+    A name is not resolved here (a name can change its answer), so a single label (`nas`) or a LAN
+    name passes for a plain scheme only on the condition that the client dials through
+    `vetted_addresses(host, port, plain=True)` at the moment of the call and connects to what that
+    returns: that is where a LAN name which resolves publicly is refused.
     """
     parts = urlsplit(url)
-    host = (parts.hostname or "").lower().rstrip(".")
+    host = canonical_host(parts.hostname or "")
+    if host is None:
+        return "a host name that cannot be encoded"
     if not host:
         return "no host"
     try:
@@ -142,8 +183,7 @@ def url_problem(url: str) -> str:
         problem = address_problem(address)
         if problem:
             return problem
-        mapped = getattr(address, "ipv4_mapped", None) or address
-        if parts.scheme in _PLAIN_SCHEMES and not (mapped.is_private or mapped.is_loopback):
+        if parts.scheme in _PLAIN_SCHEMES and not _lan_address(address):
             return f"a plain {parts.scheme}:// to a public address"
         return ""
     if host.endswith(_INTERNAL_SUFFIXES) or host in _INTERNAL_NAMES:
@@ -157,15 +197,24 @@ class UnsafeAddress(ValueError):
     """A name resolved to an address a server never has (see `address_problem`)."""
 
 
-def vetted_addresses(host: str, port: int) -> list[str]:
+def vetted_addresses(host: str, port: int, *, plain: bool = False) -> list[str]:
     """The addresses `host` points to now, each checked with `address_problem`.
 
     Raises `UnsafeAddress` when any answer is link-local, unspecified or multicast (a name that
     answers differently the second time cannot move the client to cloud metadata), `socket.gaierror`
     when the name does not resolve, and `UnsafeAddress` when nothing usable came back. Connect to
     the returned address, not to the name again.
+
+    Pass `plain=True` for an `http://` or `ws://` connection: the token would cross the network in
+    clear, so an answer that is not a private or loopback address is refused too (a LAN name that
+    resolves to a public address). TLS schemes keep public addresses.
     """
-    infos = socket.getaddrinfo(host, port, type=socket.SOCK_STREAM)
+    canonical = canonical_host(host)
+    if not canonical:
+        raise UnsafeAddress(
+            "a host name that cannot be encoded" if canonical is None else "no host"
+        )
+    infos = socket.getaddrinfo(canonical, port, type=socket.SOCK_STREAM)
     out: list[str] = []
     for info in infos:
         text = str(info[4][0]).split("%")[0]
@@ -175,6 +224,8 @@ def vetted_addresses(host: str, port: int) -> list[str]:
             continue
         if address_problem(address):
             raise UnsafeAddress("address refused")
+        if plain and not _lan_address(address):
+            raise UnsafeAddress("a plain connection to a public address")
         if text not in out:
             out.append(text)
     if not out:

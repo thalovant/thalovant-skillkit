@@ -1042,7 +1042,7 @@ This module has no function that reads any of them.
 | Name | Returns |
 |---|---|
 | `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamps, or `None`. `thalovant_home` decides (every router since 0.4.1 overwrites it on every client utterance); a `thalovant_connector` stamp, when the key is there at all, must name the same device (before router 0.5.0 a client could write it itself, and the first stamp found used to win). Never raises. `.keys` is the id, the row name, and the row name without `client-`. |
-| `device_allowed(context, allowed)` | `True` only when one of those keys equals an entry of `allowed` (folded, whole values). An empty list, no stamp, a malformed stamp or an allow-list that raises is `False`. Entries may be strings or integers. |
+| `device_allowed(context, allowed)` | `True` only when one of those keys equals an entry of `allowed` (folded, whole values). An empty list, a bare string or bytes (not a list), no stamp, a malformed stamp or an allow-list that raises while it is read is `False`. Entries may be strings or integers. |
 | `STAMP_KEYS` | `("thalovant_home", "thalovant_connector")`: the only keys believed. The retired `thalovant_music` is not: a client could write it. |
 
 ```python
@@ -1060,11 +1060,12 @@ def handle(self, message):
 | `speakable(value, limit=120)` | A title or name as words only: tags and addresses (`scheme://`, `www.`) removed, angle brackets, control, format (bidi), surrogate, private-use and unassigned characters turned into spaces, one line, at most `limit` characters; `""` for anything that is not text. The work on a hostile value is bounded (it is cut to four times `limit` first). |
 | `contains_url(value)` | Whether text carries something address-like. |
 | `normalize_base_url(raw)` | `scheme://host:port/prefix` for what an owner typed (a bare `host:port` is http; credentials, query and fragment are dropped), or `""`. |
-| `url_problem(url)` | Why a URL must not be dialled, or `""`: an address that is never a server's (link-local, where cloud metadata lives; unspecified; multicast; an IPv4-mapped IPv6 judged as its IPv4), the names a cluster or host gives only to itself (`*.svc`, `*.cluster.local`, `*.internal`, `metadata.google.internal`), and a plain `http://` or `ws://` to a public address or name (the token would cross the internet in clear). |
+| `url_problem(url)` | Why a URL must not be dialled, or `""`. The host is read as the resolver reads it (`canonical_host`: Unicode full stops and IDNA labels folded to ASCII, a numbers-and-dots host such as `134744072` as the address it means; a host that cannot be encoded is refused). Refused: an address that is never a server's (link-local, where cloud metadata lives; unspecified; multicast; an IPv4-mapped IPv6 judged as its IPv4), the names a cluster or host gives only to itself (`*.svc`, `*.cluster.local`, `*.internal`, `metadata.google.internal`), and a plain `http://` or `ws://` to a public address or name (the token would cross the internet in clear). |
 | `address_problem(address)` | The first rule alone, for an `ipaddress` object. |
-| `vetted_addresses(host, port)` | The addresses a name resolves to *now*, each checked with `address_problem`; raises `UnsafeAddress` for a refused or empty answer and `socket.gaierror` when the name does not resolve. A client connects to the returned address, so a name that answers differently the second time cannot move it. |
+| `canonical_host(host)` | The host as the resolver will read it, or `None` when it cannot be encoded. |
+| `vetted_addresses(host, port, plain=False)` | The addresses a name resolves to *now*, each checked with `address_problem`; with `plain=True` (an `http://` or `ws://` connection) an answer that is not a private or loopback address is refused too, which is where a LAN name that resolves publicly is stopped. Raises `UnsafeAddress` for a refused or empty answer and `socket.gaierror` when the name does not resolve. A client connects to the returned address, so a name that answers differently the second time cannot move it. |
 
-A name is never resolved by `url_problem`; a client that dials one calls `vetted_addresses` at the moment of the call.
+A name is never resolved by `url_problem`; a client that dials one calls `vetted_addresses(host, port, plain=<the scheme is http or ws>)` at the moment of the call and connects to the address it returns. The kit does not dial or follow redirects for you: refuse redirects in the client that does.
 
 ### Older kits: the guard for `device` and `safety`
 

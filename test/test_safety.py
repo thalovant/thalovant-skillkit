@@ -9,6 +9,7 @@ from thalovant_skillkit import safety
 from thalovant_skillkit.safety import (
     UnsafeAddress,
     address_problem,
+    canonical_host,
     contains_url,
     normalize_base_url,
     speakable,
@@ -177,3 +178,80 @@ def test_a_name_that_does_not_resolve_is_the_resolvers_own_error(monkeypatch):
     monkeypatch.setattr(safety.socket, "getaddrinfo", boom)
     with pytest.raises(socket.gaierror):
         vetted_addresses("nowhere.example.com", 80)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://kubernetes.default。svc",  # an ideographic full stop, read as a dot
+        "https://kubernetes.default．svc",  # a fullwidth full stop
+        "https://kubernetes.default｡svc",  # a halfwidth ideographic full stop
+        "https://metadata。google。internal",
+        "http://134744072",  # inet_aton: a single integer is 8.8.8.8
+        "http://0x08080808",
+        "http://8.8.8",  # three parts: 8.8.0.8
+        "http://0xa9.0xfe.0xa9.0xfe",  # 169.254.169.254
+        "http://2852039166",  # 169.254.169.254 as an integer
+        "https://" + "a" * 64 + ".example.com",  # a label over 63 characters cannot be encoded
+    ],
+)
+def test_the_host_is_read_as_the_resolver_reads_it(url):
+    assert url_problem(url) != ""
+
+
+def test_the_canonical_host():
+    assert canonical_host("Kubernetes.Default。SVC.") == "kubernetes.default.svc"
+    assert canonical_host("bücher.example") == "xn--bcher-kva.example"
+    assert canonical_host("134744072") == "8.8.8.8" and canonical_host("0x7f.1") == "127.0.0.1"
+    assert canonical_host("010.0.0.1") == "8.0.0.1"
+    assert canonical_host("[::1]".strip("[]")) == "::1" and canonical_host("") == ""
+    assert canonical_host("nas") == "nas" and canonical_host("a" * 64) is None
+    assert canonical_host(None) is None and canonical_host("256.1") is None
+
+
+def test_url_problem_reads_an_unusable_host_and_the_idna_form_of_a_lan_name():
+    assert "encoded" in url_problem("http://" + "a" * 64 + ".local")
+    assert url_problem("http://bücher.local") == ""  # a LAN name, whatever the script
+
+
+def test_plain_connections_must_resolve_to_a_private_address(monkeypatch):
+    """`url_problem` cannot resolve: "http://nas" passes it. The dial-time check refuses a name that
+    answers with a public address, for http and ws; TLS keeps public addresses."""
+    assert url_problem("http://nas") == ""
+    monkeypatch.setattr(safety.socket, "getaddrinfo", lambda *a, **k: _infos("8.8.8.8"))
+    with pytest.raises(UnsafeAddress, match="plain"):
+        vetted_addresses("nas", 80, plain=True)
+    assert vetted_addresses("nas", 443) == ["8.8.8.8"]  # TLS: public is fine
+    monkeypatch.setattr(
+        safety.socket, "getaddrinfo", lambda *a, **k: _infos("192.168.1.5", "8.8.8.8")
+    )
+    with pytest.raises(UnsafeAddress, match="plain"):  # any public answer refuses the whole name
+        vetted_addresses("nas", 80, plain=True)
+    monkeypatch.setattr(
+        safety.socket, "getaddrinfo", lambda *a, **k: _infos("192.168.1.5", "127.0.0.1", "10.0.0.2")
+    )
+    assert vetted_addresses("nas", 80, plain=True) == ["192.168.1.5", "127.0.0.1", "10.0.0.2"]
+    monkeypatch.setattr(
+        safety.socket,
+        "getaddrinfo",
+        lambda *a, **k: [
+            (socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::ffff:8.8.8.8", 80, 0, 0))
+        ],
+    )
+    with pytest.raises(UnsafeAddress, match="plain"):  # an IPv4-mapped public address is public
+        vetted_addresses("nas", 80, plain=True)
+
+
+def test_vetted_addresses_resolves_the_canonical_form_and_refuses_an_unencodable_name(monkeypatch):
+    seen = []
+    monkeypatch.setattr(
+        safety.socket, "getaddrinfo", lambda host, *a, **k: seen.append(host) or _infos("10.0.0.5")
+    )
+    assert vetted_addresses("Bücher.Local.", 80, plain=True) == ["10.0.0.5"]
+    assert vetted_addresses("134744072", 443) == ["10.0.0.5"] and seen == [
+        "xn--bcher-kva.local",
+        "8.8.8.8",
+    ]
+    for bad in ("a" * 64, "", None):
+        with pytest.raises(UnsafeAddress):
+            vetted_addresses(bad, 80)

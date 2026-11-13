@@ -108,17 +108,20 @@ def device_identity(context: Any) -> DeviceIdentity | None:
 def device_allowed(context: Any, allowed: Iterable[Any]) -> bool:
     """True when the hub's name for the speaking device is exactly one of `allowed` (folded, whole).
 
-    An empty allow-list is nobody: deny by default. Entries may be strings or integers (a device id
-    typed as a number); anything else is ignored. A part of a name never matches ("kitchen" does not
-    allow "Kitchen Display").
+    An empty allow-list is nobody: deny by default. A bare string or bytes is not a list and allows
+    nobody; an allow-list that raises while it is read allows nobody. Entries may be strings or
+    integers (a device id typed as a number); anything else is ignored. A part of a name never
+    matches ("kitchen" does not allow "Kitchen Display").
     """
+    if isinstance(allowed, (str, bytes)):
+        return False  # a scalar is not a list: "1580" would allow the devices "1", "5", "8", "0"
     try:
         wanted = {
             fold(str(entry))
             for entry in allowed
             if isinstance(entry, (str, int)) and not isinstance(entry, bool)
         }
-    except TypeError:
+    except Exception:  # noqa: BLE001 - an allow-list that raises is a no, not an error in the skill
         return False
     wanted.discard("")
     identity = device_identity(context)

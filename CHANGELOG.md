@@ -16,8 +16,10 @@ Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every 
   router is not believed. The media skills and the Music Assistant skill each had a copy; they had begun to differ.
 - **`thalovant_skillkit.safety`: titles to say, servers to dial.** `speakable` (tags, addresses, control and bidi
   characters out, one line, bounded), `contains_url`, `normalize_base_url`, `url_problem` (link-local and cluster-internal
-  names, a plain `http://` or `ws://` to a public host), `address_problem` and `vetted_addresses` (the addresses a name
-  resolves to now, each checked, so a name that answers differently the second time cannot move a client to cloud
+  names, a plain `http://` or `ws://` to a public host; the host is read as the resolver reads it, so a Unicode full
+  stop or `134744072` cannot hide a cluster name or a public address), `canonical_host`, `address_problem` and
+  `vetted_addresses(host, port, plain=False)` (the addresses a name
+  resolves to now, each checked, and for a plain scheme private or loopback only, so a name that answers differently the second time cannot move a client to cloud
   metadata). Reconciled to the most careful of the copies in the media skill, the shared media library and the Music Assistant
   skill: `speakable` removes an address as well as markup (the Music Assistant skill's copy spoke it).
 - A skill whose floor is older than 0.37 imports both behind a guard (docs/reference.md, "Older kits"); the guard for
