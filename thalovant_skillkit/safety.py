@@ -174,8 +174,12 @@ def url_problem(url: str) -> str:
     `vetted_addresses(host, port, plain=True)` at the moment of the call and connects to what that
     returns: that is where a LAN name which resolves publicly is refused.
     """
-    parts = urlsplit(url)
-    host = canonical_host(parts.hostname or "")
+    try:
+        parts = urlsplit(url)
+        hostname = parts.hostname or ""
+    except (ValueError, TypeError, AttributeError):  # `http://[::1`: a gate says no, it does not raise
+        return "an address that cannot be read"
+    host = canonical_host(hostname)
     if host is None:
         return "a host name that cannot be encoded"
     if not host:
