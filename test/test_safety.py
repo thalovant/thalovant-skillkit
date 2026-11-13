@@ -209,6 +209,28 @@ def test_the_canonical_host():
     assert canonical_host(None) is None and canonical_host("256.1") is None
 
 
+@pytest.mark.parametrize(
+    "host",
+    [
+        "kubernetes.default.svc\x00.local",
+        "a\x00b",
+        "nas\x1f",
+        "a b.local",
+        "nas\x7f",
+        "ho\u200bst.local",
+        "x\u2028y",
+        "\x00",
+    ],
+)
+def test_a_host_with_a_control_or_format_character_is_not_a_host(host):
+    """The IDNA codec keeps a NUL and the C resolver stops reading at one: the cluster's name
+    would be judged as a `.local` name and resolved as the cluster's."""
+    assert canonical_host(host) is None
+    assert url_problem("http://" + host) != ""
+    with pytest.raises(UnsafeAddress):
+        vetted_addresses(host, 80, plain=True)
+
+
 def test_url_problem_reads_an_unusable_host_and_the_idna_form_of_a_lan_name():
     assert "encoded" in url_problem("http://" + "a" * 64 + ".local")
     assert url_problem("http://bücher.local") == ""  # a LAN name, whatever the script

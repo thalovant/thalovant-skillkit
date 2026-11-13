@@ -117,6 +117,11 @@ def canonical_host(host: str) -> str | None:
     if not isinstance(host, str):
         return None
     host = host.translate(_UNICODE_DOTS).lower().rstrip(".")
+    # The IDNA codec keeps ASCII NUL and other control characters, and the C resolver stops reading
+    # at a NUL: "kubernetes.default.svc\x00.local" would pass for a ".local" name and resolve as the
+    # cluster's. A host holds no control, format or space character at all.
+    if any(unicodedata.category(char)[0] in "CZ" for char in host):
+        return None
     if not host or ":" in host:  # empty, or an IPv6 literal (judged as an address)
         return host
     try:
