@@ -2582,7 +2582,7 @@ wheels = [
 
 [[package]]
 name = "thalovant-skillkit"
-version = "0.36.1"
+version = "0.37.0"
 source = { editable = "." }
 dependencies = [
     { name = "babel" },

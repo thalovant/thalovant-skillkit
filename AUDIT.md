@@ -1,5 +1,16 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit (feature matrix, SPEECH_STYLE per language, guarded imports).
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0: `device` and `safety`, the identity and SSRF rules the media skills each wrote.
+Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit (feature matrix, SPEECH_STYLE per language, guarded imports).
 Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: The documented install pins fell behind the release (CodeRabbit on #22).
+## 2026-11-13 identity and SSRF rules (0.37.0)
+
+Method: the three copies of each rule (the media skill, the shared media library, the Music Assistant skill) were read side by side and reconciled to the most careful; the new tests are the union of their cases plus the cases each lacked.
+
+- Fixed (Major, security): a device could name itself after another speaker. The Music Assistant skill's `device_keys` read `context["peer"]`, `site_id`, `client_id`, `source` and the session to map a device to a player; those are the client's own words. [device.py](thalovant_skillkit/device.py) reads the router's stamp only. `test_peer_and_the_other_client_words_are_never_read`, `test_the_module_has_no_way_to_read_a_client_supplied_key`.
+- Fixed (Major, security): a stamp the router no longer owns was believed (`thalovant_music`, router 0.4): a client could write that key itself. `test_the_retired_per_service_stamp_is_not_believed`.
+- Fixed (Medium, speech): the Music Assistant skill's `speakable` removed angle brackets but left an address in the words; the media skill's did the same and kept tag content. [safety.py](thalovant_skillkit/safety.py) removes markup and addresses. `test_speakable_removes_markup_addresses_control_and_bidi`.
+- Held: the bounded work on hostile text (`speakable` cuts at four times the limit before it looks), the IPv4-mapped IPv6 address judged as its IPv4, the redirect-free dial of a vetted address (`vetted_addresses`). `test_speakable_is_bounded_and_for_text_only`, `test_address_problem`, `test_vetted_addresses_resolves_and_refuses_what_is_never_a_server`.
+- Known limit: `url_problem` does not resolve names; a public name that resolves to a private address is stopped by the platform's egress policy or by a client that dials `vetted_addresses`. A kit before 0.37 has neither module: a skill's guard must fail closed (deny everyone), as `docs/reference.md` shows.
+
 ## 2026-11-10 the SSML audit (0.36.0)
 
 Method: every construct `phoonnx.ssml.parse_ssml` (1.96.2a2) and the satellite's `thalovant_voice.ssml.pieces` read was written with the kit's helper, validated, read by phoonnx in `en-US` and `fr-FR`, and synthesized through `en_US-hfc_female` and `fr_FR-siwis`; the same for hostile values. The matrix is [test/ssml_matrix.py](test/ssml_matrix.py), run by [test/test_ssml_matrix.py](test/test_ssml_matrix.py) and [test/test_ssml_phoonnx.py](test/test_ssml_phoonnx.py).

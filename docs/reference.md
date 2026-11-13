@@ -1,4 +1,4 @@
-<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0 documents the SSML feature matrix, the no-SSML fallback, the language rules of SPEECH_STYLE and the compat shim. -->
+<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0 documents `device` (the router's stamp as the only identity) and `safety` (speakable, url_problem), and the guard for a kit before 0.37. -->
 
 # SkillKit reference
 
@@ -711,7 +711,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.36.1"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.37.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -1021,6 +1021,66 @@ orthography and Argentine Spanish grammar need contextual review. For Chinese,
 can help prepare Traditional characters and common Taiwan terms. Check spoken
 phrases and regex literals too; conversion does not create a Cantonese translation.
 Ask fluent speakers to review important flows before claiming linguistic quality.
+
+## Who is speaking, and what is safe to say or dial
+
+A skill that serves one household's private thing (a media server, the lights, a camera) answers only the
+hub's devices that household listed, and says only text that is safe to read aloud. Two modules do that
+for every such skill, reconciled from the copies the media and Music Assistant skills had written.
+
+### `thalovant_skillkit.device`: the router's stamp, and nothing else
+
+The hub's home router writes `context["thalovant_connector"]` (and `context["thalovant_home"]`) on every
+utterance from a connection it vouches for, with `device` (the database id of the row) and `device_name`
+(its platform-assigned name, `client-<uuid>`). It writes both from the row and overwrites whatever a client
+sent, and writes neither for a connection it will not vouch for (a preview or chat bridge, no account).
+**Everything else that looks like an identity is the client's own word**: `context["peer"]` is
+`<useragent>::<id>::<name>::<session>` with a client-supplied user agent and session (`x::1580::y` makes the tail
+read as another client's id), and `source`, `site_id`, `client_id` and the session's copies are no better.
+This module has no function that reads any of them.
+
+| Name | Returns |
+|---|---|
+| `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamp, or `None`. Never raises. `.keys` is the id, the row name, and the row name without `client-`. |
+| `device_allowed(context, allowed)` | `True` only when one of those keys equals an entry of `allowed` (folded, whole values). An empty list, no stamp, a malformed stamp or an allow-list that raises is `False`. Entries may be strings or integers. |
+| `STAMP_KEYS` | `("thalovant_connector", "thalovant_home")`: the only keys believed. The retired `thalovant_music` is not: a client could write it. |
+
+```python
+from thalovant_skillkit.device import device_allowed
+
+def handle(self, message):
+    if not device_allowed(message.context, self.allowed_devices):   # deny by default
+        return self.pass_on(message)
+```
+
+### `thalovant_skillkit.safety`: titles to say, servers to dial
+
+| Name | Returns |
+|---|---|
+| `speakable(value, limit=120)` | A title or name as words only: tags and addresses (`scheme://`, `www.`) removed, angle brackets, control, format (bidi), surrogate, private-use and unassigned characters turned into spaces, one line, at most `limit` characters; `""` for anything that is not text. The work on a hostile value is bounded (it is cut to four times `limit` first). |
+| `contains_url(value)` | Whether text carries something address-like. |
+| `normalize_base_url(raw)` | `scheme://host:port/prefix` for what an owner typed (a bare `host:port` is http; credentials, query and fragment are dropped), or `""`. |
+| `url_problem(url)` | Why a URL must not be dialled, or `""`: an address that is never a server's (link-local, where cloud metadata lives; unspecified; multicast; an IPv4-mapped IPv6 judged as its IPv4), the names a cluster or host gives only to itself (`*.svc`, `*.cluster.local`, `*.internal`, `metadata.google.internal`), and a plain `http://` or `ws://` to a public address or name (the token would cross the internet in clear). |
+| `address_problem(address)` | The first rule alone, for an `ipaddress` object. |
+| `vetted_addresses(host, port)` | The addresses a name resolves to *now*, each checked with `address_problem`; raises `UnsafeAddress` for a refused or empty answer and `socket.gaierror` when the name does not resolve. A client connects to the returned address, so a name that answers differently the second time cannot move it. |
+
+A name is never resolved by `url_problem`; a client that dials one calls `vetted_addresses` at the moment of the call.
+
+### Older kits: the guard for `device` and `safety`
+
+A kit before 0.37 has neither module, and a hub keeps the kit it loaded at boot, so a skill with a lower floor imports
+them behind a guard. The fallback for `device` is to deny everyone; the fallback for `safety` strips tags and
+addresses itself:
+
+```python
+try:
+    from thalovant_skillkit.device import device_allowed
+except ImportError:  # a kit before 0.37, still loaded on a hub that upgraded in place
+    def device_allowed(context, allowed):
+        return False  # fail closed: the skill answers nobody until the pod restarts on the new kit
+```
+
+The media skills' shared library does this; a skill that serves a household's private thing should too.
 
 ## Shared runtime plumbing
 
