@@ -280,7 +280,7 @@ def test_vetted_addresses_resolves_the_canonical_form_and_refuses_an_unencodable
 
 
 def test_url_problem_says_no_to_an_unreadable_url_instead_of_raising():
-    """The contract is a URL `normalize_base_url` made, but a gate fails closed on the one that was not."""
+    """The contract is a URL `normalize_base_url` made, but a gate fails closed on one that was not."""
     from thalovant_skillkit.safety import url_problem
 
     for url in ("http://[::1", "http://[", "http://[fe80::1", None, 7, b"http://x"):

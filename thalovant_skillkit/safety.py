@@ -177,7 +177,7 @@ def url_problem(url: str) -> str:
     try:
         parts = urlsplit(url)
         hostname = parts.hostname or ""
-    except (ValueError, TypeError, AttributeError):  # `http://[::1`: a gate says no, it does not raise
+    except (ValueError, TypeError, AttributeError):  # `http://[::1`: a gate says no
         return "an address that cannot be read"
     host = canonical_host(hostname)
     if host is None:
