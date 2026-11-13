@@ -5,8 +5,8 @@ which of the hub's devices asked, and refuse the others: a public hub has strang
 place that knowledge is trustworthy is the stamp the hub's home router
 writes into the context of every utterance it vouches for:
 
-    context["thalovant_connector"] = {"link": {...}, "device": "1580", "device_name": "client-1"}
     context["thalovant_home"] = {"link": "online", "device": "1580", "device_name": "client-1"}
+    context["thalovant_connector"] = {"link": {...}, "device": "1580", "device_name": "client-1"}
 
 `device` is the database id of the connection's row and `device_name` its platform-assigned name;
 the router writes both from the row and overwrites whatever a client put there, and writes neither
@@ -27,9 +27,16 @@ identity, and the gate says no. The retired per-service stamps of earlier router
 (`thalovant_music`) are not believed either: a client could write that key itself, and nothing but
 the router's own keys is trusted.
 
+`thalovant_home` DECIDES: every router since 0.4.1 overwrites it on every client utterance.
+`thalovant_connector` (router 0.5.0) is believed only when it names the same device: before 0.5.0
+nothing overwrote it, so a client of an older hub could write its own and the first stamp found
+would have won. A stamp that is missing, names nobody, or disagrees with the other one means
+nobody, whichever key it is under; one is never "skipped".
+
 A skill whose kit floor is older than this module imports it behind a guard (`docs/reference.md`,
 "Older kits"), and the guard's fallback is to deny everyone.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -40,8 +47,9 @@ from .text import fold
 
 __all__ = ["STAMP_KEYS", "DeviceIdentity", "device_allowed", "device_identity"]
 
-#: The context keys the router owns, newest first. Nothing else is believed.
-STAMP_KEYS: tuple[str, ...] = ("thalovant_connector", "thalovant_home")
+#: The context keys the router owns: `thalovant_home` (decides) and `thalovant_connector`
+#: (must agree). Nothing else is believed.
+STAMP_KEYS: tuple[str, ...] = ("thalovant_home", "thalovant_connector")
 
 # : The prefix the platform gives a connection's row name (`client-<uuid>`); the console shows the
 # name without it.
@@ -66,28 +74,35 @@ class DeviceIdentity:
         if self.name:
             out.append(self.name)
             if self.name.lower().startswith(_ROW_PREFIX) and len(self.name) > len(_ROW_PREFIX):
-                out.append(self.name[len(_ROW_PREFIX):])
+                out.append(self.name[len(_ROW_PREFIX) :])
         return tuple(out)
 
 
-def device_identity(context: Any) -> DeviceIdentity | None:
-    """The speaking device from the router's stamp, or None.
+def _read(stamp: Any) -> DeviceIdentity | None:
+    if not isinstance(stamp, dict):
+        return None
+    device, name = stamp.get("device"), stamp.get("device_name")
+    is_id = isinstance(device, str) and device.isascii() and device.isdigit()
+    device = device if is_id else None
+    name = name.strip() if isinstance(name, str) and name.strip() else None
+    return DeviceIdentity(device, name) if (device or name) else None
 
-    Never raises, and never reads a client-supplied key.
+
+def device_identity(context: Any) -> DeviceIdentity | None:
+    """The speaking device from the router's stamps, or None.
+
+    `thalovant_home` must be there and name the device; a `thalovant_connector` stamp, when the
+    context has the key at all, must name the SAME device. Never raises, and never reads a
+    client-supplied key.
     """
     if not isinstance(context, dict):
         return None
-    for key in STAMP_KEYS:
-        stamp = context.get(key)
-        if not isinstance(stamp, dict):
-            continue
-        device, name = stamp.get("device"), stamp.get("device_name")
-        is_id = isinstance(device, str) and device.isascii() and device.isdigit()
-        device = device if is_id else None
-        name = name.strip() if isinstance(name, str) and name.strip() else None
-        if device or name:
-            return DeviceIdentity(device, name)
-    return None
+    home = _read(context.get("thalovant_home"))
+    if home is None:
+        return None
+    if "thalovant_connector" in context and _read(context.get("thalovant_connector")) != home:
+        return None
+    return home
 
 
 def device_allowed(context: Any, allowed: Iterable[Any]) -> bool:

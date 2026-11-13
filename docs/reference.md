@@ -1030,7 +1030,7 @@ for every such skill, reconciled from the copies the media and Music Assistant s
 
 ### `thalovant_skillkit.device`: the router's stamp, and nothing else
 
-The hub's home router writes `context["thalovant_connector"]` (and `context["thalovant_home"]`) on every
+The hub's home router writes `context["thalovant_home"]` (and, from router 0.5.0, `context["thalovant_connector"]`) on every
 utterance from a connection it vouches for, with `device` (the database id of the row) and `device_name`
 (its platform-assigned name, `client-<uuid>`). It writes both from the row and overwrites whatever a client
 sent, and writes neither for a connection it will not vouch for (a preview or chat bridge, no account).
@@ -1041,9 +1041,9 @@ This module has no function that reads any of them.
 
 | Name | Returns |
 |---|---|
-| `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamp, or `None`. Never raises. `.keys` is the id, the row name, and the row name without `client-`. |
+| `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamps, or `None`. `thalovant_home` decides (every router since 0.4.1 overwrites it on every client utterance); a `thalovant_connector` stamp, when the key is there at all, must name the same device (before router 0.5.0 a client could write it itself, and the first stamp found used to win). Never raises. `.keys` is the id, the row name, and the row name without `client-`. |
 | `device_allowed(context, allowed)` | `True` only when one of those keys equals an entry of `allowed` (folded, whole values). An empty list, no stamp, a malformed stamp or an allow-list that raises is `False`. Entries may be strings or integers. |
-| `STAMP_KEYS` | `("thalovant_connector", "thalovant_home")`: the only keys believed. The retired `thalovant_music` is not: a client could write it. |
+| `STAMP_KEYS` | `("thalovant_home", "thalovant_connector")`: the only keys believed. The retired `thalovant_music` is not: a client could write it. |
 
 ```python
 from thalovant_skillkit.device import device_allowed

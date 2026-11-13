@@ -7,7 +7,9 @@ Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every 
 
 - **`thalovant_skillkit.device`: who is speaking, from the router's stamp only.** `device_identity(context)` and
   `device_allowed(context, allowed)` read the `device` and `device_name` the hub's home router writes into
-  `context["thalovant_connector"]` / `context["thalovant_home"]` and nothing else. They fail closed (no stamp, a
+  `context["thalovant_home"]` (which decides: every router since 0.4.1 overwrites it) and `context["thalovant_connector"]`
+  (router 0.5.0; believed only when it names the same device: a client of an older hub could write that key itself)
+  and nothing else. They fail closed (no stamp, a
   malformed stamp, an empty allow-list, an allow-list that raises: no). The module has no function that reads
   `context["peer"]`, `source`, `site_id` or `client_id`: those are the client's own words (a session called
   `x::1580::y` made the tail of `peer` read as another client's id). The retired `thalovant_music` stamp of an earlier

@@ -8,11 +8,12 @@ from thalovant_skillkit import device
 from thalovant_skillkit.device import STAMP_KEYS, DeviceIdentity, device_allowed, device_identity
 
 STAMPED = {
+    "thalovant_home": {"link": "none", "device": "1580", "device_name": "Kitchen"},
     "thalovant_connector": {
         "link": {"music_assistant": "online"},
         "device": "1580",
         "device_name": "Kitchen",
-    }
+    },
 }
 
 
@@ -20,21 +21,36 @@ def test_the_identity_is_the_stamps_device_and_name():
     ident = device_identity(STAMPED)
     assert ident == DeviceIdentity("1580", "Kitchen") and ident.keys == ("1580", "Kitchen")
     assert device_identity(
-        {"thalovant_connector": {"device": "7", "device_name": "client-mark2"}}
+        {"thalovant_home": {"device": "7", "device_name": "client-mark2"}}
     ).keys == ("7", "client-mark2", "mark2")
     assert device_identity({"thalovant_home": {"device_name": " Den "}}).keys == ("Den",)
     assert device_identity({"thalovant_home": {"device_name": "client-"}}).keys == ("client-",)
-    assert STAMP_KEYS == ("thalovant_connector", "thalovant_home")
+    assert STAMP_KEYS == ("thalovant_home", "thalovant_connector")
 
 
-def test_the_newest_stamp_wins_and_an_unusable_one_falls_through():
-    both = {"thalovant_connector": {"device": "9"}, "thalovant_home": {"device": "1"}}
-    assert device_identity(both).device_id == "9"
-    only_home = {
-        "thalovant_connector": "nonsense",
-        "thalovant_home": {"device": "1", "device_name": "Den"},
+def test_thalovant_home_decides_and_a_connector_stamp_must_agree():
+    """Before router 0.5.0 nothing overwrote `thalovant_connector`: a client could write its own,
+    and the first stamp found used to win. The key every router since 0.4.1 overwrites decides."""
+    home = {"device": "1", "device_name": "Den"}
+    forged = {
+        "thalovant_home": home,
+        "thalovant_connector": {"device": "9", "device_name": "Kitchen"},
     }
-    assert device_identity(only_home).keys == ("1", "Den")
+    assert (
+        device_identity(forged) is None
+        and device_allowed(forged, ["Kitchen", "9", "Den", "1"]) is False
+    )
+    # a client-written connector stamp with no home stamp beside it
+    assert (
+        device_identity({"thalovant_connector": {"device": "9", "device_name": "Kitchen"}}) is None
+    )
+    # a connector stamp that names nobody or is unreadable disagrees too (never "skipped")
+    for other in ({}, "nonsense", {"device": "x"}, {"link": "online"}):
+        assert device_identity({"thalovant_home": home, "thalovant_connector": other}) is None
+    # the same device under both keys, or no connector key at all (router 0.4.x): the home stamp
+    same = {"thalovant_home": home, "thalovant_connector": {"link": {}, **home}}
+    assert device_identity(same).keys == ("1", "Den")
+    assert device_identity({"thalovant_home": home}).keys == ("1", "Den")
 
 
 def test_the_retired_per_service_stamp_is_not_believed():
@@ -51,14 +67,17 @@ def test_the_retired_per_service_stamp_is_not_believed():
         [],
         3,
         {},
-        {"thalovant_connector": {"link": "online"}},
-        {"thalovant_connector": "stamp"},
-        {"thalovant_connector": {"device": "12a"}},
-        {"thalovant_connector": {"device": "١٢"}},  # not ASCII digits
-        {"thalovant_connector": {"device": 12}},
-        {"thalovant_connector": {"device_name": "   "}},
-        {"thalovant_connector": {"device": "", "device_name": ""}},
+        {"thalovant_home": {"link": "online"}},
+        {"thalovant_home": "stamp"},
+        {"thalovant_home": {"device": "12a"}},
+        {"thalovant_home": {"device": "١٢"}},  # not ASCII digits
+        {"thalovant_home": {"device": 12}},
+        {"thalovant_home": {"device_name": "   "}},
+        {"thalovant_home": {"device": "", "device_name": ""}},
         {"thalovant_home": {"device_name": ["Kitchen"]}},
+        {
+            "thalovant_connector": {"device": "12", "device_name": "Kitchen"}
+        },  # no home stamp: nobody
     ],
 )
 def test_no_usable_stamp_is_no_identity(context):
@@ -101,11 +120,9 @@ def test_the_gate_is_deny_by_default_and_exact():
     assert device_allowed(STAMPED, ["kítchen"]) is True  # folded
     assert device_allowed(STAMPED, ["1580"]) is True and device_allowed(STAMPED, [1580]) is True
     assert device_allowed(STAMPED, ["Kitchen Display", "158", "kitch"]) is False  # whole names only
+    assert device_allowed({"thalovant_home": {"device_name": "client-mark2"}}, ["mark2"]) is True
     assert (
-        device_allowed({"thalovant_connector": {"device_name": "client-mark2"}}, ["mark2"]) is True
-    )
-    assert (
-        device_allowed({"thalovant_connector": {"device_name": "client-mark2"}}, ["client-mark2"])
+        device_allowed({"thalovant_home": {"device_name": "client-mark2"}}, ["client-mark2"])
         is True
     )
 
@@ -124,4 +141,4 @@ def test_a_broken_allow_list_is_a_no_not_an_error():
 def test_an_identity_may_have_only_an_id():
     assert DeviceIdentity("7", None).keys == ("7",)
     assert DeviceIdentity(None, None).keys == ()
-    assert device_allowed({"thalovant_connector": {"device": "7"}}, ["7"]) is True
+    assert device_allowed({"thalovant_home": {"device": "7"}}, ["7"]) is True
