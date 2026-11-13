@@ -1,5 +1,16 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit.
+Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0, `device` and `safety`.
+Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit.
 Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0.
+## 2026-11-13 — 0.37.0 (device and safety)
+
+The version moves to 0.37.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, `uv.lock`, the README and reference pins). New modules: `thalovant_skillkit/device.py` (the router's stamp as the only identity, the deny-by-default gate) and `thalovant_skillkit/safety.py` (`speakable`, `url_problem`, `vetted_addresses`), with `test/test_device.py` and `test/test_safety.py` (73 tests, 100 % coverage of both modules), the reference sections, the README paragraph, the CHANGELOG entry and the AUDIT section. Nothing existing changed. The private connector spec is not a dependency.
+
+### Transparency Report
+
+- **AI Model**: Claude Sonnet 5.5.
+- **Actions Taken**: Reconciled the media skill's, the shared media library's and the Music Assistant skill's identity and URL rules into two modules; wrote the tests, the documentation and the changelog entry.
+- **Oversight**: Owner-directed through the lead. A security reviewer reads the pull request before it is merged or released (a public repository that every skill depends on).
+
 ## 2026-11-10 — 0.36.0 (the SSML audit)
 
 The version moves to 0.36.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the README and reference pins). It releases the audit of the SSML support added in 0.34.0 and 0.35.0: `thalovant_skillkit.compat`, `SPEECH_STYLE` that reads every script and quantity, a more precise validator, escaping that drops what XML cannot carry, and the feature matrix as tests (`test/ssml_matrix.py`, `test/test_ssml_matrix.py`, `test/test_ssml_phoonnx.py`, `test/test_speech_style_languages.py`, `test/test_compat.py`). Verification: the full suite in the kit's virtualenv, the phoonnx tests in a virtualenv with phoonnx 1.96.2a2 (and through the real `en_US-hfc_female` and `fr_FR-siwis` voices), ruff as CI runs it. [AUDIT.md](AUDIT.md) lists what was found.

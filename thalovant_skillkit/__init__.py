@@ -31,7 +31,9 @@ it for a screen; `testing` supplies message and recording-bus doubles;
 application state; `selection` provides independent shuffle bags; `network`,
 `workers` and `storage` bound service calls, refresh in the background and keep
 optional shared state; `records` keeps a person's records one at a time under
-that person, in Redis or PostgreSQL. `checks` and `artifacts` validate source contracts and
+that person, in Redis or PostgreSQL. `device` says who is speaking from the hub's router stamp
+only (0.37), and `safety` makes a title speakable and refuses a server URL that would leak a
+token. `checks` and `artifacts` validate source contracts and
 built archives.
 ovos-workshop and the fleet-check dependencies are included in the base install;
 the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install

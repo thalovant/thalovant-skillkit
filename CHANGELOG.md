@@ -3,6 +3,28 @@ Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36
 Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
 # Changelog
 
+## 0.37.0
+
+- **`thalovant_skillkit.device`: who is speaking, from the router's stamp only.** `device_identity(context)` and
+  `device_allowed(context, allowed)` read the `device` and `device_name` the hub's home router writes into
+  `context["thalovant_home"]` (which decides: every router since 0.4.1 overwrites it) and `context["thalovant_connector"]`
+  (router 0.5.0; believed only when it names the same device: a client of an older hub could write that key itself)
+  and nothing else. They fail closed (no stamp, a
+  malformed stamp, an empty allow-list, an allow-list that raises: no). The module has no function that reads
+  `context["peer"]`, `source`, `site_id` or `client_id`: those are the client's own words (a session called
+  `x::1580::y` made the tail of `peer` read as another client's id). The retired `thalovant_music` stamp of an earlier
+  router is not believed. The media skills and the Music Assistant skill each had a copy; they had begun to differ.
+- **`thalovant_skillkit.safety`: titles to say, servers to dial.** `speakable` (tags, addresses, control and bidi
+  characters out, one line, bounded), `contains_url`, `normalize_base_url`, `url_problem` (link-local and cluster-internal
+  names, a plain `http://` or `ws://` to a public host; the host is read as the resolver reads it, so a Unicode full
+  stop or `134744072` cannot hide a cluster name or a public address), `canonical_host`, `address_problem` and
+  `vetted_addresses(host, port, plain=False)` (the addresses a name
+  resolves to now, each checked, and for a plain scheme private or loopback only, so a name that answers differently the second time cannot move a client to cloud
+  metadata). Reconciled to the most careful of the copies in the media skill, the shared media library and the Music Assistant
+  skill: `speakable` removes an address as well as markup (the Music Assistant skill's copy spoke it).
+- A skill whose floor is older than 0.37 imports both behind a guard (docs/reference.md, "Older kits"); the guard for
+  `device` is to deny everyone. No existing name changed.
+
 ## 0.36.1
 
 - **Fix: the pacing of scripts written without spaces no longer changes the words.** 0.36.0 paced Japanese,

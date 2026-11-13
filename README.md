@@ -1,4 +1,5 @@
-<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0: the speech markup section lists the number helpers, the plain-words fallback and the guarded import. -->
+<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0: `device` and `safety` listed; the Quickstart pin follows the release. -->
+<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0: the speech markup section lists the number helpers, the plain-words fallback and the guarded import. -->
 <!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: The Quickstart pins 0.35.0, the release this version bump cuts. -->
 
 <p align="center">
@@ -28,7 +29,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.36.1"
+python -m pip install --pre "thalovant-skillkit==0.37.0"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -36,7 +37,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.36.1. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.37.0. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 
@@ -113,6 +114,13 @@ say("Dinner is at", as_time("7:30 pm"), "for", cardinal("1,200"), "people at",
 **Pacing every line.** `SPEECH_STYLE = SpeechStyle(sentence_break="350ms")` on the skill class
 paces every dialog in every language with no twin per line, and wraps the literal times, amounts
 and units of a line so the voice reads them correctly.
+
+**A skill that serves one household's private thing.** `thalovant_skillkit.device` says who is speaking from the
+router's stamp only, and refuses everyone else: `device_allowed(message.context, allowed)` is deny-by-default
+and has no way to read `context["peer"]`, `site_id` or any other word a client writes. `thalovant_skillkit.safety`
+makes a title speakable (no markup, no address, no control or bidi character) and refuses a server URL that
+would leak the token or reach inside the cluster (`url_problem`, `vetted_addresses`). Both are 0.37; import them behind
+a guard on a skill whose floor is older (see the reference).
 
 **A skill that must load on an older kit.** A hub keeps the kit it loaded at boot while it
 installs a newer skill, so import anything newer than your floor behind a guard, or through
