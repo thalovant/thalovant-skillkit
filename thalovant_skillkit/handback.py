@@ -84,15 +84,15 @@ class HandBackMemory:
         #: (skill id, device id) -> when its marked hand-backs of the last minute were made
         self._marked: OrderedDict[tuple, deque[float]] = OrderedDict()
         self._clock = clock
-        #: key -> (when it was first handed back, how many times since)
-        self._entries: OrderedDict[tuple, tuple[float, int]] = OrderedDict()
+        #: key -> (first handed back, how many times since, marked-quota stamp it took or None)
+        self._entries: OrderedDict[tuple, tuple[float, int, float | None]] = OrderedDict()
         self._lock = threading.Lock()
 
     def __len__(self) -> int:
         with self._lock:
             return len(self._entries)
 
-    def admit(self, key: tuple, returning: bool = False) -> bool:
+    def admit(self, key: tuple, returning: bool = False, quota: bool = True) -> bool:
         """Whether the sentence `key` names may be handed back now; a yes is remembered.
 
         The first time: yes. With an entry already there, `returning` decides. True (the message
@@ -103,20 +103,23 @@ class HandBackMemory:
         """
         now = self._clock()
         with self._lock:
-            for old in [k for k, (at, _) in self._entries.items() if now - at >= self.ttl]:
+            for old in [k for k, (at, _, _) in self._entries.items() if now - at >= self.ttl]:
                 del self._entries[old]
             entry = self._entries.get(key)
             if entry is None:
-                if returning and not self._room_for_marked(key, now):
-                    return False
-                self._entries[key] = (now, 1)
+                stamp = None
+                if returning and quota:
+                    if not self._room_for_marked(key, now):
+                        return False
+                    stamp = now
+                self._entries[key] = (now, 1, stamp)
                 while len(self._entries) > self.limit:
                     self._entries.popitem(last=False)
                 return True
             if returning:
                 del self._entries[key]
                 return False
-            self._entries[key] = (entry[0], entry[1] + 1)
+            self._entries[key] = (entry[0], entry[1] + 1, entry[2])
             return True
 
     def _room_for_marked(self, key: tuple, now: float) -> bool:
@@ -125,9 +128,14 @@ class HandBackMemory:
         who = key[:2]
         stamps = self._marked.get(who)
         if stamps is None:
+            # Room is made only from buckets whose minute is over: a live bucket is somebody's quota
+            # history; dropping it would hand that device a fresh allowance. While every bucket is
+            # live, a new device's marked hand-backs wait for one to expire.
+            for other in [w for w, st in self._marked.items() if not st or now - st[-1] >= 60.0]:
+                del self._marked[other]
+            if len(self._marked) >= self.limit:
+                return False
             stamps = self._marked[who] = deque()
-            while len(self._marked) > self.limit:
-                self._marked.popitem(last=False)
         else:
             self._marked.move_to_end(who)
         while stamps and now - stamps[0] >= 60.0:
@@ -140,7 +148,7 @@ class HandBackMemory:
     def first_time(self, key: tuple) -> bool:
         """`admit(key, returning=True)`, for a caller with no message to read: yes the first time,
         no the second (which forgets the entry), yes again after that."""
-        return self.admit(key, returning=True)
+        return self.admit(key, returning=True, quota=False)
 
     def release(self, key: tuple) -> None:
         """Take back one `admit` whose sentence was never sent (the bus refused it), so the next
@@ -151,8 +159,11 @@ class HandBackMemory:
                 return
             if entry[1] <= 1:
                 del self._entries[key]
+                stamps = self._marked.get(key[:2])
+                if entry[2] is not None and stamps and entry[2] in stamps:
+                    stamps.remove(entry[2])  # nothing was handed back: the allowance comes back
             else:
-                self._entries[key] = (entry[0], entry[1] - 1)
+                self._entries[key] = (entry[0], entry[1] - 1, entry[2])
 
 
 def _key(skill_id: str, context: dict, text: str) -> tuple:
