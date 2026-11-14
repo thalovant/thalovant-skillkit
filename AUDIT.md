@@ -18,6 +18,10 @@ Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were
 - Fixed after the review (Medium, documentation): the gate example in [docs/reference.md](docs/reference.md) admitted a request when either gate passed and did not show which route it then took; read literally, a device with a household link and no line in `allowed_devices` reached the shared server. The example gates each route by itself.
 - Known limit: a loop through a stage that both ignores the blacklist and rebuilds the session without it is not ended here: nothing a client cannot choose reaches the skill to tell it from somebody repeating themselves (the message carries no per-turn id).
 
+## 2026-11-14 focused review
+
+- Fixed (Low): [handback.py](thalovant_skillkit/handback.py) `_key()` stored the whole folded sentence (60 one-megabyte sentences held 60 MB). It keeps a SHA-256 digest of the first 2000 characters. Evidence: `test_the_memory_keeps_a_digest_of_the_sentence_never_the_sentence`.
+
 ## 2026-11-14 shared speech vectors
 
 - Fixed (Low): [safety.py](thalovant_skillkit/safety.py) `speakable` and [ssml.py](thalovant_skillkit/ssml.py) `strip_tags` capped only before NFKC; a long run of U+FDFA was looked at at eighteen times the read limit. Evidence: `test_a_long_fold_is_bounded_after_it_not_only_before_it`.

@@ -41,6 +41,7 @@ entry expires after a few seconds.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import threading
 from collections import OrderedDict, deque
@@ -166,6 +167,17 @@ class HandBackMemory:
                 self._entries[key] = (entry[0], entry[1] - 1, entry[2])
 
 
+#: How much of a sentence the memory looks at: it keeps a digest, never the text, so a hostile
+#: megabyte costs the same as a short sentence (60 one-megabyte sentences held 60 MB).
+KEY_TEXT_CHARS = 2000
+
+
+def _digest(text: str) -> str:
+    """The key of a sentence: SHA-256 of its first `KEY_TEXT_CHARS` characters, folded."""
+    folded = fold(text[: KEY_TEXT_CHARS * 2])[:KEY_TEXT_CHARS]
+    return hashlib.sha256(folded.encode("utf-8")).hexdigest()
+
+
 def _key(skill_id: str, context: dict, text: str) -> tuple:
     identity = device_identity(context)
     session = context.get("session")
@@ -174,7 +186,7 @@ def _key(skill_id: str, context: dict, text: str) -> tuple:
         skill_id,
         identity.device_id if identity else "",
         session_id if isinstance(session_id, str) else "",
-        fold(text),
+        _digest(text),
     )
 
 
