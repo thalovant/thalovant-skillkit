@@ -277,3 +277,68 @@ def test_a_skill_hands_back_with_pass_on(monkeypatch):
     assert skill.pass_on(said()) is True
     assert bus.emitted[0].context["session"]["blacklisted_skills"] == [SKILL_ID]
     assert skill.pass_on(bus.emitted[0]) is False and len(bus.emitted) == 1
+
+
+def test_a_hard_cap_on_marked_returns_per_device_and_minute_leaves_genuine_repeats_alone():
+    """A client can write the blacklist marker, so a message that carries it with no entry in the
+    memory is handed back (no proof of a loop) but only so often: 20 a minute per device."""
+    now = [100.0]
+    skill = _Skill()
+    memory = HandBackMemory(clock=lambda: now[0])
+
+    def marked(device="1999", text="play a quiz"):
+        copy = said(text, device=device)
+        copy.context["session"]["blacklisted_skills"] = [SKILL_ID]
+        return copy
+
+    results = [hand_back(skill, marked(text=f"x{n}"), memory) for n in range(25)]
+    assert results == [True] * 20 + [False] * 5
+    assert hand_back(skill, marked(device="2000"), memory) is True  # its own minute
+    # genuine repeats, with no marker, are not counted at all
+    assert [hand_back(skill, said("play a game"), memory) for _ in range(30)] == [True] * 30
+    now[0] += 61.0
+    assert hand_back(skill, marked(text="again"), memory) is True  # the minute has passed
+    assert HandBackMemory(marked_per_minute=0).marked_per_minute == 1
+
+
+def test_a_live_quota_is_never_evicted_to_make_room():
+    """Review: the oldest bucket was dropped when the map was full, so a device at its cap got a
+    fresh allowance as soon as other devices filled the map."""
+    now = [100.0]
+    skill = _Skill()
+    memory = HandBackMemory(limit=1, clock=lambda: now[0], marked_per_minute=2)
+
+    def marked(device, text):
+        copy = said(text, device=device)
+        copy.context["session"]["blacklisted_skills"] = [SKILL_ID]
+        return copy
+
+    assert hand_back(skill, marked("1", "a"), memory) and hand_back(skill, marked("1", "b"), memory)
+    assert hand_back(skill, marked("1", "c"), memory) is False  # device 1 is at its cap
+    assert hand_back(skill, marked("2", "a"), memory) is False  # the map is full of LIVE buckets
+    assert hand_back(skill, marked("1", "d"), memory) is False  # device 1 got no fresh allowance
+    now[0] += 61.0
+    assert hand_back(skill, marked("2", "a"), memory) is True  # the minute is over: room again
+    assert hand_back(skill, said("play"), memory) is True  # genuine sentences never needed room
+
+
+def test_a_send_that_failed_gives_the_marked_allowance_back(monkeypatch):
+    """Review: 20 failed sends used up a device's minute though nothing was handed back."""
+    skill = _Skill()
+    memory = HandBackMemory(marked_per_minute=2)
+    emit = skill._bus.emit
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("bus down")
+
+    def marked(text):
+        copy = said(text)
+        copy.context["session"]["blacklisted_skills"] = [SKILL_ID]
+        return copy
+
+    monkeypatch.setattr(skill._bus, "emit", boom)
+    assert [hand_back(skill, marked(f"x{n}"), memory) for n in range(10)] == [False] * 10
+    monkeypatch.setattr(skill._bus, "emit", emit)
+    assert hand_back(skill, marked("a"), memory) is True  # the bus is back, the same minute
+    assert hand_back(skill, marked("b"), memory) is True
+    assert hand_back(skill, marked("c"), memory) is False  # and now the cap is real

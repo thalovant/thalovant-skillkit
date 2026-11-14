@@ -18,6 +18,13 @@ Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were
 - Fixed after the review (Medium, documentation): the gate example in [docs/reference.md](docs/reference.md) admitted a request when either gate passed and did not show which route it then took; read literally, a device with a household link and no line in `allowed_devices` reached the shared server. The example gates each route by itself.
 - Known limit: a loop through a stage that both ignores the blacklist and rebuilds the session without it is not ended here: nothing a client cannot choose reaches the skill to tell it from somebody repeating themselves (the message carries no per-turn id).
 
+## 2026-11-14 final review
+
+- Fixed (Low): [ssml.py](thalovant_skillkit/ssml.py) `strip_tags` did not fold NFKC and had no read limit, so a fullwidth tag survived it and its limit differed from `speakable`'s. Evidence: `test_strip_tags_folds_like_speakable_and_reads_the_same_amount`.
+- Fixed (Low): [handback.py](thalovant_skillkit/handback.py) had no cap on messages that carry the skill's own blacklist marker (a client can write it). `HandBackMemory(marked_per_minute=20)`. Evidence: `test_a_hard_cap_on_marked_returns_per_device_and_minute_leaves_genuine_repeats_alone`.
+- Fixed after review: the marked-quota map never evicts a live bucket (a full map refuses a new device until a bucket expires), and a failed send gives its allowance back (`test_a_live_quota_is_never_evicted_to_make_room`, `test_a_send_that_failed_gives_the_marked_allowance_back`).
+- Checked: the attribute-list rule is linear on hostile text (`test_the_attribute_list_rule_is_linear_on_hostile_text`). The connector spec's `clean_speech` does not yet drop the text of an unclosed attribute-list tag (`<audio src='https://x/y.mp3'/` is read as "audio src='https evil.example/x.mp3'/"); it needs the same change.
+
 ## 2026-11-14 end-to-end findings
 
 - Fixed (Low): [safety.py](thalovant_skillkit/safety.py) `speakable` read 8192 characters; the contract and the spec read 2400. `READ_AT_MOST` is 2400. Evidence: `test_the_cleaner_reads_2400_characters_like_the_contract_and_the_spec`.

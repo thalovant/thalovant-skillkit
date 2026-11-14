@@ -43,7 +43,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from time import monotonic
 from typing import Any
 
@@ -64,24 +64,35 @@ class HandBackMemory:
     """The sentences handed back a moment ago: bounded, expiring, in this process only.
 
     `ttl` is how long an entry lives (seconds, counted from the first hand-back); `limit` is how
-    many entries are kept at most (the oldest goes first). Thread-safe: handlers run on a pool.
+    many entries are kept at most (the oldest goes first). `marked_per_minute` is a hard cap on the
+    sentences that come back ALREADY naming this skill (a client can write that marker, so it is no
+    proof of a loop) and are handed back all the same because the memory holds no entry for them: at
+    most that many per device and skill in a minute, whatever they say. Sentences without the marker
+    are never counted. Thread-safe: handlers run on a pool.
     """
 
     def __init__(
-        self, ttl: float = 5.0, limit: int = 512, clock: Any = monotonic
+        self,
+        ttl: float = 5.0,
+        limit: int = 512,
+        clock: Any = monotonic,
+        marked_per_minute: int = 20,
     ):
         self.ttl = float(ttl)
         self.limit = max(1, int(limit))
+        self.marked_per_minute = max(1, int(marked_per_minute))
+        #: (skill id, device id) -> when its marked hand-backs of the last minute were made
+        self._marked: OrderedDict[tuple, deque[float]] = OrderedDict()
         self._clock = clock
-        #: key -> (when it was first handed back, how many times since)
-        self._entries: OrderedDict[tuple, tuple[float, int]] = OrderedDict()
+        #: key -> (first handed back, how many times since, marked-quota stamp it took or None)
+        self._entries: OrderedDict[tuple, tuple[float, int, float | None]] = OrderedDict()
         self._lock = threading.Lock()
 
     def __len__(self) -> int:
         with self._lock:
             return len(self._entries)
 
-    def admit(self, key: tuple, returning: bool = False) -> bool:
+    def admit(self, key: tuple, returning: bool = False, quota: bool = True) -> bool:
         """Whether the sentence `key` names may be handed back now; a yes is remembered.
 
         The first time: yes. With an entry already there, `returning` decides. True (the message
@@ -92,24 +103,52 @@ class HandBackMemory:
         """
         now = self._clock()
         with self._lock:
-            for old in [k for k, (at, _) in self._entries.items() if now - at >= self.ttl]:
+            for old in [k for k, (at, _, _) in self._entries.items() if now - at >= self.ttl]:
                 del self._entries[old]
             entry = self._entries.get(key)
             if entry is None:
-                self._entries[key] = (now, 1)
+                stamp = None
+                if returning and quota:
+                    if not self._room_for_marked(key, now):
+                        return False
+                    stamp = now
+                self._entries[key] = (now, 1, stamp)
                 while len(self._entries) > self.limit:
                     self._entries.popitem(last=False)
                 return True
             if returning:
                 del self._entries[key]
                 return False
-            self._entries[key] = (entry[0], entry[1] + 1)
+            self._entries[key] = (entry[0], entry[1] + 1, entry[2])
             return True
+
+    def _room_for_marked(self, key: tuple, now: float) -> bool:
+        """Count one marked hand-back for this device and skill, or say the minute's cap is reached.
+        Called with the lock held."""
+        who = key[:2]
+        stamps = self._marked.get(who)
+        if stamps is None:
+            # Room is made only from buckets whose minute is over: a live bucket is somebody's quota
+            # history; dropping it would hand that device a fresh allowance. While every bucket is
+            # live, a new device's marked hand-backs wait for one to expire.
+            for other in [w for w, st in self._marked.items() if not st or now - st[-1] >= 60.0]:
+                del self._marked[other]
+            if len(self._marked) >= self.limit:
+                return False
+            stamps = self._marked[who] = deque()
+        else:
+            self._marked.move_to_end(who)
+        while stamps and now - stamps[0] >= 60.0:
+            stamps.popleft()
+        if len(stamps) >= self.marked_per_minute:
+            return False
+        stamps.append(now)
+        return True
 
     def first_time(self, key: tuple) -> bool:
         """`admit(key, returning=True)`, for a caller with no message to read: yes the first time,
         no the second (which forgets the entry), yes again after that."""
-        return self.admit(key, returning=True)
+        return self.admit(key, returning=True, quota=False)
 
     def release(self, key: tuple) -> None:
         """Take back one `admit` whose sentence was never sent (the bus refused it), so the next
@@ -120,8 +159,11 @@ class HandBackMemory:
                 return
             if entry[1] <= 1:
                 del self._entries[key]
+                stamps = self._marked.get(key[:2])
+                if entry[2] is not None and stamps and entry[2] in stamps:
+                    stamps.remove(entry[2])  # nothing was handed back: the allowance comes back
             else:
-                self._entries[key] = (entry[0], entry[1] - 1)
+                self._entries[key] = (entry[0], entry[1] - 1, entry[2])
 
 
 def _key(skill_id: str, context: dict, text: str) -> tuple:

@@ -601,3 +601,26 @@ def test_the_text_of_a_removed_attribute_list_tag_is_not_read_out(title, said):
 )
 def test_what_is_not_an_attribute_list_is_still_only_brackets_and_tags(text, said):
     assert speakable(text) == said
+
+
+# -- the final review of 2026-11-14 ------------------------------------------------------
+
+def test_strip_tags_folds_like_speakable_and_reads_the_same_amount():
+    from thalovant_skillkit.ssml import strip_tags
+
+    assert strip_tags("＜audio src='https://evil.example/x.mp3'/＞ hello") == "hello"
+    assert strip_tags("a ＜break time='9s'/＞ b") == "a b"
+    assert strip_tags("x" * 5000) == "x" * safety.READ_AT_MOST
+    assert strip_tags(None) == "" and strip_tags(3) == ""
+    for text in ("Track <audio src='https://e/x.mp3'/ here", "5 < 6 > 3", "Q&A <b>live</b> show"):
+        assert strip_tags(text) == speakable(text, 200)
+
+
+def test_the_attribute_list_rule_is_linear_on_hostile_text():
+    import time
+
+    started = time.perf_counter()
+    hostile = ("<a " * 800, "<a b=" * 500, "<a b='" * 400, "<" + "a b=c " * 400, "<a" + " b" * 1200)
+    for text in hostile:
+        speakable(text, 200)
+    assert time.perf_counter() - started < 1.0

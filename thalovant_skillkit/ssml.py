@@ -40,7 +40,7 @@ from functools import lru_cache
 from string import Formatter
 from typing import Any
 
-from .safety import READ_AT_MOST, speakable, strip_markup
+from .safety import READ_AT_MOST, _fold, speakable, strip_markup
 
 __all__ = [
     "SSML_KEY",
@@ -244,7 +244,14 @@ def strip_tags(text: str) -> str:
     that is left is dropped (`safety.strip_markup`), so what comes back is never markup, however
     it is read afterwards.
     """
-    return _normalize(strip_markup(html.unescape(text or "")))
+    if not isinstance(text, str):
+        return ""
+    # The same first steps as `safety.speakable`: at most READ_AT_MOST characters, folded with NFKC
+    # (a fullwidth `＜` is the bracket it reads as), entities read once and the result folded again.
+    folded = _fold(text[:READ_AT_MOST])
+    if "&" in folded:
+        folded = _fold(html.unescape(folded))
+    return _normalize(strip_markup(folded))
 
 
 #: Marks of the scripts that write no space after them (CJK, Devanagari, Arabic, Armenian ...).
