@@ -18,6 +18,11 @@ Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were
 - Fixed after the review (Medium, documentation): the gate example in [docs/reference.md](docs/reference.md) admitted a request when either gate passed and did not show which route it then took; read literally, a device with a household link and no line in `allowed_devices` reached the shared server. The example gates each route by itself.
 - Known limit: a loop through a stage that both ignores the blacklist and rebuilds the session without it is not ended here: nothing a client cannot choose reaches the skill to tell it from somebody repeating themselves (the message carries no per-turn id).
 
+## 2026-11-14 end-to-end findings
+
+- Fixed (Low): [safety.py](thalovant_skillkit/safety.py) `speakable` read 8192 characters; the contract and the spec read 2400. `READ_AT_MOST` is 2400. Evidence: `test_the_cleaner_reads_2400_characters_like_the_contract_and_the_spec`.
+- Fixed (Low): an attribute-list tag that was never closed lost only its brackets, so its attribute names and address were read out ("audio src http evil.example x.mp3"). `_ATTRIBUTE_TAG` removes the whole tag. Evidence: `test_the_text_of_a_removed_attribute_list_tag_is_not_read_out[...]`, `test_what_is_not_an_attribute_list_is_still_only_brackets_and_tags[...]`.
+
 ## 2026-11-13 identity and SSRF rules (0.37.0)
 
 Method: the three copies of each rule (the media skill, the shared media library, the Music Assistant skill) were read side by side and reconciled to the most careful; the new tests are the union of their cases plus the cases each lacked.

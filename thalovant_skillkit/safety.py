@@ -47,13 +47,21 @@ __all__ = [
 #: The longest name (title, show, room) said in one line.
 MAX_SPOKEN_NAME = 120
 #: Nothing beyond this many characters of a value is even looked at.
-READ_AT_MOST = 8192
+READ_AT_MOST = 2400
 #: Tags are removed until nothing changes, and never more often than this.
 MAX_TAG_PASSES = 8
 
 # `<` followed by a letter, `/`, `!` or `?` and closed by `>`: a tag, a comment, a declaration.
 # "5 < 6 and 7 > 3" holds none (its brackets are dropped afterwards, its words are kept).
 _TAG = re.compile(r"<[A-Za-z/!?][^<>]*>")
+#: A tag whose text is an attribute list, closed or not (`<audio src="x.mp3"/`): the whole of it
+#: goes, not only its brackets, so no attribute name and no address in it is read out.
+_ATTRIBUTE_TAG = re.compile(
+    r"<\s*[/!?]?\s*[A-Za-z][\w:.-]*"
+    r"\s+[\w:.-]+\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s<>\"']*)"
+    r"(?:\s+[\w:.-]+(?:\s*=\s*(?:\"[^\"]*\"|'[^']*'|[^\s<>\"']*))?)*\s*/?>?"
+)
+
 _URL = re.compile(r"(?:[a-z][a-z0-9+.-]*://|www\.)\S*", re.IGNORECASE)
 #: Characters that are not an angle bracket but become one when a text is decomposed (NFKD) and
 #: its combining marks dropped, as every fold in the fleet does: "≮audio≯" folds to "<audio>".
@@ -77,7 +85,7 @@ def strip_markup(text: str) -> str:
     before it is removed.
     """
     for _ in range(MAX_TAG_PASSES):
-        stripped = _TAG.sub(" ", text)
+        stripped = _TAG.sub(" ", _ATTRIBUTE_TAG.sub(" ", text))
         if stripped == text:
             break
         text = stripped

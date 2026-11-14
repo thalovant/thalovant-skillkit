@@ -541,3 +541,63 @@ def test_url_problem_says_no_to_an_unreadable_url_instead_of_raising():
 
     for url in ("http://[::1", "http://[", "http://[fe80::1", None, 7, b"http://x"):
         assert url_problem(url) != "", url  # type: ignore[arg-type]
+
+
+# -- the end-to-end run of 2026-11-14 ----------------------------------------------------------
+
+
+def test_the_cleaner_reads_2400_characters_like_the_contract_and_the_spec():
+    assert safety.READ_AT_MOST == 2400
+    assert (
+        speakable("x" * 5000 + " tail", 30000) == "x" * 2400
+    )  # nothing beyond the read limit comes back
+    long = ("word " * 600).strip()
+    cut = speakable(long, 100)
+    assert len(cut) <= 100 and cut.endswith("…") and "…" not in cut[:-1]
+
+
+@pytest.mark.parametrize(
+    "text, said",
+    [
+        ("5 < 6", "5 6"),
+        ("a > b", "a b"),
+        ("x<", "x"),
+        ("<", ""),
+        ("a <3 b", "a 3 b"),
+        ("1<2>3", "1 2 3"),
+    ],
+)
+def test_a_lone_angle_bracket_becomes_a_space(text, said):
+    assert speakable(text) == said
+
+
+@pytest.mark.parametrize(
+    "title, said",
+    [
+        ("Track <audio src='https://evil.example/x.mp3'/ here", "Track here"),  # no closing bracket
+        ('Track <audio src="https://evil.example/x.mp3" autoplay> here', "Track here"),
+        (
+            "Track <audio src=https://evil.example/x.mp3 here",
+            "Track",
+        ),  # never closed: what follows reads as attributes
+        ("<img src='x' onerror='y'/&gt; Song", "Song"),
+        ("&lt;audio src='https://evil.example/x.mp3'/", ""),  # the entity form of the same
+    ],
+)
+def test_the_text_of_a_removed_attribute_list_tag_is_not_read_out(title, said):
+    """The end-to-end run saw "audio src http evil.example x.mp3" spoken for a title with a tag left
+    open: safe (no markup, no address) but a listener hears the attributes. The whole tag goes."""
+    assert speakable(title, 200) == said
+
+
+@pytest.mark.parametrize(
+    "text, said",
+    [
+        ("Q&A <b>live</b> show", "Q&A live show"),
+        ("5 < 6 and 7 > 3", "5 6 and 7 3"),
+        ("if a<b and c>d", "if a d"),
+        ("a=b < c=d", "a=b c=d"),
+    ],
+)
+def test_what_is_not_an_attribute_list_is_still_only_brackets_and_tags(text, said):
+    assert speakable(text) == said

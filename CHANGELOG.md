@@ -2,6 +2,11 @@
 
 ## 0.38.0
 
+End-to-end run of 2026-11-14 (the same pull request):
+
+- `speakable` reads at most **2400** characters (it read 8192; the contract and the connector spec read 2400). An ellipsis stays inside `limit` and a lone angle bracket becomes a space, as before.
+- The text of a removed tag that is an attribute list is dropped with the tag (`<audio src="https://x/y.mp3"/` with no closing bracket used to be spoken as "audio src http x y.mp3").
+
 Security fixes from the independent recheck of 2026-11-13. Two behaviours change for a skill that already uses 0.37
 (`speakable`, `url_problem`); the rest is new.
 
@@ -10,7 +15,7 @@ Security fixes from the independent recheck of 2026-11-13. Two behaviours change
   `speech_parts` then moved that plain string to `utterance_ssml`: text relayed from outside a skill made a speaker obey
   it. Entities are read first, tags are removed until nothing changes, and no `<` or `>` is left.
 - **`safety.speakable` is the one cleaner for words a skill did not write**, with the steps the hub's router uses for a
-  relayed answer: at most 8192 characters read, NFKC (a fullwidth `＜` is a bracket), entities read once, tags to a
+  relayed answer: at most 2400 characters read, NFKC (a fullwidth `＜` is a bracket), entities read once, tags to a
   fixed point and every remaining bracket dropped (also the two characters that only fold into one, `≮` `≯`), every
   `://` replaced by a space, control, format, surrogate and private-use characters turned into spaces, whitespace
   collapsed, and a longer text cut at a word and closed with an ellipsis (never longer than `limit`; cleaning what was
