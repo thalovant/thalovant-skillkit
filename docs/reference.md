@@ -1060,11 +1060,16 @@ This module has no function that reads any of them.
 from thalovant_skillkit.device import device_allowed, link_allowed
 
 def handle(self, message):
-    through_the_home = link_allowed(message.context, "music_assistant")     # the household's own bridge
-    direct = device_allowed(message.context, self.allowed_devices)         # one server for the hub: listed only
-    if not (through_the_home or direct):
-        return self.pass_on(message)        # silently: a stranger learns nothing
+    if link_allowed(message.context, "music_assistant"):                   # the household's own bridge
+        return self.answer_through_the_home(message)
+    if device_allowed(message.context, self.allowed_devices):              # one server for the hub: listed only
+        return self.answer_from_the_shared_server(message)
+    return self.pass_on(message)            # silently: a stranger learns nothing
 ```
+
+Each route has its own gate, and a gate opens its own route only. A handler that checked "either gate" first and chose
+the route afterwards would let a device with a household link, and no line in `allowed_devices`, reach the one server
+the list protects.
 
 **The limit.** The gate cannot tell who wrote the keys. On a hub whose listener does not load the home router
 nothing overwrites them, and a client that sends its own stamp is believed (`test_the_gate_cannot_tell_who_wrote_the_stamp_and_says_so`).
@@ -1118,7 +1123,10 @@ through the pipeline again with this skill left out (`blacklisted_skills` in the
 it; nothing is said. That the sentence was already handed back is remembered in the process (`HandBackMemory`: bounded,
 expiring after five seconds, keyed by the router's device id, the session and the sentence), never in the message: a
 context key is the client's to write, and a client that sent the old marker key got silence where another got an
-answer. The session of the sentence that goes back names this skill in `blacklisted_skills`; that is the framework's
+answer. The copy that comes round again (a pipeline stage that does not read the blacklist) is dropped, once; it is told
+from the same words said again by its session, which already leaves this skill out. Said again, a sentence is handed
+back again (three times at most while the entry lives, which is what ends a loop whose messages lose their session).
+A sentence the bus refused is not remembered. The session of the sentence that goes back names this skill in `blacklisted_skills`; that is the framework's
 mechanism and it travels with the answer, so a client that reads its own context can still see that some skill stepped
 aside.
 

@@ -123,6 +123,17 @@ def test_a_per_device_mapping_is_read_by_id_first_then_by_label():
     assert DeviceIdentity("7").value_in({"mark2": "Den"}) is None
 
 
+def test_the_first_label_that_matches_wins_even_when_it_maps_to_nothing():
+    """Found in review: the first label was told from "none yet" by its VALUE, so a first match
+    that maps to None let a later alias replace it. The rule is the first label, whatever it
+    says; the id still goes before any label."""
+    mark2 = DeviceIdentity("7", "client-mark2")
+    assert mark2.value_in({"client-mark2": None, "mark2": "Attic"}) is None
+    assert mark2.value_in({"mark2": "", "client-mark2": "Attic"}) == ""
+    assert mark2.value_in({"client-mark2": None, "7": "Kitchen"}) == "Kitchen"
+    assert mark2.value_in({"7": None, "mark2": "Attic"}) is None
+
+
 def test_thalovant_home_decides_and_a_connector_stamp_must_agree():
     """Before router 0.5.0 nothing overwrote `thalovant_connector`: a client could write its own,
     and the first stamp found used to win. The key every router since 0.4.1 overwrites decides."""

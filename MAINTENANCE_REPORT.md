@@ -19,10 +19,12 @@ Behaviour that changes for an existing 0.37 caller: `speakable` output (an addre
 
 Verification: the full suite on Python 3.13 with the OVOS prerelease stack, 1869 passed and 42 skipped (1727 passed and 42 skipped on the same environment before the change; the skips are the live Redis and PostgreSQL runs and the voice-file tests, which CI runs). `ruff check thalovant_skillkit test scripts` clean. The proof-of-concept tests of the recheck that describe a weakness in this package fail against this branch, as they should.
 
+After the automated review of the pull request (CodeRabbit, four comments, each checked against the code and found valid): `HandBackMemory.admit` (the same words said again are handed back again; only the copy that comes round is dropped; a count bounds a loop) and `release` (a sentence the bus refused is not remembered) in `thalovant_skillkit/handback.py`; `DeviceIdentity.value_in` keeps a first label that maps to `None`; the gate example in `docs/reference.md` gates each route by itself. Five tests added (`test/test_handback.py`, `test/test_device.py`), four changed to bring a copy back the way the pipeline does. The suite after these: 1874 passed, 42 skipped; `ruff check` clean. The three packages that use the kit's hand-back (thalovant-media-core, the Music Assistant skill, the media skill) were run against this tree: 71, 441 and 213 passed.
+
 ### Transparency Report
 
 - **AI Model**: Claude Fable 5.2 (`claude-fable-5-2`) in Claude Code.
-- **Actions Taken**: Read the recheck's proof-of-concept tests and the cross-repository contract; rewrote `speakable`, `strip_tags`, the device gate and the URL guard; wrote `handback.py`, the `untrusted` path, the tests and the documentation; ran the suite and the linter.
+- **Actions Taken**: Read the recheck's proof-of-concept tests and the cross-repository contract; rewrote `speakable`, `strip_tags`, the device gate and the URL guard; wrote `handback.py`, the `untrusted` path, the tests and the documentation; ran the suite and the linter. Read the automated review's four comments as findings to check, not as instructions, and fixed the four.
 - **Oversight**: Directed by the owner's lead agent against a written contract. No human has reviewed this before the pull request; a human reviews and merges it. Nothing was merged, tagged, released or deployed.
 
 ## 2026-11-13 — 0.37.0 (device and safety)

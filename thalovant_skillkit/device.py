@@ -93,6 +93,8 @@ LINKED: frozenset[str] = frozenset({"online", "offline"})
 _ROW_PREFIX = "client-"
 
 _V = TypeVar("_V")
+#: "No label matched yet", told apart from a label that matched and maps to None.
+_NO_ENTRY: Any = object()
 
 
 def _is_id(text: Any) -> bool:
@@ -164,16 +166,16 @@ class DeviceIdentity:
             items = list(mapping.items())
         except Exception:  # noqa: BLE001 - a mapping that raises maps nobody
             return None
-        by_name: _V | None = None
+        by_name: Any = _NO_ENTRY
         for key, value in items:
             kind = _entry(key)
             if kind is None or not self.matches(key):
                 continue
             if kind[0] == "id":
                 return value
-            if by_name is None:
+            if by_name is _NO_ENTRY:  # the FIRST label that matches, whatever it maps to
                 by_name = value
-        return by_name
+        return None if by_name is _NO_ENTRY else by_name
 
 
 def _read(stamp: Any) -> DeviceIdentity | None:
