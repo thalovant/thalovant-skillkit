@@ -342,3 +342,21 @@ def test_a_send_that_failed_gives_the_marked_allowance_back(monkeypatch):
     assert hand_back(skill, marked("a"), memory) is True  # the bus is back, the same minute
     assert hand_back(skill, marked("b"), memory) is True
     assert hand_back(skill, marked("c"), memory) is False  # and now the cap is real
+
+
+def test_the_memory_keeps_a_digest_of_the_sentence_never_the_sentence():
+    """60 one-megabyte sentences held 60 MB: the key text was the whole folded sentence."""
+    import sys
+
+    from thalovant_skillkit.handback import KEY_TEXT_CHARS, _key
+
+    context = said("x").context
+    huge = "play " + "a" * 1_000_000
+    key = _key(SKILL_ID, context, huge)
+    assert all(sys.getsizeof(part) < 200 for part in key) and len(key[3]) == 64
+    assert _key(SKILL_ID, context, huge) == key
+    assert _key(SKILL_ID, context, "Play  A") == _key(SKILL_ID, context, "play  a")  # still folded
+    short, long = "x" * (KEY_TEXT_CHARS + 500), "x" * (KEY_TEXT_CHARS + 900)
+    assert _key(SKILL_ID, context, short) == _key(SKILL_ID, context, long)
+    skill, memory = _Skill(), HandBackMemory()
+    assert hand_back(skill, said(huge), memory) is True and len(memory) == 1

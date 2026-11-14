@@ -1,22 +1,20 @@
 # Changelog
 
-## Unreleased (speech vectors, 2026-11-14)
-
-- `speakable` and `strip_tags` bound what they look at AFTER each fold (U+FDFA grows eighteenfold under NFKC), not only before it.
-- A mark between the colon and the slashes of an address (`http:` + U+0338 + `//x`) breaks it: no colon or slash is left, as in the connector spec's cleaner.
-- The connector spec's shared speech vectors (`vectors/speech.json`) are a kit test when an installed spec has them (`test/test_shared_speech_vectors.py`), so both cleaners are held to one corpus.
-
-## Unreleased (final review, 2026-11-14)
-
-- `ssml.strip_tags` folds with NFKC like `speakable` (a fullwidth `＜audio ...＞` was left whole) and reads at most the same 2400 characters.
-- The hand-back has a hard cap: a sentence that comes back already naming the skill, with no entry in the memory, is handed back at most 20 times a minute per device and skill (a client can write that marker). Genuine repeats are never counted.
-
 ## 0.38.0
 
 End-to-end run of 2026-11-14 (the same pull request):
 
 - `speakable` reads at most **2400** characters (it read 8192; the contract and the connector spec read 2400). An ellipsis stays inside `limit` and a lone angle bracket becomes a space, as before.
 - The text of a removed tag that is an attribute list is dropped with the tag (`<audio src="https://x/y.mp3"/` with no closing bracket used to be spoken as "audio src http x y.mp3").
+
+Added to 0.38.0 after the recheck (final review, speech vectors, 2026-11-14):
+
+- `speakable` and `strip_tags` bound what they look at AFTER each fold (U+FDFA grows eighteenfold under NFKC), not only before it.
+- A mark between the colon and the slashes of an address (`http:` + U+0338 + `//x`) breaks it: no colon or slash is left, as in the connector spec's cleaner.
+- The connector spec's shared speech vectors (`vectors/speech.json`) are a kit test when an installed spec has them (`test/test_shared_speech_vectors.py`), so both cleaners are held to one corpus.
+- `ssml.strip_tags` folds with NFKC like `speakable` (a fullwidth `＜audio ...＞` was left whole) and reads at most the same 2400 characters.
+- The hand-back has a hard cap: a sentence that comes back already naming the skill, with no entry in the memory, is handed back at most 20 times a minute per device and skill (a client can write that marker). Genuine repeats are never counted.
+- The hand-back memory keys a sentence by a digest of its first 2000 characters (60 one-megabyte sentences held 60 MB).
 
 Security fixes from the independent recheck of 2026-11-13. Two behaviours change for a skill that already uses 0.37
 (`speakable`, `url_problem`); the rest is new.
