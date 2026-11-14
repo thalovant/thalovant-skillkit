@@ -37,8 +37,7 @@ Security fixes from the independent recheck of 2026-11-13. Two behaviours change
   silently, once. That it was already handed back is remembered in the process (bounded, expiring, keyed by device,
   session and sentence), never in the message context: the skills that had written this each marked the context with
   a key of their own, and a client that sent that key got silence, a one-message probe for the skill. Only the copy
-  that comes round again is dropped; the same words said again a moment later are handed back again (three times at
-  most in five seconds), and a sentence the bus refused is not remembered.
+  that comes round again is dropped; the same words said again a moment later are handed back again (however often), and a sentence the bus refused is not remembered.
 - **The URL guard refuses this machine and short names. Changed from 0.37.** `address_problem`, `url_problem` and
   `vetted_addresses` refuse loopback (on a hub, `127.0.0.1:8181` is the hub's own bus), `localhost`, the metadata
   addresses outside the link-local range, and a name of a single label (`nas`, `secrets`); `vetted_addresses` resolves a

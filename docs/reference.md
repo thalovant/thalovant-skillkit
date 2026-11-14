@@ -1122,7 +1122,7 @@ expiring after five seconds, keyed by the router's device id, the session and th
 context key is the client's to write, and a client that sent the old marker key got silence where another got an
 answer. The copy that comes round again (a pipeline stage that does not read the blacklist) is dropped, once; it is told
 from the same words said again by its session, which already leaves this skill out. Said again, a sentence is handed
-back again (three times at most while the entry lives, which is what ends a loop whose messages lose their session).
+back again (however often; only a copy that carries the skill's own blacklist marker is ever dropped, because nothing per turn that a client cannot choose reaches the skill).
 A sentence the bus refused is not remembered. The session of the sentence that goes back names this skill in `blacklisted_skills`; that is the framework's
 mechanism and it travels with the answer, so a client that reads its own context can still see that some skill stepped
 aside.

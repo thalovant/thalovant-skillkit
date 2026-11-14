@@ -97,19 +97,27 @@ def test_the_same_words_said_again_a_moment_later_are_handed_back_again():
     assert len(skill._bus.emitted) == 2
 
 
-def test_a_loop_whose_messages_lose_their_session_ends_by_the_count():
-    """A stage that ignores the blacklist AND rebuilds the session brings back a message that
-    looks said again. The count ends it: three hand-backs while the entry lives, then none."""
-    now = [100.0]
+def test_the_same_words_said_many_times_are_every_one_handled():
+    """Another skill answers the copy that was handed back, so nothing consumes the entry, and a
+    bound on repeats dropped the fourth genuine "play a quiz" within five seconds (review of the
+    pull request). Nothing the hub produces per turn reaches this code, so only the marker the
+    copy carries may drop one."""
     skill = _Skill()
-    memory = HandBackMemory(clock=lambda: now[0])
-    assert [hand_back(skill, said(), memory) for _ in range(5)] == [True, True, True, False, False]
-    assert len(skill._bus.emitted) == 3
-    now[0] += 5.0  # counted from the FIRST hand-back: the window does not slide
-    assert hand_back(skill, said(), memory) is True
-    assert HandBackMemory(rounds=0).rounds == 1
-    once = HandBackMemory(rounds=1)
-    assert hand_back(skill, said("x"), once) is True and hand_back(skill, said("x"), once) is False
+    memory = HandBackMemory()
+    assert [hand_back(skill, said(), memory) for _ in range(8)] == [True] * 8
+    assert len(skill._bus.emitted) == 8
+
+
+def test_a_real_loop_still_ends_at_the_first_return():
+    """A stage that ignores the blacklist but keeps the session brings the copy back WITH the
+    marker: dropped, the entry is spent, and the loop is over after one round."""
+    skill = _Skill()
+    memory = HandBackMemory()
+    for _ in range(4):
+        assert hand_back(skill, said(), memory) is True
+    assert hand_back(skill, skill._bus.emitted[-1], memory) is False  # the copy coming round
+    assert len(skill._bus.emitted) == 4
+    assert hand_back(skill, said(), memory) is True  # the next genuine one is handled
 
 
 def test_a_blacklist_the_client_sends_buys_nothing_without_an_entry():
@@ -144,8 +152,7 @@ def test_a_sentence_the_bus_refused_is_not_remembered_as_handed_back(monkeypatch
     monkeypatch.setattr(skill._bus, "emit", boom)
     assert hand_back(skill, said(), memory) is False
     monkeypatch.setattr(skill._bus, "emit", emit)
-    assert len(memory) == 1 and hand_back(skill, said(), memory) is True  # the third and last round
-    assert hand_back(skill, said(), memory) is False
+    assert len(memory) == 1 and hand_back(skill, said(), memory) is True  # still handled
     assert hand_back(skill, again, memory) is False  # the returning copy: dropped, entry forgotten
     assert len(memory) == 0
     memory.release(("never", "seen"))  # nothing to take back is not an error

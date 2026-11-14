@@ -31,8 +31,12 @@ does not: said again, it is handed back again (the other skill answered the firs
 ever spent the entry, and dropping the second would be silence for a sentence another skill
 answers). That sign only narrows what the memory already decided: without an entry in the memory
 it buys nothing, and a pipeline that reads the blacklist never brings such a message here at all.
-A loop whose messages lose their session is ended by a count instead: the same sentence is handed
-back `rounds` times at most while its entry lives. The entry expires after a few seconds.
+Nothing the hub produces per turn survives to this point (the message carries no id a client cannot
+choose), so the only sign is that blacklist marker, and it is the only thing that ever drops a
+sentence: a repeat WITHOUT it is a new request and is always handed back, however often it is said.
+The price is a loop through a stage that both ignores the blacklist and rebuilds the session without
+it: nothing here can tell that from somebody repeating themselves, so it is not ended here. The
+entry expires after a few seconds.
 """
 
 from __future__ import annotations
@@ -60,17 +64,14 @@ class HandBackMemory:
     """The sentences handed back a moment ago: bounded, expiring, in this process only.
 
     `ttl` is how long an entry lives (seconds, counted from the first hand-back); `limit` is how
-    many entries are kept at most (the oldest goes first); `rounds` is how many times the same
-    sentence is handed back while its entry lives when nothing shows it is the same turn coming
-    round (somebody saying the same words again). Thread-safe: handlers run on a pool.
+    many entries are kept at most (the oldest goes first). Thread-safe: handlers run on a pool.
     """
 
     def __init__(
-        self, ttl: float = 5.0, limit: int = 512, clock: Any = monotonic, rounds: int = 3
+        self, ttl: float = 5.0, limit: int = 512, clock: Any = monotonic
     ):
         self.ttl = float(ttl)
         self.limit = max(1, int(limit))
-        self.rounds = max(1, int(rounds))
         self._clock = clock
         #: key -> (when it was first handed back, how many times since)
         self._entries: OrderedDict[tuple, tuple[float, int]] = OrderedDict()
@@ -86,8 +87,8 @@ class HandBackMemory:
         The first time: yes. With an entry already there, `returning` decides. True (the message
         already leaves the skill out of its session) means this is the copy that was handed back
         coming round again: no, and the entry is forgotten, so a loop ends after one round. False
-        means the same words said again: yes, `rounds` times at most while the entry lives, then
-        no until it expires (the bound for a loop whose messages lose their session).
+        means the same words said again: yes, whatever the count (only a message that carries the
+        skill's own blacklist marker is ever dropped).
         """
         now = self._clock()
         with self._lock:
@@ -101,8 +102,6 @@ class HandBackMemory:
                 return True
             if returning:
                 del self._entries[key]
-                return False
-            if entry[1] >= self.rounds:
                 return False
             self._entries[key] = (entry[0], entry[1] + 1)
             return True
