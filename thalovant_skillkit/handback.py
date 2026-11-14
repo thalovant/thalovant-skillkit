@@ -167,8 +167,8 @@ class HandBackMemory:
                 self._entries[key] = (entry[0], entry[1] - 1, entry[2])
 
 
-#: How much of a sentence the memory looks at: it keeps a digest, never the text, so a hostile megabyte
-#: costs the same as a short sentence (60 one-megabyte sentences held 60 MB).
+#: How much of a sentence the memory looks at: it keeps a digest, never the text, so a hostile
+#: megabyte costs the same as a short sentence (60 one-megabyte sentences held 60 MB).
 KEY_TEXT_CHARS = 2000
 
 
