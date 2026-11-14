@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased (speech vectors, 2026-11-14)
+
+- `speakable` and `strip_tags` bound what they look at AFTER each fold (U+FDFA grows eighteenfold under NFKC), not only before it.
+- A mark between the colon and the slashes of an address (`http:` + U+0338 + `//x`) breaks it: no colon or slash is left, as in the connector spec's cleaner.
+- The connector spec's shared speech vectors (`vectors/speech.json`) are a kit test when an installed spec has them (`test/test_shared_speech_vectors.py`), so both cleaners are held to one corpus.
+
 ## Unreleased (final review, 2026-11-14)
 
 - `ssml.strip_tags` folds with NFKC like `speakable` (a fullwidth `＜audio ...＞` was left whole) and reads at most the same 2400 characters.

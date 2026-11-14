@@ -98,6 +98,14 @@ def strip_markup(text: str) -> str:
 ELLIPSIS = "\u2026"
 
 
+def _skeleton(text: str) -> str:
+    """`text` as "strip the accents" leaves it: NFKD with the combining marks removed."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text)
+        if not unicodedata.combining(c) and unicodedata.category(c)[0] != "M"
+    )
+
+
 def _fold(text: str) -> str:
     """`text` folded with NFKC, the ellipsis left alone."""
     return ELLIPSIS.join(unicodedata.normalize("NFKC", part) for part in text.split(ELLIPSIS))
@@ -142,10 +150,14 @@ def speakable(value: Any, limit: int = MAX_SPOKEN_NAME) -> str:
     if not isinstance(value, str):
         return ""
     limit = max(0, limit)
-    text = _fold(value[:READ_AT_MOST])
+    # Each fold can lengthen a text (U+FDFA becomes eighteen characters): what is looked at
+    # stays bounded AFTER it.
+    text = _fold(value[:READ_AT_MOST])[:READ_AT_MOST]
     if "&" in text:
-        text = _fold(html.unescape(text))
+        text = _fold(html.unescape(text))[:READ_AT_MOST]
     text = strip_markup(text).replace("://", " ")
+    if "://" in _skeleton(text):  # a mark hidden between the colon and the slashes: none is left
+        text = "".join(" " if c in ":/" else c for c in text)
     text = "".join(" " if unicodedata.category(c) in _NOT_SPOKEN else c for c in text)
     return _cut(" ".join(text.split()), limit)
 

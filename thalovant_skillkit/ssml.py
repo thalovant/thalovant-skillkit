@@ -248,9 +248,9 @@ def strip_tags(text: str) -> str:
         return ""
     # The same first steps as `safety.speakable`: at most READ_AT_MOST characters, folded with NFKC
     # (a fullwidth `＜` is the bracket it reads as), entities read once and the result folded again.
-    folded = _fold(text[:READ_AT_MOST])
+    folded = _fold(text[:READ_AT_MOST])[:READ_AT_MOST]  # bounded again after the fold (U+FDFA)
     if "&" in folded:
-        folded = _fold(html.unescape(folded))
+        folded = _fold(html.unescape(folded))[:READ_AT_MOST]
     return _normalize(strip_markup(folded))
 
 
