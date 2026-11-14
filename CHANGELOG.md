@@ -1,7 +1,52 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.1, pacing no longer changes the words of a script written without spaces.
+Last Edit: Claude Fable 5.2 - 2026-11-13 - Motive: 0.38.0, the fixes that follow the recheck of 2026-11-13: one cleaner, one gate, the link gate, `untrusted`, `pass_on`, the stricter URL guard.
+Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.1, pacing no longer changes the words of a script written without spaces.
 Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit: a feature matrix tested against phoonnx, SPEECH_STYLE that reads every script and quantity, and `compat`.
-Previous:  Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.35.0, every SSML feature phoonnx speaks is accepted, checked and has a helper.
 # Changelog
+
+## 0.38.0
+
+Security fixes from the independent recheck of 2026-11-13. Two behaviours change for a skill that already uses 0.37
+(`speakable`, `url_problem`); the rest is new.
+
+- **Fix (security): `ssml.strip_tags` could return a tag.** It removed tags and THEN read entities, so
+  `&lt;audio src="..."/&gt;`, or a tag whose closing bracket alone was written `&gt;`, came out as a whole tag, and
+  `speech_parts` then moved that plain string to `utterance_ssml`: text relayed from outside a skill made a speaker obey
+  it. Entities are read first, tags are removed until nothing changes, and no `<` or `>` is left.
+- **`safety.speakable` is the one cleaner for words a skill did not write**, with the steps the hub's router uses for a
+  relayed answer: at most 8192 characters read, NFKC (a fullwidth `＜` is a bracket), entities read once, tags to a
+  fixed point and every remaining bracket dropped (also the two characters that only fold into one, `≮` `≯`), every
+  `://` replaced by a space, control, format, surrogate and private-use characters turned into spaces, whitespace
+  collapsed, and a longer text cut at a word and closed with an ellipsis (never longer than `limit`; cleaning what was
+  already cleaned changes nothing more, the ellipsis included). **Changed from
+  0.37**: an address is no longer removed whole, its `://` is (`https evil.example/x`); a cut ends with `…`; `www.`
+  is left alone; unassigned characters are no longer turned into spaces. `safety.strip_markup` is the bracket step.
+- **New: `speak_to(message, text, untrusted=True)`** (and `ssml.speech_parts(..., untrusted=True)`,
+  `ssml.outside_parts`): the way a skill says "these are somebody else's words". They are cleaned with `speakable` and
+  are never promoted to `utterance_ssml`, whatever they hold; the only markup sent with them is the pacing the kit
+  derives from the cleaned words under the skill's own `SPEECH_STYLE`. A `Speech` passed this way keeps its words only.
+  `speak` keeps the framework's signature; the default (trusted) path is unchanged.
+- **`device` is the one gate, and it is stricter.** The identity is the `device` id (ASCII digits): a stamp that carries
+  only `device_name` names nobody (it passed the gate for a list holding that name). `device_allowed` compares ids with
+  ids and names with names: an entry made of digits is an id, so a row NAMED `1580` or `client-1580` no longer passes a
+  list holding the id `1580`. `DeviceIdentity.matches(entry)`, `.names`, `.value_in(mapping)` and `device_value(context, mapping)` read a
+  per-device mapping by the same rule. **Changed from 0.37**: `DeviceIdentity.device_id` is never `None`, and a device
+  can no longer be listed by a name made only of digits.
+- **New: the link gate.** `link_state(context, connector_id=None)` and `link_allowed(...)` say whether the speaking
+  device's own household has a link to a service at home (`online` or `offline`), from the router's stamp. A route
+  through the household's own bridge is gated by this and lists nobody; `device_allowed` stays the deny-by-default gate
+  for a route with one server for the whole hub. Documented limit: on a hub that does not load the home router nothing
+  writes the stamp, so a client could forge it.
+- **New: `thalovant_skillkit.handback` and `self.pass_on(message)`**: give a sentence back to the other skills,
+  silently, once. That it was already handed back is remembered in the process (bounded, expiring, keyed by device,
+  session and sentence), never in the message context: the skills that had written this each marked the context with
+  a key of their own, and a client that sent that key got silence, a one-message probe for the skill.
+- **The URL guard refuses this machine and short names. Changed from 0.37.** `address_problem`, `url_problem` and
+  `vetted_addresses` refuse loopback (on a hub, `127.0.0.1:8181` is the hub's own bus), `localhost`, the metadata
+  addresses outside the link-local range, and a name of a single label (`nas`, `vault`); `vetted_addresses` resolves a
+  name as a full name, so the resolver's search list never applies (`vault.vault` stops being a cluster Service).
+  `loopback=True` admits loopback for a test server. **New: `dial_vetted(host, port, plain=...)`** returns a socket
+  connected to an address that was checked, never to the name again. A LAN server reached as `http://nas:8096` or on
+  the hub's own machine must now be typed as `nas.lan`, `nas.local` or its address.
 
 ## 0.37.0
 

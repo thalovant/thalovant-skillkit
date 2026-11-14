@@ -5,7 +5,17 @@ import inspect
 import pytest
 
 from thalovant_skillkit import device
-from thalovant_skillkit.device import STAMP_KEYS, DeviceIdentity, device_allowed, device_identity
+from thalovant_skillkit.device import (
+    LINK_STATES,
+    LINKED,
+    STAMP_KEYS,
+    DeviceIdentity,
+    device_allowed,
+    device_identity,
+    device_value,
+    link_allowed,
+    link_state,
+)
 
 STAMPED = {
     "thalovant_home": {"link": "none", "device": "1580", "device_name": "Kitchen"},
@@ -20,12 +30,97 @@ STAMPED = {
 def test_the_identity_is_the_stamps_device_and_name():
     ident = device_identity(STAMPED)
     assert ident == DeviceIdentity("1580", "Kitchen") and ident.keys == ("1580", "Kitchen")
-    assert device_identity(
-        {"thalovant_home": {"device": "7", "device_name": "client-mark2"}}
-    ).keys == ("7", "client-mark2", "mark2")
-    assert device_identity({"thalovant_home": {"device_name": " Den "}}).keys == ("Den",)
-    assert device_identity({"thalovant_home": {"device_name": "client-"}}).keys == ("client-",)
+    mark2 = device_identity({"thalovant_home": {"device": "7", "device_name": "client-mark2"}})
+    assert mark2.keys == ("7", "client-mark2", "mark2") and mark2.names == ("client-mark2", "mark2")
+    assert device_identity({"thalovant_home": {"device": "7", "device_name": " Den "}}).names == (
+        "Den",
+    )
+    assert device_identity({"thalovant_home": {"device": "7", "device_name": "client-"}}).names == (
+        "client-",
+    )
+    assert device_identity({"thalovant_home": {"device": "7"}}) == DeviceIdentity("7", None)
     assert STAMP_KEYS == ("thalovant_home", "thalovant_connector")
+
+
+@pytest.mark.parametrize(
+    "stamp",
+    [
+        {"link": "online", "device_name": "client-abc"},
+        {"device_name": " Den "},
+        {"device": "", "device_name": "Kitchen"},
+        {"device": None, "device_name": "Kitchen"},
+        {"device": 1580, "device_name": "Kitchen"},  # the router writes a string
+        {"device": "15 80", "device_name": "Kitchen"},
+        {"device": "\u0661\u0665\u0668\u0660", "device_name": "Kitchen"},  # Arabic-Indic digits
+        {"device": "\uff11\uff15\uff18\uff10", "device_name": "Kitchen"},  # fullwidth digits
+    ],
+)
+def test_a_stamp_that_carries_only_a_name_names_nobody(stamp):
+    """The recheck's proof of concept: `{"link": "online", "device_name": "client-abc"}` passed
+    the gate for `allowed_devices: ["client-abc"]` and for `["abc"]`. A label is not an identity:
+    the router writes `device` for every connection it vouches for."""
+    context = {"thalovant_home": stamp}
+    assert device_identity(context) is None
+    for allowed in (["client-abc"], ["abc"], ["Kitchen"], ["Den"], ["1580"], [1580]):
+        assert device_allowed(context, allowed) is False
+    assert link_allowed(context) is False and device_value(context, {"Kitchen": "x"}) is None
+
+
+@pytest.mark.parametrize(
+    "name", ["client-1580", "1580", "Client-\uff11\uff15\uff18\uff10", " 1580 "]
+)
+def test_a_row_named_after_an_id_does_not_pass_for_that_id(name):
+    """The recheck's proof of concept: ids and names shared one set and `client-` was stripped,
+    so the entry "1580" (a device id) admitted device 999 once its row was NAMED `client-1580`
+    or `1580`. An entry made of digits is an id and is compared with the id only."""
+    context = {"thalovant_home": {"link": "online", "device": "999", "device_name": name}}
+    assert device_allowed(context, ["1580"]) is False and device_allowed(context, [1580]) is False
+    assert device_allowed(context, ["\uff11\uff15\uff18\uff10"]) is False  # nor "digits" that fold
+    assert device_allowed(context, ["999"]) is True  # its own id still does
+    assert device_value(context, {"1580": "Kitchen"}) is None
+    assert device_value(context, {"999": "Den", "1580": "Kitchen"}) == "Den"
+
+
+def test_ids_are_compared_with_ids_and_names_with_names():
+    kitchen = DeviceIdentity("1580", "client-Kitchen")
+    assert kitchen.matches("1580") and kitchen.matches(1580) and kitchen.matches(" 1580 ")
+    assert (
+        not kitchen.matches("01580") and not kitchen.matches("158") and not kitchen.matches(-1580)
+    )
+    assert (
+        kitchen.matches("kitchen")
+        and kitchen.matches("Client-Kitchen")
+        and kitchen.matches("k\u00edtchen")
+    )
+    assert not kitchen.matches("kitch") and not kitchen.matches("Kitchen Display")
+    assert not kitchen.matches(True) and not kitchen.matches(None) and not kitchen.matches(15.8)
+    assert not kitchen.matches("") and not kitchen.matches(("1580",))
+    # a label made of digits is never compared with anything
+    numbered = DeviceIdentity("7", "42")
+    assert numbered.matches("7") and not numbered.matches("42") and not numbered.matches(42)
+    assert not DeviceIdentity("7", "client-42").matches("42")
+    assert DeviceIdentity("7", "client-42").matches("client-42")  # the full label is a name
+
+
+def test_a_per_device_mapping_is_read_by_id_first_then_by_label():
+    context = {"thalovant_home": {"device": "7", "device_name": "client-mark2"}}
+    assert device_value(context, {"mark2": "Den", "7": "Kitchen"}) == "Kitchen"
+    assert device_value(context, {"MARK2": "Den"}) == "Den"
+    assert device_value(context, {"client-mark2": "Den", "mark2": "Attic"}) == "Den"  # first label
+    assert device_value(context, {"8": "x", "mark": "y", "": "z", None: "w"}) is None
+    assert device_value(context, None) is None and device_value(context, ["7"]) is None
+    assert device_value({}, {"7": "Kitchen"}) is None
+    assert (
+        device_value({"thalovant_home": {"device_name": "client-mark2"}}, {"mark2": "Den"}) is None
+    )
+
+    class Broken(dict):
+        def items(self):
+            raise RuntimeError("boom")
+
+    assert device_value(context, Broken({"7": "Kitchen"})) is None
+    assert DeviceIdentity("7", "client-mark2").value_in({"mark2": "Den"}) == "Den"
+    assert DeviceIdentity("7").value_in({"mark2": "Den"}) is None
 
 
 def test_thalovant_home_decides_and_a_connector_stamp_must_agree():
@@ -72,6 +167,7 @@ def test_the_retired_per_service_stamp_is_not_believed():
         {"thalovant_home": {"device": "12a"}},
         {"thalovant_home": {"device": "١٢"}},  # not ASCII digits
         {"thalovant_home": {"device": 12}},
+        {"thalovant_home": {"device_name": "Kitchen"}},  # a label alone names nobody
         {"thalovant_home": {"device_name": "   "}},
         {"thalovant_home": {"device": "", "device_name": ""}},
         {"thalovant_home": {"device_name": ["Kitchen"]}},
@@ -120,11 +216,10 @@ def test_the_gate_is_deny_by_default_and_exact():
     assert device_allowed(STAMPED, ["kítchen"]) is True  # folded
     assert device_allowed(STAMPED, ["1580"]) is True and device_allowed(STAMPED, [1580]) is True
     assert device_allowed(STAMPED, ["Kitchen Display", "158", "kitch"]) is False  # whole names only
-    assert device_allowed({"thalovant_home": {"device_name": "client-mark2"}}, ["mark2"]) is True
-    assert (
-        device_allowed({"thalovant_home": {"device_name": "client-mark2"}}, ["client-mark2"])
-        is True
-    )
+    mark2 = {"thalovant_home": {"device": "7", "device_name": "client-mark2"}}
+    assert device_allowed(mark2, ["mark2"]) is True
+    assert device_allowed(mark2, ["client-mark2"]) is True
+    assert device_allowed(mark2, ["7"]) is True and device_allowed(mark2, ["mark"]) is False
 
 
 def test_a_broken_allow_list_is_a_no_not_an_error():
@@ -157,6 +252,82 @@ def test_an_allow_list_that_raises_after_an_entry_is_a_no(error):
 
 
 def test_an_identity_may_have_only_an_id():
-    assert DeviceIdentity("7", None).keys == ("7",)
-    assert DeviceIdentity(None, None).keys == ()
+    assert DeviceIdentity("7", None).keys == ("7",) and DeviceIdentity("7").names == ()
+
+
+# -- the link gate: a household's own link, nobody listed -----------------------------------------
+
+
+def stamped(home="none", music="online", device="1580"):
+    who = {"device": device, "device_name": "client-kitchen"} if device else {}
+    return {
+        "thalovant_home": {"link": home, **who},
+        "thalovant_connector": {"link": {"music_assistant": music, "jellyfin": "none"}, **who},
+    }
+
+
+@pytest.mark.parametrize("state", LINK_STATES)
+def test_the_link_state_is_what_the_router_wrote_for_that_connector(state):
+    context = stamped(home="offline", music=state)
+    assert link_state(context, "music_assistant") == state
+    assert link_allowed(context, "music_assistant") is (state in ("online", "offline"))
+    assert (
+        link_state(context) == "offline" and link_allowed(context) is True
+    )  # Home Assistant's own
+    assert link_state(context, "jellyfin") == "none" and not link_allowed(context, "jellyfin")
+    assert link_state(context, "plex") == "unavailable"  # a connector the router did not name
+    assert LINKED == {"online", "offline"}
+
+
+def test_a_stranger_with_no_link_is_a_no_for_every_route():
+    for state in ("none", "unavailable"):
+        context = stamped(home=state, music=state)
+        assert not link_allowed(context, "music_assistant") and not link_allowed(context)
+
+
+@pytest.mark.parametrize(
+    "context",
+    [
+        None,
+        "x",
+        {},
+        {"thalovant_connector": {"link": {"music_assistant": "online"}, "device": "7"}},  # no home
+        stamped(device=None),  # a link nobody is behind
+        {
+            **stamped(),
+            "thalovant_connector": {"link": {"music_assistant": "online"}, "device": "9"},
+        },
+        {**stamped(), "thalovant_connector": "online"},
+        {"thalovant_home": {"link": "online", "device_name": "client-kitchen"}},
+        {"thalovant_music": {"link": "online", "device": "7"}},  # the retired stamp
+    ],
+)
+def test_a_link_without_a_vouched_device_is_not_believed(context):
+    assert link_state(context, "music_assistant") == "unavailable"
+    assert link_state(context) == "unavailable"
+    assert link_allowed(context, "music_assistant") is False and link_allowed(context) is False
+
+
+@pytest.mark.parametrize("link", [None, 1, True, ["online"], {"x": "online"}, "ONLINE", "up", ""])
+def test_a_link_value_the_router_never_writes_is_unavailable(link):
+    who = {"device": "7"}
+    context = {
+        "thalovant_home": {"link": link, **who},
+        "thalovant_connector": {"link": {"music_assistant": link}, **who},
+    }
+    assert link_state(context) == "unavailable"
+    assert link_state(context, "music_assistant") == "unavailable"
+    context["thalovant_connector"]["link"] = link  # not a mapping at all
+    assert link_state(context, "music_assistant") == "unavailable"
+
+
+def test_the_gate_cannot_tell_who_wrote_the_stamp_and_says_so():
+    """The honest limit (the recheck's routerless proof of concept): on a hub that does not load
+    the home router nothing overwrites these keys, so a client that sends them is believed. The
+    module's own description must keep saying it, so nobody reads the gate as more than it is."""
+    forged = {"thalovant_home": {"device": "1580"}, "thalovant_connector": {"device": "1580"}}
+    assert device_allowed(forged, ["1580"]) is True
+    assert "does not\nload the home router" in device.__doc__ or "does not load" in " ".join(
+        device.__doc__.split()
+    )
     assert device_allowed({"thalovant_home": {"device": "7"}}, ["7"]) is True

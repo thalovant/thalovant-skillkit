@@ -96,7 +96,7 @@ def test_every_helper_the_kit_exports_has_a_plain_stand_in():
                if callable(getattr(ssml, name)) and name[0].islower()
                and name not in {"carries_markup", "escape", "looks_like_ssml", "render_line",
                                 "speech_parts", "strip_tags", "to_plain", "validate",
-                                "auto_twin"}}
+                                "auto_twin", "outside_parts"}}
     assert helpers == set(PLAIN_HELPERS), helpers ^ set(PLAIN_HELPERS)
 
 

@@ -177,6 +177,7 @@ def speak_to(
     written: str | None = None,
     meta: dict | None = None,
     wait: bool | int = False,
+    untrusted: bool = False,
 ):
     """Emit `text` as speech for whoever sent `message`, and return that message.
 
@@ -190,17 +191,26 @@ def speak_to(
     travels as `utterance_ssml`. A plain string holding SSML tags is moved
     the same way, so the tags never reach a client that shows `utterance`.
 
+    `untrusted=True` says these are SOMEBODY ELSE'S words (an answer a link
+    relayed, a title, a name): they are cleaned with `safety.speakable` and
+    are never promoted to `utterance_ssml`, whatever they hold. The only
+    markup sent with them is the pacing the kit derives from the cleaned
+    words under the skill's own `SPEECH_STYLE` (`ssml.outside_parts`).
+
     Empty text emits nothing and returns None. A skill with no bus cannot
     speak; that raises rather than losing the reply quietly, because the only
     place it happens is a test that forgot to bind one.
     """
-    text, ssml = speech_parts(text, getattr(skill, "skill_id", None))
+    lang = lang or message_lang(message)
+    text, ssml = speech_parts(text, getattr(skill, "skill_id", None), untrusted=untrusted,
+                              style=getattr(skill, "SPEECH_STYLE", None) if untrusted else None,
+                              lang=lang)
     if not text:
         return None
     # Fail before building anything: a reply that cannot be sent should not
     # cost a message, and the reason should be the first thing reported.
     if bus_of(skill) is None:
         raise RuntimeError("speak_to needs a bus: this skill is not bound to one")
-    return emit_speech(skill, message, text, lang=lang or message_lang(message),
+    return emit_speech(skill, message, text, lang=lang,
                        expect_response=expect_response, written=written, meta=meta,
                        wait=wait, ssml=ssml)
