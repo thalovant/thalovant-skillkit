@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased (final review, 2026-11-14)
+
+- `ssml.strip_tags` folds with NFKC like `speakable` (a fullwidth `＜audio ...＞` was left whole) and reads at most the same 2400 characters.
+- The hand-back has a hard cap: a sentence that comes back already naming the skill, with no entry in the memory, is handed back at most 20 times a minute per device and skill (a client can write that marker). Genuine repeats are never counted.
+
 ## 0.38.0
 
 End-to-end run of 2026-11-14 (the same pull request):
