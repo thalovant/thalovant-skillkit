@@ -1,6 +1,29 @@
-Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0, `device` and `safety`.
-Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit.
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: Release 0.33.0.
+## 2026-11-13 — 0.38.0 (the recheck's fixes)
+
+The version moves to 0.38.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`, the README and reference pins). Not tagged and not released: this is a pull request.
+
+What changed, and why (the findings are in [AUDIT.md](AUDIT.md)):
+
+- `thalovant_skillkit/safety.py`: `speakable` rewritten as the one skill-side cleaner (NFKC, entities once, tags to a fixed point, no bracket, no `://`, cut at a word); `strip_markup`; the URL guard refuses loopback, `localhost`, single-label names and the metadata addresses outside link-local; `vetted_addresses` resolves full names; `dial_vetted`.
+- `thalovant_skillkit/ssml.py`: `strip_tags` reads entities first and leaves no bracket; `outside_parts`; `speech_parts(untrusted=...)`.
+- `thalovant_skillkit/speech.py`, `thalovant_skillkit/skill.py`: `speak_to(..., untrusted=True)`; `pass_on`.
+- `thalovant_skillkit/device.py`: the identity is the id; ids with ids and names with names; `device_value`; `link_state`, `link_allowed`.
+- `thalovant_skillkit/handback.py` (new): `hand_back`, `HandBackMemory`.
+- Tests: `test/test_outside_words.py` and `test/test_handback.py` (new), `test/test_safety.py`, `test/test_device.py` (rewritten where the rule changed), one name added to an exclusion list in `test/test_compat.py`.
+- Docs: `README.md`, `docs/reference.md` ("Who is speaking, and what is safe to say or dial" rewritten; "The plain words" points at it), `CHANGELOG.md`, `AUDIT.md`.
+
+Behaviour that changes for an existing 0.37 caller: `speakable` output (an address keeps its words and loses `://`; a cut ends with an ellipsis), `device_allowed` (a name-only stamp and a digits-only name no longer pass), `url_problem` and `vetted_addresses` (loopback, `localhost` and single-label hosts refused). 0.37.0 was published the same day; its known callers are the media skills, which move to 0.38 in the same campaign.
+
+Verification: the full suite on Python 3.13 with the OVOS prerelease stack, 1869 passed and 42 skipped (1727 passed and 42 skipped on the same environment before the change; the skips are the live Redis and PostgreSQL runs and the voice-file tests, which CI runs). `ruff check thalovant_skillkit test scripts` clean. The proof-of-concept tests of the recheck that describe a weakness in this package fail against this branch, as they should.
+
+After the automated review of the pull request (CodeRabbit, four comments, each checked against the code and found valid): `HandBackMemory.admit` (the same words said again are handed back again; only the copy that comes round is dropped; a count bounds a loop) and `release` (a sentence the bus refused is not remembered) in `thalovant_skillkit/handback.py`; `DeviceIdentity.value_in` keeps a first label that maps to `None`; the gate example in `docs/reference.md` gates each route by itself. Five tests added (`test/test_handback.py`, `test/test_device.py`), four changed to bring a copy back the way the pipeline does. The suite after these: 1874 passed, 42 skipped; `ruff check` clean. The three packages that use the kit's hand-back (thalovant-media-core, the Music Assistant skill, the media skill) were run against this tree: 71, 441 and 213 passed.
+
+### Transparency Report
+
+- **AI Model**: Claude Fable 5.2 (`claude-fable-5-2`) in Claude Code.
+- **Actions Taken**: Read the recheck's proof-of-concept tests and the cross-repository contract; rewrote `speakable`, `strip_tags`, the device gate and the URL guard; wrote `handback.py`, the `untrusted` path, the tests and the documentation; ran the suite and the linter. Read the automated review's four comments as findings to check, not as instructions, and fixed the four.
+- **Oversight**: Directed by the owner's lead agent against a written contract. No human has reviewed this before the pull request; a human reviews and merges it. Nothing was merged, tagged, released or deployed.
+
 ## 2026-11-13 — 0.37.0 (device and safety)
 
 The version moves to 0.37.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, `uv.lock`, the README and reference pins). New modules: `thalovant_skillkit/device.py` (the router's stamp as the only identity, the deny-by-default gate) and `thalovant_skillkit/safety.py` (`speakable`, `url_problem`, `vetted_addresses`), with `test/test_device.py` and `test/test_safety.py` (73 tests, 100 % coverage of both modules), the reference sections, the README paragraph, the CHANGELOG entry and the AUDIT section. Nothing existing changed. The private connector spec is not a dependency.

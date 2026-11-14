@@ -31,10 +31,11 @@ it for a screen; `testing` supplies message and recording-bus doubles;
 application state; `selection` provides independent shuffle bags; `network`,
 `workers` and `storage` bound service calls, refresh in the background and keep
 optional shared state; `records` keeps a person's records one at a time under
-that person, in Redis or PostgreSQL. `device` says who is speaking from the hub's router stamp
-only (0.37), and `safety` makes a title speakable and refuses a server URL that would leak a
-token. `checks` and `artifacts` validate source contracts and
-built archives.
+that person, in Redis or PostgreSQL. `device` says who is speaking and what their household has
+linked, from the hub's router stamp only (0.37; the one gate since 0.38); `safety` makes somebody
+else's words speakable and refuses a server URL that would leak a token or reach this machine;
+`handback` gives a sentence back to the other skills, silently, once (0.38). `checks` and
+`artifacts` validate source contracts and built archives.
 ovos-workshop and the fleet-check dependencies are included in the base install;
 the old `[skill]` and `[fleet]` extras remain empty compatibility names. Install
 `thalovant-skillkit[testing]` for the OVOScope integration stack.

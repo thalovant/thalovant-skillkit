@@ -40,6 +40,8 @@ from functools import lru_cache
 from string import Formatter
 from typing import Any
 
+from .safety import READ_AT_MOST, speakable, strip_markup
+
 __all__ = [
     "SSML_KEY",
     "SUPPORTED_TAGS",
@@ -59,6 +61,7 @@ __all__ = [
     "interjection",
     "mark",
     "ordinal",
+    "outside_parts",
     "phoneme",
     "pitch",
     "prosody",
@@ -233,8 +236,15 @@ def _normalize(text: str) -> str:
 
 
 def strip_tags(text: str) -> str:
-    """`text` with anything shaped like a tag removed and entities read."""
-    return _normalize(html.unescape(_ANY_TAG.sub(" ", text or "")))
+    """The words of `text`: entities read, every tag removed, no angle bracket left.
+
+    Entities are read FIRST. Read afterwards, `&lt;audio src="..."/&gt;` came out of here as a
+    whole tag, and so did a tag whose closing bracket alone was written `&gt;`: the next reader
+    took the result for markup. Then tags are removed until nothing changes, and any `<` or `>`
+    that is left is dropped (`safety.strip_markup`), so what comes back is never markup, however
+    it is read afterwards.
+    """
+    return _normalize(strip_markup(html.unescape(text or "")))
 
 
 #: Marks of the scripts that write no space after them (CJK, Devanagari, Arabic, Armenian ...).
@@ -1119,7 +1129,39 @@ def warn_once(kind: str, text: str, owner: str | None = None) -> None:
     LOG.warning("%s%s", f"{owner}: " if owner else "", text)
 
 
-def speech_parts(text: Any, owner: str | None = None) -> tuple[Any, str | None]:
+def outside_parts(text: Any, style: SpeechStyle | None = None,
+                  lang: str | None = None) -> tuple[Any, str | None]:
+    """(utterance, utterance_ssml) for words that are SOMEBODY ELSE'S: never their markup.
+
+    What a server, a link or a provider wrote (a title, a player's name, a whole answer) is
+    words. It is cleaned with `safety.speakable` (entities read, tags and every angle bracket
+    gone, no address, one line), so nothing in it can be read as a tag, and it is NEVER moved to
+    `utterance_ssml` the way a skill's own plain string with tags is. A `Speech` gives its plain
+    words only: markup that travelled with outside text is not believed.
+
+    The one markup such words may travel with is the pacing the kit derives from them itself:
+    with a `style` (the skill's `SPEECH_STYLE`) the pauses are worked out from the cleaned words
+    and the words are escaped into them, exactly as for a dialog line. Words holding a brace are
+    said plainly (the derivation would read it as a placeholder).
+    """
+    words = text.plain if isinstance(text, Speech) else text
+    if not isinstance(words, str):
+        return words, None
+    words = speakable(words, READ_AT_MOST)
+    if not words or style is None or "{" in words or "}" in words:
+        return words, None
+    try:
+        twin = auto_twin(words, style, lang)
+    except Exception:  # noqa: BLE001 - pacing is an addition to a reply, never its price
+        twin = None
+    if not twin or not _well_formed(twin):
+        return words, None
+    return words, f"<speak>{twin}</speak>"
+
+
+def speech_parts(text: Any, owner: str | None = None, *, untrusted: bool = False,
+                 style: SpeechStyle | None = None,
+                 lang: str | None = None) -> tuple[Any, str | None]:
     """(utterance, utterance_ssml) for something a skill asked to say.
 
     A Speech gives its words and its `<speak>` document. A plain string that
@@ -1128,7 +1170,13 @@ def speech_parts(text: Any, owner: str | None = None) -> tuple[Any, str | None]:
     If that markup does not parse, the tags are dropped and only the words
     are sent. The plain text never carries a tag. Anything else passes
     through unchanged, so a plain string is sent exactly as it was.
+
+    `untrusted=True` says the words are somebody else's (`outside_parts`): they
+    are cleaned and never promoted to markup, whatever they hold. `style` and
+    `lang` are read only then, for the pacing the kit derives itself.
     """
+    if untrusted:
+        return outside_parts(text, style, lang)
     if isinstance(text, Speech):
         plain, document = text.plain, text.document
         if document is not None and not _well_formed(text.fragment):

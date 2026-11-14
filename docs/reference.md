@@ -1,5 +1,3 @@
-<!-- Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0 documents `device` (the router's stamp as the only identity) and `safety` (speakable, url_problem), and the guard for a kit before 0.37. -->
-
 # SkillKit reference
 
 Practical contracts for the released Python API and CLI. Start with the
@@ -462,6 +460,11 @@ If a skill passes SSML as a plain string to `speak`, `speak_to` or
 as `utterance`, and a warning is logged once per skill. Markup that does not
 parse loses its tags and keeps its words.
 
+That is for a skill's OWN text. Text somebody else wrote (a title, an answer a
+home relayed) must never reach `speak` as it came: clean a value with
+`safety.speakable`, or say the whole answer with `speak_to(..., untrusted=True)`,
+which never promotes it. See [Words that are somebody else's](#words-that-are-somebody-elses).
+
 ### Supported tags
 
 | Tag | Attributes |
@@ -711,7 +714,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.37.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.38.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -1025,15 +1028,17 @@ Ask fluent speakers to review important flows before claiming linguistic quality
 ## Who is speaking, and what is safe to say or dial
 
 A skill that serves one household's private thing (a media server, the lights, a camera) answers only the
-hub's devices that household listed, and says only text that is safe to read aloud. Two modules do that
-for every such skill, reconciled from the copies the media and Music Assistant skills had written.
+devices that may use it, and says only text that is safe to read aloud. These modules do that for every such
+skill. They are the ONE copy: the media and Music Assistant skills each had their own, and the copies had
+begun to disagree (the recheck of 2026-11-13).
 
 ### `thalovant_skillkit.device`: the router's stamp, and nothing else
 
 The hub's home router writes `context["thalovant_home"]` (and, from router 0.5.0, `context["thalovant_connector"]`) on every
-utterance from a connection it vouches for, with `device` (the database id of the row) and `device_name`
-(its platform-assigned name, `client-<uuid>`). It writes both from the row and overwrites whatever a client
-sent, and writes neither for a connection it will not vouch for (a preview or chat bridge, no account).
+utterance from a connection it vouches for, with `device` (the database id of the row, a string of ASCII digits),
+`device_name` (its platform-assigned name, `client-<uuid>`) and `link` (whether that device's own household has a
+link to a service at home, and whether it is up). It writes them from the row and overwrites whatever a client
+sent, and writes no `device` for a connection it will not vouch for (a preview or chat bridge, no account).
 **Everything else that looks like an identity is the client's own word**: `context["peer"]` is
 `<useragent>::<id>::<name>::<session>` with a client-supplied user agent and session (`x::1580::y` makes the tail
 read as another client's id), and `source`, `site_id`, `client_id` and the session's copies are no better.
@@ -1041,47 +1046,105 @@ This module has no function that reads any of them.
 
 | Name | Returns |
 |---|---|
-| `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamps, or `None`. `thalovant_home` decides (every router since 0.4.1 overwrites it on every client utterance); a `thalovant_connector` stamp, when the key is there at all, must name the same device (before router 0.5.0 a client could write it itself, and the first stamp found used to win). Never raises. `.keys` is the id, the row name, and the row name without `client-`. |
-| `device_allowed(context, allowed)` | `True` only when one of those keys equals an entry of `allowed` (folded, whole values). An empty list, a bare string or bytes (not a list), no stamp, a malformed stamp or an allow-list that raises while it is read is `False`. Entries may be strings or integers. |
+| `device_identity(context)` | `DeviceIdentity(device_id, name)` from the stamps, or `None`. The identity is the `device` id: a stamp without one (only `device_name`, or an id that is not ASCII digits) names nobody. `thalovant_home` decides (every router since 0.4.1 overwrites it on every client utterance); a `thalovant_connector` stamp, when the key is there at all, must name the same device (before router 0.5.0 a client could write it itself, and the first stamp found used to win). Never raises. `.names` is the row name and the row name without `client-`; `.matches(entry)` compares one entry. |
+| `link_state(context, connector_id=None)` | `online`, `offline`, `none` or `unavailable`: what the router says about the speaking device's household and one connector (`context["thalovant_connector"]["link"][connector_id]`), or, with no id, Home Assistant's own dialect (`context["thalovant_home"]["link"]`). `unavailable` when the router says nothing, and for a context that names no device. |
+| `link_allowed(context, connector_id=None)` | `True` for `online` and `offline`: the household has that link. **The gate for a route through the household's own link** (a home bridge, Home Assistant). Nobody is listed: the router confines every household to its own bridge, and a household switches the feature on for itself by linking. |
+| `device_allowed(context, allowed)` | `True` only when an entry of `allowed` names the speaking device. **The gate for a route with one server for the whole hub** (a URL and a token in the skill's settings): deny by default. An entry made of digits (a string or an integer) is an id and is compared with the device's id only; any other entry is a name and is compared with its labels only (folded, whole). Ids are never compared with names: a row NAMED `1580` does not pass a list holding the id `1580`. An empty list, a bare string or bytes (not a list), no stamp, a stamp without a `device`, or an allow-list that raises while it is read is `False`. |
+| `device_value(context, mapping)` | What an owner's per-device mapping (`{"1580": "Kitchen", "mark2": "Den"}`) says for the speaking device, read by the same rule (id first, then a label), or `None`. |
 | `STAMP_KEYS` | `("thalovant_home", "thalovant_connector")`: the only keys believed. The retired `thalovant_music` is not: a client could write it. |
 
 ```python
-from thalovant_skillkit.device import device_allowed
+from thalovant_skillkit.device import device_allowed, link_allowed
 
 def handle(self, message):
-    if not device_allowed(message.context, self.allowed_devices):   # deny by default
-        return self.pass_on(message)
+    if link_allowed(message.context, "music_assistant"):                   # the household's own bridge
+        return self.answer_through_the_home(message)
+    if device_allowed(message.context, self.allowed_devices):              # one server for the hub: listed only
+        return self.answer_from_the_shared_server(message)
+    return self.pass_on(message)            # silently: a stranger learns nothing
 ```
 
-### `thalovant_skillkit.safety`: titles to say, servers to dial
+Each route has its own gate, and a gate opens its own route only. A handler that checked "either gate" first and chose
+the route afterwards would let a device with a household link, and no line in `allowed_devices`, reach the one server
+the list protects.
+
+**The limit.** The gate cannot tell who wrote the keys. On a hub whose listener does not load the home router
+nothing overwrites them, and a client that sends its own stamp is believed (`test_the_gate_cannot_tell_who_wrote_the_stamp_and_says_so`).
+The stamp is an identity only where the router runs. A route with one server for the whole hub must stay off on a hub
+that is shared: say so in the skill's settings help.
+
+### `thalovant_skillkit.safety`: words to say, servers to dial
 
 | Name | Returns |
 |---|---|
-| `speakable(value, limit=120)` | A title or name as words only: tags and addresses (`scheme://`, `www.`) removed, angle brackets, control, format (bidi), surrogate, private-use and unassigned characters turned into spaces, one line, at most `limit` characters; `""` for anything that is not text. The work on a hostile value is bounded (it is cut to four times `limit` first). |
+| `speakable(value, limit=120)` | Somebody else's text as words only, never longer than `limit`; `""` for anything that is not text. In this order: at most 2400 characters are read and folded with NFKC (a fullwidth `＜` is the bracket it reads as); HTML entities are read once, so `&lt;audio ...&gt;` (or a tag whose closing bracket alone is `&gt;`) is a tag before it is removed; tags are removed until nothing changes and every remaining `<` and `>` is dropped; every `://` becomes a space; control, format (bidi), surrogate and private-use characters become spaces; whitespace is collapsed and a longer text is cut at a word and closed with an ellipsis. **What comes back never holds an angle bracket**, so the kit can never read it as SSML. The hub's router cleans a relayed answer with the same steps. |
+| `strip_markup(text)` | The tag and bracket step alone (entities are not read). |
 | `contains_url(value)` | Whether text carries something address-like. |
 | `normalize_base_url(raw)` | `scheme://host:port/prefix` for what an owner typed (a bare `host:port` is http; credentials, query and fragment are dropped), or `""`. |
-| `url_problem(url)` | Why a URL must not be dialled, or `""`. The host is read as the resolver reads it (`canonical_host`: Unicode full stops and IDNA labels folded to ASCII, a numbers-and-dots host such as `134744072` as the address it means; a host that cannot be encoded is refused). Refused: an address that is never a server's (link-local, where cloud metadata lives; unspecified; multicast; an IPv4-mapped IPv6 judged as its IPv4), the names a cluster or host gives only to itself (`*.svc`, `*.cluster.local`, `*.internal`, `metadata.google.internal`), and a plain `http://` or `ws://` to a public address or name (the token would cross the internet in clear). |
-| `address_problem(address)` | The first rule alone, for an `ipaddress` object. |
+| `url_problem(url, loopback=False)` | Why a URL must not be dialled, or `""`. The host is read as the resolver reads it (`canonical_host`: Unicode full stops and IDNA labels folded to ASCII, a numbers-and-dots host such as `134744072` or `2852039166` as the address it means; a host that cannot be encoded is refused). Refused: an address that is never a household server's (loopback: on a hub that is the hub's own bus; link-local and the other metadata addresses; unspecified; multicast; an IPv4-mapped IPv6 judged as its IPv4), `localhost`, the names a cluster or host gives only to itself (`*.svc`, `*.cluster.local`, `*.internal`, `metadata.google.internal`), a name of a single label (`nas`, `secrets`: the resolver completes it from its search list, and in a cluster that is a Service beside the hub), and a plain `http://` or `ws://` to a public address or name (the token would cross the internet in clear). |
+| `address_problem(address, loopback=False)` | The address rule alone, for an `ipaddress` object. |
 | `canonical_host(host)` | The host as the resolver will read it, or `None` when it cannot be encoded. |
-| `vetted_addresses(host, port, plain=False)` | The addresses a name resolves to *now*, each checked with `address_problem`; with `plain=True` (an `http://` or `ws://` connection) an answer that is not a private or loopback address is refused too, which is where a LAN name that resolves publicly is stopped. Raises `UnsafeAddress` for a refused or empty answer and `socket.gaierror` when the name does not resolve. A client connects to the returned address, so a name that answers differently the second time cannot move it. |
+| `vetted_addresses(host, port, plain=False, loopback=False)` | The addresses a name resolves to *now*, each checked with `address_problem`; with `plain=True` (an `http://` or `ws://` connection) an answer that is not a private address is refused too, which is where a LAN name that resolves publicly is stopped. The name is asked as a full name (with the root's dot), so the resolver's search list never applies: in a cluster `secrets.infra` stops meaning the Service `secrets` of the namespace `secrets`. Raises `UnsafeAddress` for a name that is never dialled and for a refused or empty answer, `socket.gaierror` when the name does not resolve. |
+| `dial_vetted(host, port, plain=False, loopback=False, timeout=4.0)` | A TCP socket connected to one of those checked addresses, never to the name again: a name that answers differently a moment later cannot move the connection. The caller wraps TLS around it (`server_hostname=host`). |
 
-A name is never resolved by `url_problem`; a client that dials one calls `vetted_addresses(host, port, plain=<the scheme is http or ws>)` at the moment of the call and connects to the address it returns. The kit does not dial or follow redirects for you: refuse redirects in the client that does.
+A name is never resolved by `url_problem`; a client that dials one goes through `dial_vetted(host, port, plain=<the scheme is http or ws>)` at the moment of the call. A redirect is a new URL: check it with `url_problem` and dial it the same way, or refuse it. `loopback=True` admits loopback and `localhost` for a test server; a skill on a hub never passes it.
 
-### Older kits: the guard for `device` and `safety`
+What these rules do not see: a literal private address that happens to be the cluster's own (`10.0.0.1`). A LAN server is a private address too, so the text cannot tell them apart; the hub's egress policy is what stops that one.
 
-A kit before 0.37 has neither module, and a hub keeps the kit it loaded at boot, so a skill with a lower floor imports
-them behind a guard. The fallback for `device` is to deny everyone; the fallback for `safety` strips tags and
-addresses itself:
+### Words that are somebody else's
+
+A title, a player's name, the answer a home relayed: text a skill did not write is words, and must never become markup.
+Two habits, one for each shape:
+
+```python
+from thalovant_skillkit.safety import speakable
+
+# a VALUE that goes into one of the skill's own dialogs: clean it first
+self.speak_dialog("play.started", {"title": speakable(track["name"]), "player": speakable(player)})
+
+# a whole ANSWER somebody else wrote: say so, and the kit never promotes it to utterance_ssml
+self.speak_to(message, answer["speech"], untrusted=True)
+```
+
+`speak_to(..., untrusted=True)` cleans the text with `speakable` and sends it as `utterance` only. The one markup it may
+travel with is the pacing the kit derives from the cleaned words under the skill's own `SPEECH_STYLE`, with the words
+escaped into it; a `Speech` passed this way gives its plain words and loses its markup. Without the mark, a plain string
+that holds well-formed SSML is still moved to `utterance_ssml` (a skill's own markup, see [The plain words](#the-plain-words)):
+that is exactly what outside text must never reach, and `ssml.strip_tags` no longer hands such a string back (it reads
+entities first, removes tags to a fixed point and leaves no bracket).
+
+### Handing a sentence back: `pass_on`
+
+An intent handler cannot decline. `self.pass_on(message)` (`thalovant_skillkit.handback.hand_back`) sends the sentence
+through the pipeline again with this skill left out (`blacklisted_skills` in the session), so the other skills answer
+it; nothing is said. That the sentence was already handed back is remembered in the process (`HandBackMemory`: bounded,
+expiring after five seconds, keyed by the router's device id, the session and the sentence), never in the message: a
+context key is the client's to write, and a client that sent the old marker key got silence where another got an
+answer. The copy that comes round again (a pipeline stage that does not read the blacklist) is dropped, once; it is told
+from the same words said again by its session, which already leaves this skill out. Said again, a sentence is handed
+back again (however often; only a copy that carries the skill's own blacklist marker is ever dropped, because nothing per turn that a client cannot choose reaches the skill).
+A sentence the bus refused is not remembered. The session of the sentence that goes back names this skill in `blacklisted_skills`; that is the framework's
+mechanism and it travels with the answer, so a client that reads its own context can still see that some skill stepped
+aside.
+
+### Older kits: the guard for `device`, `safety` and `handback`
+
+A kit before 0.37 has neither `device` nor `safety`, one before 0.38 has no `link_allowed`, `device_value`, `dial_vetted`,
+`untrusted=` or `pass_on`, and a hub keeps the kit it loaded at boot, so a skill with a lower floor imports them behind
+a guard. The fallback for the gates is to deny everyone:
 
 ```python
 try:
-    from thalovant_skillkit.device import device_allowed
-except ImportError:  # a kit before 0.37, still loaded on a hub that upgraded in place
+    from thalovant_skillkit.device import device_allowed, link_allowed
+except ImportError:  # a kit before 0.38, still loaded on a hub that upgraded in place
     def device_allowed(context, allowed):
         return False  # fail closed: the skill answers nobody until the pod restarts on the new kit
+
+    def link_allowed(context, connector_id=None):
+        return False
 ```
 
-The media skills' shared library does this; a skill that serves a household's private thing should too.
+A skill that requires 0.38 (`thalovant-skillkit>=0.38.0` in its dependencies) imports them plainly.
 
 ## Shared runtime plumbing
 

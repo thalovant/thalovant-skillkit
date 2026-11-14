@@ -63,6 +63,7 @@ except ImportError:  # pragma: no cover - a workshop without OCP
 
 from . import display as display_module
 from .fallback import register_once, resolve_priority
+from .handback import hand_back
 from .locale import SkillResources
 from .message import context_of, message_lang, utterance
 from .message import location as _location
@@ -405,6 +406,12 @@ class _SkillPlumbing:
         A card for a satellite with a screen (`display.py`) rides in
         `meta["display"]`: inside a `display.showing(card)` block every
         reply carries it, and `speak_to(..., display=card)` one reply.
+
+        Words that are somebody else's (what a server or a link answered, a
+        title, a name) do not go through here as they came: clean a value
+        with `safety.speakable` before it is placed in a sentence, or say the
+        whole answer with `speak_to(message, text, untrusted=True)`, which
+        never turns it into markup.
         """
         meta = display_module.attach(meta, display_module.pending())
         text, ssml = speech_parts(utterance, getattr(self, "skill_id", None))
@@ -458,7 +465,7 @@ class _SkillPlumbing:
     def speak_to(self, message: Any, text: str, *, lang: str | None = None,
                  expect_response: bool = False, written: str | None = None,
                  meta: dict | None = None, wait: bool | int = False,
-                 display: Any = None):
+                 display: Any = None, untrusted: bool = False):
         """Say `text` to whoever sent `message`, in their language.
 
         `self.speak` finds the message it answers by walking the call stack and
@@ -468,12 +475,37 @@ class _SkillPlumbing:
         and reaches the room that asked. `text` may be an `ssml.Speech`, whose
         markup is sent beside the words. `wait` blocks as `speak(wait=...)`
         does. Returns the emitted message, or None for empty text.
+
+        `untrusted=True` is how a skill says "these are somebody else's
+        words": the answer a link relayed, a title, a name. They are cleaned
+        (`safety.speakable`: no tag, no angle bracket, no address) and are
+        NEVER promoted to `utterance_ssml`, whatever they hold; the only
+        markup sent with them is the pacing this skill's `SPEECH_STYLE`
+        derives from the cleaned words. A value placed in a dialog is cleaned
+        with `safety.speakable` instead, before it goes into the data.
         """
         meta = display_module.attach(meta, display if display is not None
                                      else display_module.pending())
         return _speak_to(self, message, text, lang=lang or self.lang_of(message),
                          expect_response=expect_response, written=written, meta=meta,
-                         wait=wait)
+                         wait=wait, untrusted=untrusted)
+
+    # -- not ours after all -----------------------------------------------------
+
+    def pass_on(self, message: Any) -> bool:
+        """Give `message`'s sentence back to the other skills, silently, once.
+
+        For an intent handler that must not answer after all: the device may
+        not use this skill, or the sentence turned out not to be its own
+        ("play a quiz" caught by a music catch-all). The sentence goes through
+        the pipeline again with this skill left out, so the others answer as
+        if it had never matched. Nothing is said. True when it was sent.
+
+        That it was already handed back is remembered in the process
+        (`handback.HandBackMemory`), never in the message: a context key is
+        the client's to write.
+        """
+        return hand_back(self, message)
 
     # -- the answer -----------------------------------------------------------
 
