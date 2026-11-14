@@ -224,10 +224,10 @@ def test_normalize_base_url(raw, expected):
         "http://nas:8096",
         "http://truenas:8095",
         "ws://ovos-messagebus-rtg-abc:8181",
-        "wss://vault:8200",
+        "wss://secrets:8200",
         "https://kubernetes",
         # cluster names, any scheme
-        "wss://vault.vault.svc:8200",
+        "wss://secrets.infra.svc:8200",
         "https://x.svc.cluster.local",
         # metadata services outside the link-local range
         "http://100.100.100.200",
@@ -456,7 +456,7 @@ def test_loopback_resolves_only_when_the_caller_says_so(monkeypatch):
     "name",
     [
         "nas",
-        "vault",
+        "secrets",
         "kubernetes",
         "ovos-messagebus",
         "kubernetes.default.svc",
@@ -474,17 +474,17 @@ def test_a_name_that_is_never_dialled_is_refused_before_it_is_resolved(monkeypat
 
 
 def test_a_name_is_resolved_as_a_full_name_so_the_search_list_never_applies(monkeypatch):
-    """Inside a cluster `vault.vault` resolves through the search list to the Service `vault` of
-    the namespace `vault`. Asked with the root's dot it is a name nobody has."""
+    """Inside a cluster `secrets.infra` resolves through the search list to the Service `secrets` of
+    the namespace `infra`. Asked with the root's dot it is a name nobody has."""
     seen = []
     monkeypatch.setattr(
         safety.socket, "getaddrinfo", lambda host, *a, **k: seen.append(host) or _infos("10.0.0.5")
     )
-    vetted_addresses("vault.vault", 8200)
+    vetted_addresses("secrets.infra", 8200)
     vetted_addresses("music.example.com.", 443)
     vetted_addresses("192.168.1.5", 80, plain=True)
     vetted_addresses("localhost", 80, loopback=True)
-    assert seen == ["vault.vault.", "music.example.com.", "192.168.1.5", "localhost"]
+    assert seen == ["secrets.infra.", "music.example.com.", "192.168.1.5", "localhost"]
 
 
 def test_vetted_addresses_resolves_the_canonical_form_and_refuses_an_unencodable_name(monkeypatch):

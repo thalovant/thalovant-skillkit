@@ -265,7 +265,7 @@ def _name_problem(host: str, *, loopback: bool = False) -> str:
     if host.endswith(_INTERNAL_SUFFIXES) or host in _INTERNAL_NAMES:
         return "a cluster or host name"
     if "." not in host:
-        # `nas`, `vault`, `ovos-messagebus`: a single label is whatever the resolver's search
+        # `nas`, `secrets`, `ovos-messagebus`: a single label is whatever the resolver's search
         # list makes of it, and inside a cluster that is a Service of the hub's own namespace.
         return "a name without a domain"
     return ""
@@ -279,7 +279,7 @@ def url_problem(url: str, *, loopback: bool = False) -> str:
       unspecified, multicast, loopback), `localhost`, and the names a cluster or a host gives only
       to itself (`kubernetes.default.svc`, `*.svc`, `*.cluster.local`, `*.internal`,
       `metadata.google.internal`);
-    * a name of a single label (`nas`, `vault`): the resolver completes it from its search list,
+    * a name of a single label (`nas`, `secrets`): the resolver completes it from its search list,
       and inside a cluster that names a Service beside the hub. Type the full name
       (`nas.lan`, `nas.local`) or the address;
     * a plain `http://` or `ws://` to anything that is not a literal private address or a LAN
@@ -293,7 +293,7 @@ def url_problem(url: str, *, loopback: bool = False) -> str:
     `dial_vetted(host, port, plain=...)` (or connects to what `vetted_addresses` returns) at the
     moment of the call: that is where a name which resolves to loopback, link-local or metadata
     is refused, where a LAN name which resolves publicly is refused for a plain scheme, and where
-    a short cluster name (`vault.vault`) stops resolving at all. A redirect is a new URL: check it
+    a short cluster name (`secrets.infra`) stops resolving at all. A redirect is a new URL: check it
     with this function and dial it the same way, or do not follow it.
 
     `loopback=True` admits loopback addresses and `localhost` (a test server); a skill on a hub
@@ -349,8 +349,8 @@ def vetted_addresses(
     not resolve. Connect to the returned address, not to the name again (`dial_vetted` does).
 
     A name is resolved as a full name (with the root's trailing dot), so the resolver's search
-    list is never applied: inside a cluster `vault.vault` no longer means the Service `vault` of
-    the namespace `vault`, it means nothing.
+    list is never applied: inside a cluster `secrets.infra` no longer means the Service `secrets` of
+    the namespace `infra`, it means nothing.
 
     Pass `plain=True` for an `http://` or `ws://` connection: the token would cross the network in
     clear, so an answer that is not a private address is refused too (a LAN name that resolves to

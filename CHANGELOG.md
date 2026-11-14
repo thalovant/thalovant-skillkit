@@ -44,8 +44,8 @@ Security fixes from the independent recheck of 2026-11-13. Two behaviours change
   most in five seconds), and a sentence the bus refused is not remembered.
 - **The URL guard refuses this machine and short names. Changed from 0.37.** `address_problem`, `url_problem` and
   `vetted_addresses` refuse loopback (on a hub, `127.0.0.1:8181` is the hub's own bus), `localhost`, the metadata
-  addresses outside the link-local range, and a name of a single label (`nas`, `vault`); `vetted_addresses` resolves a
-  name as a full name, so the resolver's search list never applies (`vault.vault` stops being a cluster Service).
+  addresses outside the link-local range, and a name of a single label (`nas`, `secrets`); `vetted_addresses` resolves a
+  name as a full name, so the resolver's search list never applies (`secrets.infra` stops being a cluster Service).
   `loopback=True` admits loopback for a test server. **New: `dial_vetted(host, port, plain=...)`** returns a socket
   connected to an address that was checked, never to the name again. A LAN server reached as `http://nas:8096` or on
   the hub's own machine must now be typed as `nas.lan`, `nas.local` or its address.
