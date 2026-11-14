@@ -1,6 +1,3 @@
-Last Edit: Claude Fable 5.2 - 2026-11-13 - Motive: 0.38.0, the fixes that follow the recheck of 2026-11-13: one cleaner, one gate, the link gate, `untrusted`, `pass_on`, the stricter URL guard.
-Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.1, pacing no longer changes the words of a script written without spaces.
-Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit: a feature matrix tested against phoonnx, SPEECH_STYLE that reads every script and quantity, and `compat`.
 # Changelog
 
 ## 0.38.0

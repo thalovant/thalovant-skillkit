@@ -1,8 +1,3 @@
-<!-- Last Edit: Claude Fable 5.2 - 2026-11-13 - Motive: 0.38.0: the one device gate and the link gate, `speakable` as the one cleaner, `untrusted=True`, `pass_on`; the Quickstart pin follows the version. -->
-<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0: `device` and `safety` listed; the Quickstart pin follows the release. -->
-<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0: the speech markup section lists the number helpers, the plain-words fallback and the guarded import. -->
-<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: The Quickstart pins 0.35.0, the release this version bump cuts. -->
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/thalovant/.github/main/profile/assets/thalovant-logo-dark.png">

@@ -1,6 +1,3 @@
-Last Edit: Claude Fable 5.2 - 2026-11-13 - Motive: 0.38.0, the fixes that follow the recheck of 2026-11-13.
-Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0, `device` and `safety`.
-Previous: Last Edit: Claude Code (Claude Sonnet 5.5) - 2026-11-10 - Motive: 0.36.0, the SSML audit.
 ## 2026-11-13 — 0.38.0 (the recheck's fixes)
 
 The version moves to 0.38.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`, the README and reference pins). Not tagged and not released: this is a pull request.

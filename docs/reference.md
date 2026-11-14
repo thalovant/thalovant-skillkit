@@ -1,6 +1,3 @@
-<!-- Last Edit: Claude Fable 5.2 - 2026-11-13 - Motive: 0.38.0: the one device gate (ids with ids), the link gate, `speakable` as the one cleaner, `untrusted=True`, `pass_on`, the stricter URL guard and `dial_vetted`. -->
-<!-- Previous: Claude Code (Claude Sonnet 5.5) - 2026-11-13 - Motive: 0.37.0 documents `device` (the router's stamp as the only identity) and `safety` (speakable, url_problem), and the guard for a kit before 0.37. -->
-
 # SkillKit reference
 
 Practical contracts for the released Python API and CLI. Start with the

@@ -1,6 +1,3 @@
-Last Edit: Claude Code (Claude Opus 5.5) - 2026-11-08 - Motive: A backend that owes the import marker takes it before any save (CodeRabbit's follow-up on #52).
-Previous:  Claude Code (Claude Opus 5.5) - 2026-11-07 - Motive: The import marker in every backend, PostgreSQL re-read after a Redis refusal, and the guide's example keeps an unsaved change (CodeRabbit findings on #52 and #54).
-
 # Per-owner records (`thalovant_skillkit.records`)
 
 A guide for skill authors: what `RecordStore` keeps and where, how an existing
