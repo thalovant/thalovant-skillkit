@@ -18,6 +18,12 @@ Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were
 - Fixed after the review (Medium, documentation): the gate example in [docs/reference.md](docs/reference.md) admitted a request when either gate passed and did not show which route it then took; read literally, a device with a household link and no line in `allowed_devices` reached the shared server. The example gates each route by itself.
 - Known limit: a loop through a stage that both ignores the blacklist and rebuilds the session without it is not ended here: nothing a client cannot choose reaches the skill to tell it from somebody repeating themselves (the message carries no per-turn id).
 
+## 2026-11-14 shared speech vectors
+
+- Fixed (Low): [safety.py](thalovant_skillkit/safety.py) `speakable` and [ssml.py](thalovant_skillkit/ssml.py) `strip_tags` capped only before NFKC; a long run of U+FDFA was looked at at eighteen times the read limit. Evidence: `test_a_long_fold_is_bounded_after_it_not_only_before_it`.
+- Fixed (Low): `http:` + U+0338 + `//x` came back unchanged, an address for a consumer that strips accents. `_skeleton` finds it and every colon and slash becomes a space. Evidence: `test_a_mark_between_the_colon_and_the_slashes_still_breaks_the_address`, and the shared vector "an address with a mark between".
+- Held: all 27 cases of the spec's `vectors/speech.json` (`test_speakable_gives_what_the_shared_vector_expects[...]`).
+
 ## 2026-11-14 final review
 
 - Fixed (Low): [ssml.py](thalovant_skillkit/ssml.py) `strip_tags` did not fold NFKC and had no read limit, so a fullwidth tag survived it and its limit differed from `speakable`'s. Evidence: `test_strip_tags_folds_like_speakable_and_reads_the_same_amount`.
