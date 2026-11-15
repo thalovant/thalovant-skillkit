@@ -167,9 +167,10 @@ def emit_speech(
     return speech
 
 
-#: The `speak` message's `meta` key that says the words are somebody else's (`speak_to(untrusted=True)`): a
-#: title, a name, an answer a link relayed. Whatever later reads the speech as text for a language model
-#: (a persona's history, a memory journal, a recall skill) should fence it as data and never as instructions.
+#: The `speak` message's `meta` key that says the words are somebody else's
+#: (`speak_to(untrusted=True)`): a title, a name, an answer a link relayed. Whatever later reads the
+#: speech as text for a language model (a persona's history, a memory journal, a recall skill)
+#: should fence it as data and never as instructions.
 UNTRUSTED_META_KEY = "thalovant_untrusted"
 
 

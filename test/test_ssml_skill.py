@@ -52,14 +52,14 @@ def _said(harness, topics=SPEECH, *, both_copies=False):
     def hear(message):
         heard.append(message)
 
-    if both_copies:        # one listener per topic: the mirror's two copies are what the caller counts
+    if both_copies:  # one listener per topic: the mirror's two copies are what the caller counts
         for topic in topics:
             harness.bus.on(topic, lambda message: heard.append(message))
         return heard
     for topic in topics:
-        # One listener object on every topic: the bus (FakeBus, like the real client) delivers a mirrored
-        # legacy/`ovos.*` message once to a listener subscribed to both names. A lambda per topic is two
-        # listeners and counted every reply twice.
+        # One listener object on every topic: the bus (FakeBus, like the real client) delivers a
+        # mirrored legacy/`ovos.*` message once to a listener subscribed to both names. A lambda per
+        # topic is two listeners and counted every reply twice.
         harness.bus.on(topic, hear)
     return heard
 
