@@ -1,3 +1,13 @@
+## 2026-11-15 - QUICK_FACTS.md added
+
+The repository had no `QUICK_FACTS.md` (workspace rule). Added a table of the package name, version, tags, entry points, dependencies, settings and where the package is vendored, each read from `pyproject.toml`, `version.py`, git tags and, for the image, `ovos-runtime-image` `runtime-wheels/wheels.manifest` at `v1.25.0`. No code changed.
+
+### Transparency report
+
+- **AI model**: Claude Sonnet 5.5 (Claude Code).
+- **Actions taken**: read the files above and wrote the new table.
+- **Oversight**: requested by the owner; documentation only; CI runs on the pull request.
+
 ## 2026-11-13 — 0.38.0 (the recheck's fixes)
 
 The version moves to 0.38.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`, the README and reference pins). Not tagged and not released: this is a pull request.

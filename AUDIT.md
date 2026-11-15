@@ -1,3 +1,7 @@
+## 2026-11-15 - Missing QUICK_FACTS.md
+
+Finding: no `QUICK_FACTS.md` existed. Fixed by adding it. Not verified: whether `docs/index.md` exists as the workspace rule requires (it was not checked or changed here). No test was run (documentation only); CI is the test of record.
+
 ## 2026-11-13 the recheck's findings (0.38.0)
 
 Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were run against 0.37.0, each was turned round into a regression test here, and the suite was run on Python 3.13 with the OVOS prerelease stack (1874 passed, 42 skipped after the review fixes; 1869 before them; the skips are the live Redis and PostgreSQL runs and the voice-file tests, which CI runs). `ruff check` as CI runs it.
