@@ -225,7 +225,7 @@ def canonical_host(host: str) -> str | None:
         host = host.encode("idna").decode("ascii")
     except UnicodeError:
         return None
-    if _NUMERIC_HOST.match(host):
+    if _NUMERIC_HOST.fullmatch(host):
         try:
             return socket.inet_ntoa(socket.inet_aton(host))
         except OSError:
