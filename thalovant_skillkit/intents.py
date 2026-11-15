@@ -185,7 +185,7 @@ def intent_lines(skill_root: Path, locale_dir: Path, lang: str, skill: str) -> l
 
 
 def valid_lang(tag: object) -> bool:
-    return isinstance(tag, str) and bool(_LANG_TAG.match(tag))
+    return isinstance(tag, str) and bool(_LANG_TAG.fullmatch(tag))
 
 
 def locale_langs(locale_dir: Path) -> list[str]:

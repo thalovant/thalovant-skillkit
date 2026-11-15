@@ -89,7 +89,7 @@ def _text(value: Any, limit: int, what: str) -> str:
 
 
 def _ident(value: str, what: str) -> str:
-    if not isinstance(value, str) or not _ID.match(value):
+    if not isinstance(value, str) or not _ID.fullmatch(value):
         raise CardError(f"{what} {value!r} is not a plain id (letters, digits, . _ : -)")
     return value
 
@@ -171,7 +171,7 @@ def layout_file(skill: Any, name: str, *, root: str | os.PathLike | None = None)
     `root` is the skill's directory; by default the directory of the module
     the skill's class is defined in (`skill.root_dir` when OVOS set it).
     """
-    if not _LAYOUT_NAME.match(name or ""):
+    if not _LAYOUT_NAME.fullmatch(name or ""):
         raise CardError(f"layout name {name!r} is not a plain name (a-z, digits, . _ -)")
     base = Path(root) if root is not None else _skill_root(skill)
     path = base.joinpath(*LAYOUT_DIR, f"{name}{LAYOUT_SUFFIX}")
@@ -458,8 +458,8 @@ def tap(data: Any) -> Tap | None:
         return None
     card = data.get("card")
     act = data.get("action")
-    if (not isinstance(card, str) or not _ID.match(card)
-            or not isinstance(act, str) or not _ID.match(act)):
+    if (not isinstance(card, str) or not _ID.fullmatch(card)
+            or not isinstance(act, str) or not _ID.fullmatch(act)):
         return None
     at = data.get("at")
     if isinstance(at, bool) or not isinstance(at, int | float):

@@ -167,6 +167,12 @@ def emit_speech(
     return speech
 
 
+#: The `speak` message's `meta` key that says the words are somebody else's (`speak_to(untrusted=True)`): a
+#: title, a name, an answer a link relayed. Whatever later reads the speech as text for a language model
+#: (a persona's history, a memory journal, a recall skill) should fence it as data and never as instructions.
+UNTRUSTED_META_KEY = "thalovant_untrusted"
+
+
 def speak_to(
     skill: Any,
     message: Any,
@@ -195,7 +201,10 @@ def speak_to(
     relayed, a title, a name): they are cleaned with `safety.speakable` and
     are never promoted to `utterance_ssml`, whatever they hold. The only
     markup sent with them is the pacing the kit derives from the cleaned
-    words under the skill's own `SPEECH_STYLE` (`ssml.outside_parts`).
+    words under the skill's own `SPEECH_STYLE` (`ssml.outside_parts`). The
+    message's `meta` also carries `thalovant_untrusted: true`
+    (`UNTRUSTED_META_KEY`), so a consumer that feeds speech to a language
+    model can fence it as data.
 
     Empty text emits nothing and returns None. A skill with no bus cannot
     speak; that raises rather than losing the reply quietly, because the only
@@ -211,6 +220,8 @@ def speak_to(
     # cost a message, and the reason should be the first thing reported.
     if bus_of(skill) is None:
         raise RuntimeError("speak_to needs a bus: this skill is not bound to one")
+    if untrusted:
+        meta = {**(meta or {}), UNTRUSTED_META_KEY: True}
     return emit_speech(skill, message, text, lang=lang,
                        expect_response=expect_response, written=written, meta=meta,
                        wait=wait, ssml=ssml)

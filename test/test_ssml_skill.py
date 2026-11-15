@@ -46,12 +46,21 @@ def _live(skill_type, *, emit_legacy=False):
                          bus_options={"emit_legacy": emit_legacy})
 
 
-def _said(harness, topics=SPEECH):
+def _said(harness, topics=SPEECH, *, both_copies=False):
     heard = []
+
+    def hear(message):
+        heard.append(message)
+
+    if both_copies:        # one listener per topic: the mirror's two copies are what the caller counts
+        for topic in topics:
+            harness.bus.on(topic, lambda message: heard.append(message))
+        return heard
     for topic in topics:
-        # One listener per topic: the bus delivers a mirrored message once to
-        # a listener subscribed to both names, and both copies are the point.
-        harness.bus.on(topic, lambda message: heard.append(message))
+        # One listener object on every topic: the bus (FakeBus, like the real client) delivers a mirrored
+        # legacy/`ovos.*` message once to a listener subscribed to both names. A lambda per topic is two
+        # listeners and counted every reply twice.
+        harness.bus.on(topic, hear)
     return heard
 
 
@@ -169,7 +178,7 @@ def test_the_legacy_mirror_carries_the_markup_too(punchline):
     with _live(punchline, emit_legacy=True) as harness:
         if getattr(harness.bus, "_translator", None) is None:
             pytest.skip("this ovos-utils FakeBus does not mirror the two namespaces")
-        heard = _said(harness)
+        heard = _said(harness, both_copies=True)
         _turn(harness, lambda message: harness.skill.tell_code("A1"))
 
     assert sorted(m.msg_type for m in heard) == ["ovos.utterance.speak", "speak"]

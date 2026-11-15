@@ -4,6 +4,8 @@
 
 End-to-end run of 2026-11-14 (the same pull request):
 
+- `speak_to(untrusted=True)` puts `thalovant_untrusted: true` in the `speak` message's `meta` (`speech.UNTRUSTED_META_KEY`), so a persona's history or a memory journal can fence somebody else's words as data.
+
 - `speakable` reads at most **2400** characters (it read 8192; the contract and the connector spec read 2400). An ellipsis stays inside `limit` and a lone angle bracket becomes a space, as before.
 - The text of a removed tag that is an attribute list is dropped with the tag (`<audio src="https://x/y.mp3"/` with no closing bracket used to be spoken as "audio src http x y.mp3").
 

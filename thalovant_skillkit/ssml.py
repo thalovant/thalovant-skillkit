@@ -385,13 +385,13 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
         rate, volume = given("rate"), given("volume")
         if not ({"rate", "volume", "pitch"} & attributes.keys()):
             problems.append("<prosody> needs rate, pitch or volume, or it changes nothing")
-        if rate is not None and rate not in RATES and not _PERCENT.match(rate):
+        if rate is not None and rate not in RATES and not _PERCENT.fullmatch(rate):
             problems.append(f'<prosody rate="{rate}"> is not a named rate or a percentage')
-        if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
+        if volume is not None and volume not in VOLUMES and not _DECIBELS.fullmatch(volume):
             problems.append(f'<prosody volume="{volume}"> is not a named volume or dB change')
         pitch = given("pitch")
-        if pitch is not None and pitch not in PITCHES and not _PERCENT.match(pitch) \
-                and not _SEMITONES.match(pitch):
+        if pitch is not None and pitch not in PITCHES and not _PERCENT.fullmatch(pitch) \
+                and not _SEMITONES.fullmatch(pitch):
             problems.append(f'<prosody pitch="{pitch}"> is not a named pitch, a percentage or '
                             "semitones such as \"+2st\" (Hz is not rendered)")
     elif tag == "emphasis":
@@ -404,7 +404,7 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
             problems.append(f'<{tag}> needs xml:lang, as in <{tag} xml:lang="fr-FR">')
         else:
             code = given("xml:lang")
-            if code is not None and not _LANG_TAG.match(code):
+            if code is not None and not _LANG_TAG.fullmatch(code):
                 problems.append(f'<{tag} xml:lang="{code}"> is not a language tag')
     elif tag == "say-as":
         kind = attributes.get("interpret-as")
@@ -420,7 +420,7 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
                 and kind not in ("date", "time"):
             problems.append(f'<say-as interpret-as="{kind}"> takes no format; '
                             "format is for date and time")
-        if fmt is not None and kind == "date" and not _DATE_FORMAT.match(fmt.lower()):
+        if fmt is not None and kind == "date" and not _DATE_FORMAT.fullmatch(fmt.lower()):
             problems.append(f'<say-as format="{fmt}"> is not a date order such as "mdy" or "dmy"')
         if fmt is not None and kind == "time" and fmt.lower() not in _TIME_FORMATS:
             problems.append(f'<say-as format="{fmt}"> is not "hms12" or "hms24"')
@@ -456,7 +456,7 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
                             + ", ".join(sorted(EFFECT_NAMES)))
         if phonation is not None and phonation not in PHONATIONS:
             problems.append(f'<amazon:effect phonation="{phonation}"> must be "soft"')
-        if tract is not None and not _PERCENT.match(tract):
+        if tract is not None and not _PERCENT.fullmatch(tract):
             problems.append(f'<amazon:effect vocal-tract-length="{tract}"> must be a percentage '
                             'such as "+10%"')
     elif tag == "amazon:auto-breaths":
@@ -467,7 +467,7 @@ def _value_problems(tag: str, element: ET.Element, attributes: dict[str, str]) -
         if duration is not None and duration not in BREATH_DURATIONS:
             problems.append(f'<amazon:auto-breaths duration="{duration}"> is not one of '
                             + ", ".join(sorted(BREATH_DURATIONS)))
-        if volume is not None and volume not in VOLUMES and not _DECIBELS.match(volume):
+        if volume is not None and volume not in VOLUMES and not _DECIBELS.fullmatch(volume):
             problems.append(f'<amazon:auto-breaths volume="{volume}"> is not a named volume '
                             "or dB change")
     elif tag == "amazon:breath":
@@ -637,7 +637,7 @@ def telephone(text: Any) -> Speech:
 def foreign(text: Any, lang: str) -> Speech:
     """Say `text` in another language's voice: `foreign("croissant", "fr-FR")`."""
     code = str(lang or "").strip()
-    if not _LANG_TAG.match(code):
+    if not _LANG_TAG.fullmatch(code):
         raise ValueError(f"{lang!r} is not a language tag such as 'fr-FR'")
     plain, fragment = _part(text)
     return Speech(plain, f'<lang xml:lang="{escape(code)}">{fragment}</lang>')

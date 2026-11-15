@@ -8,6 +8,16 @@ The repository had no `QUICK_FACTS.md` (workspace rule). Added a table of the pa
 - **Actions taken**: read the files above and wrote the new table.
 - **Oversight**: requested by the owner; documentation only; CI runs on the pull request.
 
+## 2026-11-15 - Untrusted marker, display and SSML test fixes (`fix/untrusted-meta-display-test`)
+
+`thalovant_skillkit/speech.py` (`UNTRUSTED_META_KEY`, `speak_to`), `test/test_speech.py`, `test/test_display.py` (`_said`), `test/test_ssml_skill.py` (`_said`), `AUDIT.md`, `CHANGELOG.md`. Verification: `pytest` 1808 passed, 29 skipped; before the change 14 failed (2 in `test_display.py`, 12 in `test_ssml_skill.py`).
+
+### Transparency Report
+
+- **AI Model**: Claude Sonnet 5.5 (`claude-sonnet-5-5`) in Claude Code.
+- **Actions Taken**: Printed the doubled messages to find the cause (two handlers on a mirrored topic), changed the two helpers, added the meta key and its test.
+- **Oversight**: Directed by the owner's lead agent. No human has reviewed these commits. The consuming side of the marker was not seen (outside the checkouts).
+
 ## 2026-11-13 — 0.38.0 (the recheck's fixes)
 
 The version moves to 0.38.0 (`pyproject.toml`, `thalovant_skillkit/version.py`, the kit's own entry in `uv.lock`, the README and reference pins). Not tagged and not released: this is a pull request.

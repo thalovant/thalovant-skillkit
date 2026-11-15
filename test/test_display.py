@@ -45,9 +45,16 @@ def _live(skill_type):
 
 
 def _said(harness):
+    """Every speak, once. One handler object on both spellings of the topic: the bus (ovos-utils FakeBus, as the
+    real client) delivers the mirrored legacy/`ovos.*` pair to a single handler once, but to two different lambdas
+    twice, which counted every reply double."""
     heard = []
+
+    def hear(message):
+        heard.append(message)
+
     for topic in SPEECH:
-        harness.bus.on(topic, lambda message: heard.append(message))
+        harness.bus.on(topic, hear)
     return heard
 
 
