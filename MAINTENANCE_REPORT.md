@@ -1,3 +1,15 @@
+## 2026-11-18 — 0.38.1 handback entry-topic repair
+
+`handback._utterance_topic()` selects the entry topic of the loaded intent core. A modern core receives `ovos.utterance.handle`; an older core keeps `recognizer_loop:utterance`. A standalone skill process uses its workshop's protocol generation. The handback still emits once, retains request correlation and leaves only the declining skill out of the copied session.
+
+Evidence: the added strict-core regression failed before the change because no replay reached its listener (22 existing tests passed). After the change, `test/test_handback.py`, `test/test_speech.py`, `test/test_skill_base.py` and `test/test_device.py`: **145 passed including packaging**, Python 3.12. The full local suite passed **1785 tests, 5 skipped** (optional integrations); `ruff check thalovant_skillkit test scripts` and `git diff --check` passed. A live, request-correlated Daily Desk trace showed Music Assistant replaying the CBC query on the legacy topic without a new core round. Replaying that same query and its per-turn exclusion on the canonical entry topic started the News handler and returned the correct CBC stream. The SDK waited its five-second empty-reply grace correctly. No permanent runtime deployment has been made yet; that final verification remains required.
+
+### Transparency Report
+
+- **AI Model**: Codex (GPT-6 family; exact deployment identifier unavailable in the session).
+- **Actions Taken**: inspected CBC request traces and the pinned runtime source, wrote the compatibility fix and regression tests, ran the focused checks, and updated these records.
+- **Oversight**: requested by the owner through the lead agent; independent agent review found no blocking issue; no human code review. The release is scoped to the deployed baseline, with only the handback repair.
+
 ## 2026-11-15 - QUICK_FACTS.md added
 
 The repository had no `QUICK_FACTS.md` (workspace rule). Added a table of the package name, version, tags, entry points, dependencies, settings and where the package is vendored, each read from `pyproject.toml`, `version.py`, git tags and, for the image, `ovos-runtime-image` `runtime-wheels/wheels.manifest` at `v1.25.0`. No code changed.
