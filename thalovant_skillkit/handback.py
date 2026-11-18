@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 import threading
 from collections import OrderedDict, deque
 from time import monotonic
@@ -50,7 +51,7 @@ from typing import Any
 
 from .device import device_identity
 from .message import context_of, message_lang, utterance
-from .speech import bus_of, speech_topic
+from .speech import bus_of
 from .text import fold
 
 __all__ = ["UTTERANCE_TOPIC", "HandBackMemory", "hand_back"]
@@ -71,21 +72,15 @@ def _utterance_topic() -> str:
 
     The constructor's own globals describe the core actually imported by
     this process, including a core whose module was loaded before an
-    upgrade. A standalone skill process without core uses its workshop's
-    protocol generation, as speech_topic already determines for replies.
+    upgrade. Without a loaded core, keep the established legacy contract:
+    a standalone workshop cannot tell which protocol its remote core uses.
+    Do not import a merely installed core or emit both topics (two turns).
     """
-    try:
-        from ovos_core.intent_services import IntentService
-    except Exception:  # a standalone skill need not install the core
-        modern = speech_topic() != "speak"
-        if not modern:
-            return UTTERANCE_TOPIC
-        from ovos_spec_tools.messages import SpecMessage
-        topic = SpecMessage.UTTERANCE
-    else:
-        scope = getattr(IntentService.__init__, "__globals__", {})
-        spec = scope.get("SpecMessage")
-        topic = getattr(spec, "UTTERANCE", UTTERANCE_TOPIC)
+    core = sys.modules.get("ovos_core.intent_services")
+    constructor = getattr(getattr(core, "IntentService", None), "__init__", None)
+    scope = getattr(constructor, "__globals__", {})
+    spec = scope.get("SpecMessage")
+    topic = getattr(spec, "UTTERANCE", UTTERANCE_TOPIC)
     return str(getattr(topic, "value", topic))
 
 
