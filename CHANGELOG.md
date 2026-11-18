@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.38.2
+
+- Restore request routing when a matched skill declines an intent. The next skill’s response now targets the original caller instead of the runtime. Standard `Message.reply` routing handles string/list destinations; the explicit copied session preserves the new per-turn blacklist. Request IDs, peer identity, access checks and loop protection are unchanged.
+
 ## 0.38.1
 
 - Hand declined intents back on the entry topic used by the loaded core. Spec-based cores receive `ovos.utterance.handle`; legacy cores retain `recognizer_loop:utterance`. Request correlation, per-turn exclusions, access checks and loop protection are unchanged. This repairs requests such as CBC news that a generic music intent declines.
