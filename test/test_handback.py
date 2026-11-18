@@ -112,19 +112,26 @@ def test_an_old_core_still_gets_its_legacy_entry_topic(monkeypatch):
     assert skill._bus.emitted[0].msg_type == "recognizer_loop:utterance"
 
 
-@pytest.mark.parametrize("reply_topic,entry_topic", [
-    ("speak", "recognizer_loop:utterance"),
-    ("ovos.utterance.speak", "ovos.utterance.handle"),
-])
-def test_standalone_skills_follow_their_workshops_protocol(monkeypatch, reply_topic, entry_topic):
-    """A separate skill process need not import/install core to hand a query back."""
+@pytest.mark.parametrize("reply_topic", ["speak", "ovos.utterance.speak"])
+def test_standalone_skills_keep_the_legacy_contract(monkeypatch, reply_topic):
+    """A modern standalone workshop must still reach its legacy-only receiver."""
     import sys
+    from types import SimpleNamespace
+
+    from thalovant_skillkit import speech
 
     monkeypatch.setitem(sys.modules, "ovos_core.intent_services", None)
-    monkeypatch.setattr(handback, "speech_topic", lambda: reply_topic)
-    skill = _Skill()
+    monkeypatch.setattr(speech, "speech_topic", lambda: reply_topic)
+    delivered = []
+
+    class LegacyBus:
+        def emit(self, msg):
+            if msg.msg_type == "recognizer_loop:utterance":
+                delivered.append(msg)
+
+    skill = SimpleNamespace(skill_id=SKILL_ID, lang="en-US", _bus=LegacyBus())
     assert hand_back(skill, said())
-    assert skill._bus.emitted[0].msg_type == entry_topic
+    assert len(delivered) == 1
 
 
 @pytest.mark.parametrize(

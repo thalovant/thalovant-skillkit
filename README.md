@@ -13,7 +13,7 @@ locale, conversation, and packaging helpers. SkillKit provides base classes, a
 project scaffold, and checks for skill resources and built packages. OVOS owns intent routing, speech,
 sessions, and scheduling.
 
-A skill can hand a request back with `pass_on(message)`. The replay follows the loaded core's entry topic, so it also works when a modern bus disables legacy translation. See [the handback notes](FAQ.md).
+A skill can hand a request back with `pass_on(message)`. When a core is loaded in the same process, the replay uses that core's entry topic. Standalone skills keep the established legacy topic; a remote spec-only core must translate that legacy topic. See [the handback notes](FAQ.md).
 
 ## Quickstart
 
