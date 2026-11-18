@@ -20,8 +20,9 @@ handed a sentence back by writing a key of its own into the message context
 itself got silence where another client got an answer, which told it in one message that the skill
 is installed. So the memory is kept HERE, in the process: a small, bounded, expiring set keyed by
 the speaking device (as the hub's router names it), the session and the sentence. Nothing a client
-can send is trusted, and nothing but the session's own `blacklisted_skills` (the framework's way to
-leave a skill out of one turn) is written into the message that goes back.
+can send is trusted. The session's own `blacklisted_skills` (the framework's way to leave a skill
+out of one turn) is the only policy change. Normal reply routing is reversed to make a new
+request envelope, so the eventual answer still goes to the original caller.
 
 The memory is what stops a loop: should the sentence come back to the same skill anyway (a pipeline
 stage that does not read the blacklist), the second request to hand it back is dropped and the
@@ -250,7 +251,15 @@ def hand_back(skill: Any, message: Any, memory: HandBackMemory | None = None) ->
         from ovos_bus_client.message import Message
 
         lang = message_lang(message, getattr(skill, "lang", None) or "en-US")
-        bus.emit(Message(_utterance_topic(), {"utterances": [text], "lang": lang}, context))
+        topic = _utterance_topic()
+        # The intent dispatch is already a reply envelope (core -> caller).
+        # Restore request routing before the next core dispatch swaps it again,
+        # otherwise the eventual speech is addressed to the core, not the caller.
+        # Explicit session keeps our exclusion when reply() stamps live sessions.
+        replay = Message(topic, {}, context).reply(
+            topic, {"utterances": [text], "lang": lang}, context={"session": session}
+        )
+        bus.emit(replay)
         LOG.info("handed a sentence back to the other skills")
         return True
     except Exception:  # noqa: BLE001 - silence is the safe failure

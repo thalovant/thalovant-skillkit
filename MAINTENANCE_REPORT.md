@@ -1,3 +1,15 @@
+## 2026-11-18 — 0.38.2 continuation reply routing
+
+Raw, request-correlated Daily Desk capture showed the canonical continuation reaching News, but its speech targeted the runtime. An intent dispatch is already a reply envelope; copying its routing through a new request caused the next dispatch to swap it back toward the runtime. `hand_back` now uses standard `Message.reply` semantics to restore request direction, passing the modified session explicitly so its blacklist cannot be overwritten by live-session stamping. Peer identity and request correlation remain unchanged. No listener, ACL, global blacklist or pipeline-priority change is made.
+
+The independent request → music intent → handback → news intent → speech regression failed before the correction for string/list destinations and multiple decliners; it passes with the correction. It also verifies immutable inputs, existing exclusions, session extensions and unaddressed local messages. Full validation and scoped runtime rollout are recorded with this release.
+
+### Transparency Report
+
+- **AI Model**: Codex (GPT-6 family; exact deployment identifier unavailable).
+- **Actions Taken**: traced only controlled requests on the live runtime and client, corrected reply routing, added end-to-end envelope regression coverage and updated release records.
+- **Oversight**: owner-authorized repair; independent agent review and baseline failure reproduction, no human code review. Deployment remains scoped to Daily Desk.
+
 ## 2026-11-18 — 0.38.1 handback entry-topic repair
 
 `handback._utterance_topic()` selects the entry topic of the loaded intent core. A modern core receives `ovos.utterance.handle`; an older core keeps `recognizer_loop:utterance`. A standalone skill process keeps the established legacy topic because its remote core is unknown. The handback still emits once, retains request correlation and leaves only the declining skill out of the copied session.
