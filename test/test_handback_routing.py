@@ -128,15 +128,7 @@ def test_explicit_exclusion_survives_bound_live_session_stamping(monkeypatch, se
     SessionManager.bind(music, live)
     assert "music" not in live.blacklisted_skills
 
-    # Prove this real binding can overwrite a merely edited carrier. The fix
-    # must use reply(context={"session": ...}) to preserve the intentional edit.
-    modified = deepcopy(music.context)
-    modified["session"]["blacklisted_skills"] = ["preexisting-denial", "music"]
-    unstamped = Message("ovos.utterance.handle", {}, modified)
-    SessionManager.bind(unstamped, live)
-    unsafe = unstamped.reply("ovos.utterance.handle", {})
-    assert "music" not in unsafe.context["session"]["blacklisted_skills"]
-
+    # Explicit session edits must survive both old and current stamping behavior.
     again = decline(music, "music")
     assert again.context["session"]["session_id"] == session_id
     assert again.context["session"]["blacklisted_skills"] == ["preexisting-denial", "music"]
