@@ -1,3 +1,7 @@
+## 2026-11-18 — Handback entry-topic compatibility
+
+Fixed in 0.38.1: `handback.hand_back` always emitted the legacy entry topic. A core listening only on `SpecMessage.UTTERANCE` receives no replay when bus legacy translation is disabled. `handback._utterance_topic` now follows the loaded core, retaining legacy-core compatibility. The strict-core delivery regression fails against the old code and passes after this change; 145 handback, speech, base-class, device and packaging tests pass. Source: [handback.py](thalovant_skillkit/handback.py); evidence: [test_handback.py](test/test_handback.py). Live Daily Desk A/B traces confirm legacy handback produced no new intent round while canonical handback selected News and emitted the CBC stream. The deployed final package still requires verification; the precise reason legacy translation did not deliver that replay is not asserted.
+
 ## 2026-11-15 - Missing QUICK_FACTS.md
 
 Finding: no `QUICK_FACTS.md` existed. Fixed by adding it. Not verified: whether `docs/index.md` exists as the workspace rule requires (it was not checked or changed here). No test was run (documentation only); CI is the test of record.

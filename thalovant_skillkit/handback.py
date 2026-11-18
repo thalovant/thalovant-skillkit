@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import sys
 import threading
 from collections import OrderedDict, deque
 from time import monotonic
@@ -57,8 +58,30 @@ __all__ = ["UTTERANCE_TOPIC", "HandBackMemory", "hand_back"]
 
 LOG = logging.getLogger(__name__)
 
-#: Where a sentence enters the pipeline.
+#: The legacy entry topic, retained for callers that import this constant.
 UTTERANCE_TOPIC = "recognizer_loop:utterance"
+
+
+def _utterance_topic() -> str:
+    """Use the entry topic of the loaded core, without starting a core.
+
+    A spec-based core listens on ``SpecMessage.UTTERANCE``. Replaying on the legacy
+    topic works only when the bus happens to translate it, and silently
+    loses the query on a spec-only bus. Older cores still listen on the
+    legacy topic even if a new spec-tools package is installed beside them.
+
+    The constructor's own globals describe the core actually imported by
+    this process, including a core whose module was loaded before an
+    upgrade. Without a loaded core, keep the established legacy contract:
+    a standalone workshop cannot tell which protocol its remote core uses.
+    Do not import a merely installed core or emit both topics (two turns).
+    """
+    core = sys.modules.get("ovos_core.intent_services")
+    constructor = getattr(getattr(core, "IntentService", None), "__init__", None)
+    scope = getattr(constructor, "__globals__", {})
+    spec = scope.get("SpecMessage")
+    topic = getattr(spec, "UTTERANCE", UTTERANCE_TOPIC)
+    return str(getattr(topic, "value", topic))
 
 
 class HandBackMemory:
@@ -227,7 +250,7 @@ def hand_back(skill: Any, message: Any, memory: HandBackMemory | None = None) ->
         from ovos_bus_client.message import Message
 
         lang = message_lang(message, getattr(skill, "lang", None) or "en-US")
-        bus.emit(Message(UTTERANCE_TOPIC, {"utterances": [text], "lang": lang}, context))
+        bus.emit(Message(_utterance_topic(), {"utterances": [text], "lang": lang}, context))
         LOG.info("handed a sentence back to the other skills")
         return True
     except Exception:  # noqa: BLE001 - silence is the safe failure
