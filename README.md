@@ -13,6 +13,8 @@ locale, conversation, and packaging helpers. SkillKit provides base classes, a
 project scaffold, and checks for skill resources and built packages. OVOS owns intent routing, speech,
 sessions, and scheduling.
 
+A skill can hand a request back with `pass_on(message)`. The replay follows the loaded core's entry topic, so it also works when a modern bus disables legacy translation. See [the handback notes](FAQ.md).
+
 ## Quickstart
 
 You need Python **3.11 or newer** with `venv` and `pip`, a terminal, and access to
@@ -25,7 +27,7 @@ already exist:
 ```bash
 python3 -m venv .venv
 . .venv/bin/activate
-python -m pip install --pre "thalovant-skillkit==0.38.0"
+python -m pip install --pre "thalovant-skillkit==0.38.1"
 thalovant-skillkit new garden-watering
 cd thalovant-skill-garden-watering
 python -m pip install --pre -e ".[test]" build
@@ -33,7 +35,7 @@ thalovant-skillkit check
 python -m pytest -q
 ```
 
-This example pins SkillKit 0.38.0. `--pre` allows the current OVOS prerelease
+This example pins SkillKit 0.38.1. `--pre` allows the current OVOS prerelease
 stack; see the [reference](docs/reference.md#tested-ovos-environments) for legacy
 Workshop 8 compatibility.
 

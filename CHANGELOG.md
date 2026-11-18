@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.38.1
+
+- Hand declined intents back on the entry topic used by the loaded core. Spec-based cores receive `ovos.utterance.handle`; legacy cores retain `recognizer_loop:utterance`. Request correlation, per-turn exclusions, access checks and loop protection are unchanged. This repairs requests such as CBC news that a generic music intent declines.
+
 ## 0.38.0
 
 End-to-end run of 2026-11-14 (the same pull request):

@@ -1,3 +1,8 @@
+## 2026-11-18 — Handback entry-topic compatibility
+
+Fixed in 0.38.1: `handback.hand_back` always emitted the legacy entry topic. A core listening only on `SpecMessage.UTTERANCE` receives no replay when bus legacy translation is disabled. `handback._utterance_topic` now follows the loaded core, retaining legacy-core compatibility. The strict-core delivery regression fails against the old code and passes after this change; 145 handback, speech, base-class, device and packaging tests pass. Source: [handback.py](thalovant_skillkit/handback.py); evidence: [test_handback.py](test/test_handback.py). Live Daily Desk A/B traces confirm legacy handback produced no new intent round while canonical handback selected News and emitted the CBC stream. The deployed final package still requires verification; the precise reason legacy translation did not deliver that replay is not asserted.
+
+
 ## 2026-11-13 the recheck's findings (0.38.0)
 
 Method: the proof-of-concept tests of the independent recheck of 2026-11-13 were run against 0.37.0, each was turned round into a regression test here, and the suite was run on Python 3.13 with the OVOS prerelease stack (1874 passed, 42 skipped after the review fixes; 1869 before them; the skips are the live Redis and PostgreSQL runs and the voice-file tests, which CI runs). `ruff check` as CI runs it.

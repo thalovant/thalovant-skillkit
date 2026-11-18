@@ -42,7 +42,7 @@ def test_the_sentence_goes_back_without_this_skill_and_nothing_else_is_written()
     assert hand_back(skill, incoming) is True
 
     (again,) = skill._bus.emitted
-    assert again.msg_type == UTTERANCE_TOPIC
+    assert again.msg_type in {UTTERANCE_TOPIC, "ovos.utterance.handle"}
     assert again.data == {"utterances": ["play a quiz"], "lang": "en-US"}
     assert again.context["session"]["blacklisted_skills"] == [SKILL_ID]
     assert again.context["session"]["session_id"] == "sess-1"
@@ -52,6 +52,79 @@ def test_the_sentence_goes_back_without_this_skill_and_nothing_else_is_written()
     assert not [key for key in again.context if "passed" in key or "handback" in key.lower()]
     # the message that was handed over is not changed either
     assert incoming.context == before and "blacklisted_skills" not in incoming.context["session"]
+
+
+def test_handback_reaches_a_spec_only_core_and_keeps_reply_correlation(monkeypatch):
+    """A modern core listens on the spec topic, with legacy translation off.
+
+    Music can take a broad `play {query}` intent before News, then decline
+    the request. The handed-back sentence must actually reach the other
+    skill, rather than silently being emitted on an unconsumed topic.
+    """
+    import sys
+    from types import ModuleType, SimpleNamespace
+
+    from ovos_spec_tools.messages import SpecMessage
+
+    namespace = {"SpecMessage": SpecMessage}
+    exec(
+        "def start(self, bus):\n    bus.on(SpecMessage.UTTERANCE, self.handle_utterance)",
+        namespace,
+    )
+    core = ModuleType("ovos_core.intent_services")
+    core.IntentService = type("IntentService", (), {"__init__": namespace["start"]})
+    monkeypatch.setitem(sys.modules, "ovos_core.intent_services", core)
+
+    delivered = []
+
+    class CoreBus:
+        def emit(self, msg):
+            if msg.msg_type == SpecMessage.UTTERANCE:
+                delivered.append(msg)
+
+    skill = SimpleNamespace(skill_id=SKILL_ID, lang="en-US", _bus=CoreBus())
+    incoming = said(
+        "Play CBC Montreal news", request_id="cbc-request", thalovant_request_id="cbc-request"
+    )
+    assert hand_back(skill, incoming)
+    assert len(delivered) == 1, "the strict core never received the handed-back query"
+    assert delivered[0].context["request_id"] == "cbc-request"
+    assert delivered[0].context["thalovant_request_id"] == "cbc-request"
+    assert delivered[0].context["session"]["blacklisted_skills"] == [SKILL_ID]
+    assert "blacklisted_skills" not in incoming.context["session"]
+
+
+def test_an_old_core_still_gets_its_legacy_entry_topic(monkeypatch):
+    """Installing spec-tools alongside an old core does not migrate its listener."""
+    import sys
+    from types import ModuleType
+
+    namespace = {}
+    exec(
+        "def start(self, bus):\n    bus.on('recognizer_loop:utterance', self.handle_utterance)",
+        namespace,
+    )
+    core = ModuleType("ovos_core.intent_services")
+    core.IntentService = type("IntentService", (), {"__init__": namespace["start"]})
+    monkeypatch.setitem(sys.modules, "ovos_core.intent_services", core)
+    skill = _Skill()
+    assert hand_back(skill, said())
+    assert skill._bus.emitted[0].msg_type == "recognizer_loop:utterance"
+
+
+@pytest.mark.parametrize("reply_topic,entry_topic", [
+    ("speak", "recognizer_loop:utterance"),
+    ("ovos.utterance.speak", "ovos.utterance.handle"),
+])
+def test_standalone_skills_follow_their_workshops_protocol(monkeypatch, reply_topic, entry_topic):
+    """A separate skill process need not import/install core to hand a query back."""
+    import sys
+
+    monkeypatch.setitem(sys.modules, "ovos_core.intent_services", None)
+    monkeypatch.setattr(handback, "speech_topic", lambda: reply_topic)
+    skill = _Skill()
+    assert hand_back(skill, said())
+    assert skill._bus.emitted[0].msg_type == entry_topic
 
 
 @pytest.mark.parametrize(
