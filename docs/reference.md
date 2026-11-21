@@ -714,7 +714,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.38.2"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.39.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -1271,6 +1271,11 @@ inspect a person's records and the limits are in [records.md](records.md).
 Under a Redis user limited to some keys, set `key_prefix` (or `THALOVANT_RECORDS_KEY_PREFIX`)
 so every key is `<prefix>:records:v1:...`; a refusal is logged once with the ACL it needs. See
 [records.md](records.md#operators-running-under-a-per-hub-redis-user).
+
+On a tenant's runtime, which has no Redis login, the platform sets `THALOVANT_RECORDS_API_URL`
+and the store keeps its records through thalovant-api with the runtime's token from its netrc,
+when nothing else is configured (0.39.0; see
+[records.md](records.md#tenant-runtimes-the-records-api)).
 
 ### Cache and selection choices
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.39.0
+
+- **New: `RecordStore` keeps its records through thalovant-api on a tenant's runtime** (`records.ApiBackend`). A tenant's runtime runs code the tenant chose, so the platform gives it no login to the hub Redis every hub shares; it renders `THALOVANT_RECORDS_API_URL` instead, and the store sends its records to `GET`/`POST <url>/<scope>/<key>` with the runtime's own token, read from its netrc (`$NETRC`, else `~/.netrc`) for that URL's host. Used only when the settings and the environment name no Redis and no PostgreSQL: Redis, then PostgreSQL, then the API, then the skill's settings. Same interface and semantics (`enabled`, `load_owner`, `load_all`, `save_changes`, `owners`): a read that fails answers None so the skill keeps its settings, a save that fails raises `RecordStoreError`.
+- The API decides who may touch what, from the token alone: the runtime's own workspace, a Skill Studio skill attached to its own skill set, the connections its hubs serve, and everyone's bucket. A record of anyone else is never returned and a change for them is skipped. Only Skill Studio stores (scope `studio`) are offered today; any other store is refused once, logged once, and stays in its settings.
+- Short timeouts (0.5 s to connect, 2 s to answer). After the API did not answer or answered 5xx, calls fail at once for 30 s rather than make every turn wait; after a refusal (401, 403, 404, a redirect) the store is asked again after 300 s, and a 429 waits for its `Retry-After`. A refused change (409 quota, 413, 422) is that change's alone: the next save is sent. A save goes in parts of at most 100 changes and 512 KiB of records.
+- The token goes only into the `Authorization` header; redirects are never followed; neither the token nor a record is ever logged (only the HTTP status and the API's refusal code). A URL that is not http(s), names no host, or carries credentials, a query or a fragment is not used.
+- The API keeps no import marker, so `migrate_legacy` imports nothing through it: it is only used where no other database is, so there is no older document to import.
+
 ## 0.38.2
 
 - Restore request routing when a matched skill declines an intent. The next skill’s response now targets the original caller instead of the runtime. Standard `Message.reply` routing handles string/list destinations; the explicit copied session preserves the new per-turn blacklist. Request IDs, peer identity, access checks and loop protection are unchanged.

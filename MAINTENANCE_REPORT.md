@@ -1,3 +1,13 @@
+## 2026-11-21 — 0.39.0 records through thalovant-api
+
+`RecordStore` gains `ApiBackend`, the store of a tenant's runtime, which never gets a login to the shared hub Redis (a tenant's code could fill a `noeviction` Redis every hub writes to). It is chosen only when no Redis and no PostgreSQL are configured and the platform set `THALOVANT_RECORDS_API_URL`; the token is the runtime group's skill-index token from its netrc, sent only as a Bearer header, never followed through a redirect, never logged. thalovant-api decides the workspace, the skill (a Skill Studio skill attached to the runtime's own skill set) and the owners (the connections its hubs serve). Reads that fail answer None, so a skill keeps its settings; failures and refusals pause the calls so a dead API does not cost every turn its timeout. The whole record suite runs on the new backend against a stand-in of the API, beside 22 tests of its own (selection, token handling, pauses, refusals, batching). Not released or tagged here.
+
+### Transparency Report
+
+- **AI Model**: Claude Opus 5.5 (Claude Code).
+- **Actions Taken**: wrote the backend, its tests and the documentation in a worktree; ran the kit's suite and Ruff.
+- **Oversight**: owner-decided design (records through an API endpoint with per-workspace limits, no Redis login in workspace code); an independent adversarial review is planned before merge.
+
 ## 2026-11-18 — 0.38.2 continuation reply routing
 
 Raw, request-correlated Daily Desk capture showed the canonical continuation reaching News, but its speech targeted the runtime. An intent dispatch is already a reply envelope; copying its routing through a new request caused the next dispatch to swap it back toward the runtime. `hand_back` now uses standard `Message.reply` semantics to restore request direction, passing the modified session explicitly so its blacklist cannot be overwritten by live-session stamping. Peer identity and request correlation remain unchanged. No listener, ACL, global blacklist or pipeline-priority change is made.
