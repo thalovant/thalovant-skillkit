@@ -688,6 +688,8 @@ class ApiBackend:
 
             session = requests.Session()
             # Not the environment's proxies or netrc: the token goes to this host, directly.
+            # This also ignores REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE: an https URL is checked
+            # against certifi's bundle (the cluster URL is plain http to a cluster service).
             session.trust_env = False
             self._session = session
         return self._session

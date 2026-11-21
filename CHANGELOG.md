@@ -11,7 +11,7 @@
 - A refusal (401, 403, 404, a redirect) means the store is not offered to this runtime: `enabled` is False for the 300 s pause, so the caller reads and writes its settings, and `save_changes` raises `RecordStoreError(acl=True)` rather than doing nothing. A quota, a rate limit or an outage is not a refusal.
 - **New: `Changes.skipped`**: the changes the store did not take because it keeps no records for that owner (the API keeps only the people its runtime serves). The caller keeps those itself. Defaults to 0 for every other backend.
 - **New: `RecordStore.add_missing(records)`**: put each record only where its owner has none with that id (every backend; through the API with `only_new`), returning the records added and skipped: how a skill brings values kept in its settings into the store without overwriting another pod's newer ones.
-- Deletes are sent before puts, so a full workspace frees room first. The token goes over https, or plain http only to a `.svc.cluster.local` host, and the HTTP client reads no proxy or netrc from the environment (`trust_env` off).
+- Deletes are sent before puts, so a full workspace frees room first. The token goes over https, or plain http only to a `.svc.cluster.local` host, and the HTTP client reads no proxy or netrc from the environment (`trust_env` off, which also ignores `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE`: an https URL is checked against certifi's bundle).
 
 ## 0.38.2
 

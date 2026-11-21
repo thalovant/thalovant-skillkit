@@ -270,7 +270,7 @@ no PostgreSQL. Nothing is set up by the skill author or the workspace owner.
 | Which stores | Only Skill Studio's (scope `studio`). Every other store, the alarm, reminder, timer and stopwatch skills' among them, never calls the API. |
 | Refused | 401, 403 or 404 (or a redirect): the store is not offered, `enabled` is False for 300 s and the skill uses its settings; `save_changes` raises rather than doing nothing. |
 | Skipped | A change for an owner the runtime does not serve (its own device `default`, a preview visitor) is skipped by the API and counted in `Changes.skipped`: keep it yourself. |
-| Transport | https, or plain http only to a `*.svc.cluster.local` host; no proxy or netrc from the environment; deletes are sent before puts. |
+| Transport | https, or plain http only to a `*.svc.cluster.local` host; no proxy or netrc from the environment (`trust_env` off, which also ignores `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE`: an https URL is checked against certifi's bundle); deletes are sent before puts. |
 
 The API's side of the contract is `docs/runtime-records.md` in thalovant-api.
 
