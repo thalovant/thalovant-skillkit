@@ -33,7 +33,8 @@ the generic `REDIS_URL`).
 | Redis | `<key prefix>:records:v1:<scope>:<key>:<owner key>` is a HASH, field = the record's id, value = its JSON. `<key prefix>:records:v1:<scope>:<key>:owners` is a SET of the owner keys. `...:migration` is the import marker. `<scope>` and `<key>` are percent-encoded. The key prefix is `thalovant` unless you set one (see the operator section below). Each record changes in one `MULTI` transaction; a delete also `WATCH`es the owner's hash. |
 | PostgreSQL | Table `thalovant_records (seq, scope, key, owner_key, id, body jsonb, updated_at)`, primary key `(scope, key, owner_key, id)`; `thalovant_records_meta` holds its copy of the import marker. A save's puts and deletes are one transaction. Tables are created once, under an advisory lock. |
 | Both | Redis is read first; PostgreSQL keeps a copy. A Redis that answers empty while PostgreSQL holds records is refilled from it. |
-| Neither | `load_all()` is None and `save_changes` does nothing: the skill keeps its settings, as it did. |
+| The records API | With neither, and `THALOVANT_RECORDS_API_URL` set (a tenant's runtime): thalovant-api's `/v1/runtime/records/<scope>/<key>`, authenticated with the runtime's token from its netrc. See [below](#tenant-runtimes-the-records-api). |
+| None of these | `load_all()` is None and `save_changes` does nothing: the skill keeps its settings, as it did. |
 
 **The owner is hashed.** `owner_key(label)` is the first 40 hex digits of
 SHA-256 over a versioned prefix and the label, so no separator from a label ever
@@ -247,6 +248,32 @@ pattern ~thalovant:* ... and the commands ...`. Read it as: the prefix is outsid
 user's keys, or the user lacks a command, or the username or password is wrong. Saves
 then raise `RecordStoreError` with `acl` True; reads answer None.
 
+## Tenant runtimes: the records API
+
+A tenant's runtime (a private skill set) runs code the tenant chose, so the platform
+gives it no login to the hub Redis that every hub shares. thalovant-api renders
+`THALOVANT_RECORDS_API_URL` for it instead (the in-cluster
+`http://thalovant-api.thalovant.svc.cluster.local/v1/runtime/records`), and
+`RecordStore` uses `ApiBackend` when the settings and the environment name no Redis and
+no PostgreSQL. Nothing is set up by the skill author or the workspace owner.
+
+| | |
+|---|---|
+| Read | `GET <url>/<scope>/<key>?owner=<owner key>` (one owner, `_unowned` for everyone's) or without `owner` (every owner the runtime serves, and everyone's). Answers `{"records": [{"owner", "id", "body"}]}`, `body` the record's JSON text as the kit wrote it. |
+| Change | `POST <url>/<scope>/<key>` with `{"puts": [{"owner", "id", "body"}], "deletes": [{"owner", "id"}], "only_new": false}`: one transaction, puts then deletes. Answers `{"put", "deleted", "skipped"}`. |
+| Token | The password of the netrc entry (`$NETRC`, else `~/.netrc`) for the URL's host, sent as `Authorization: Bearer`. No entry: the store is not enabled and the skill keeps its settings. |
+| Who may touch what | Decided by the API from the token alone: its own workspace, a Skill Studio skill attached to its own skill set (scope `studio`, key = the skill's id), the connections its hubs serve, and everyone's bucket. Anyone else's records are never returned; a change for them is skipped (`skipped`). Other scopes are refused today. |
+| Limits | Per workspace, set by the platform: 10,000 records and 8 MiB by default, 64 KiB a record (the kit's own `MAX_BODY_BYTES`), 100 changes a request (the kit sends a bigger save in parts), 600 requests a minute a runtime. A refused change (409 `records_quota_exceeded`, 413, 422) raises `RecordStoreError`; the next save is sent. |
+| When the API is slow or down | 0.5 s to connect, 2 s to answer. A read that fails answers None (keep the settings); after a failure, calls fail at once for 30 s; after a refusal (401, 403, 404), for 300 s; a 429 waits for its `Retry-After`. |
+| Secrets | The token is only ever in the `Authorization` header; redirects are not followed; the log says the HTTP status and the API's refusal code, never the token or a record. |
+| Import | None: the API is used only where no other database is, so there is no older document to import. `add_missing(records)` brings values a skill kept elsewhere (its settings) in without overwriting. |
+| Which stores | Only Skill Studio's (scope `studio`). Every other store, the alarm, reminder, timer and stopwatch skills' among them, never calls the API. |
+| Refused | 401, 403 or 404 (or a redirect): the store is not offered, `enabled` is False for 300 s and the skill uses its settings; `save_changes` raises rather than doing nothing. |
+| Skipped | A change for an owner the runtime does not serve (its own device `default`, a preview visitor) is skipped by the API and counted in `Changes.skipped`: keep it yourself. |
+| Transport | https, or plain http only to a `*.svc.cluster.local` host; no proxy or netrc from the environment (`trust_env` off, which also ignores `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE`: an https URL is checked against certifi's bundle); deletes are sent before puts. |
+
+The API's side of the contract is `docs/runtime-records.md` in thalovant-api.
+
 ## Looking at a person's records
 
 Redis (the owner key is `owner_key(label)`, from
@@ -279,3 +306,6 @@ select id, body from thalovant_records
 - **Order is not guaranteed** across owners in Redis; sort by your own field.
 - It stores what the skill gives it: validate records, enforce ownership and keep
   the local recovery path, as with `JsonStateStore`.
+- **Through the records API,** a save of more than 100 changes or 512 KiB of records
+  is sent in parts, each one transaction: a failure part-way leaves the earlier
+  parts written, as Redis does per record.

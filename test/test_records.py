@@ -18,6 +18,7 @@ import threading
 from contextlib import contextmanager
 
 import pytest
+from records_api_fake import TOKEN, URL, FakeRecordsApi
 
 from thalovant_skillkit import records
 from thalovant_skillkit.records import (
@@ -26,6 +27,7 @@ from thalovant_skillkit.records import (
     MAX_BODY_BYTES,
     REDIS_ACL_COMMANDS,
     UNOWNED,
+    ApiBackend,
     Changes,
     MemoryBackend,
     PostgresBackend,
@@ -109,10 +111,15 @@ class PgOverSqlite:
 # ---- the backends, each as "make me another store over the same data" ------------------------
 
 
-@pytest.fixture(params=["memory", "redis", "postgres", "redis-live", "postgres-live"])
+@pytest.fixture(params=["memory", "redis", "postgres", "api", "redis-live", "postgres-live"])
 def pods(request, tmp_path):
     """A factory: each call is a new store (a new pod) over one shared backend."""
     kind = request.param
+    if kind == "api":
+        api = FakeRecordsApi()
+        return lambda scope=SCOPE, key=KEY: make(
+            ApiBackend(URL, TOKEN, scope, key, session=api.session()), scope, key
+        )
     if kind == "redis-live":
         url = os.environ.get("THALOVANT_RECORDS_TEST_REDIS_URL")
         if not url:
@@ -158,6 +165,13 @@ def make(backend, scope=SCOPE, key=KEY, **fields):
     )
     store.backend = backend
     return store
+
+
+def skip_import_on_api(pods):
+    """The API backend keeps no import marker: it is used only when no other database is, so
+    there is no older document a runtime could import (``ApiBackend``)."""
+    if isinstance(pods().backend, ApiBackend):
+        pytest.skip("the records API has no whole-document import")
 
 
 # ---- the operations, the same on every backend ---------------------------------------------
@@ -458,6 +472,7 @@ class LegacyDocument:
 
 
 def test_the_legacy_document_is_imported_once_and_left_alone(pods):
+    skip_import_on_api(pods)
     store = pods()
     legacy = LegacyDocument([rec("anna", "1", due=1), rec("anna", "2"), rec("ben", "1")])
     assert store.migrate_legacy(legacy) == 3
@@ -471,6 +486,7 @@ def test_the_legacy_document_is_imported_once_and_left_alone(pods):
 
 
 def test_a_newer_record_is_not_overwritten_by_the_legacy_import(pods):
+    skip_import_on_api(pods)
     store = pods()
     store.save_changes([], [rec("anna", "1", due=99)])
     assert store.migrate_legacy(LegacyDocument([rec("anna", "1", due=1), rec("anna", "2")])) == 1
@@ -478,6 +494,7 @@ def test_a_newer_record_is_not_overwritten_by_the_legacy_import(pods):
 
 
 def test_two_pods_migrating_together_import_it_once(pods):
+    skip_import_on_api(pods)
     legacy = LegacyDocument([rec(f"o{n}", str(i)) for n in range(5) for i in range(4)])
     totals, errors = [], []
 
@@ -500,6 +517,7 @@ def test_two_pods_migrating_together_import_it_once(pods):
 def test_a_refused_legacy_document_is_asked_for_once(pods, monkeypatch, caplog):
     """A user limited to its own keys can never read the old `thalovant:` key. Asking every
     five minutes for ever only fills the log and Redis's own refusal log."""
+    skip_import_on_api(pods)
 
     class NoPermissionError(Exception):
         pass
@@ -523,6 +541,7 @@ def test_a_refused_legacy_document_is_asked_for_once(pods, monkeypatch, caplog):
 
 
 def test_an_unreachable_legacy_document_is_still_tried_again(pods, monkeypatch):
+    skip_import_on_api(pods)
     class Down:
         gets = 0
 
@@ -543,6 +562,7 @@ def test_after_a_refusal_postgres_is_still_read_until_it_answers(pods, monkeypat
     """Redis refuses the old key for good, but PostgreSQL's copy of the document failing once
     is not "no document": 0.31.2 stopped asking either, and the records stayed behind until the
     process restarted."""
+    skip_import_on_api(pods)
 
     class NoPermissionError(Exception):
         pass
@@ -593,6 +613,7 @@ def test_after_a_refusal_postgres_is_still_read_until_it_answers(pods, monkeypat
 
 
 def test_an_empty_legacy_document_is_done_and_no_document_is_tried_again(pods):
+    skip_import_on_api(pods)
     store = pods()
     assert store.migrate_legacy(LegacyDocument([])) == 0
     assert store.migrate_legacy(LegacyDocument([rec("anna", "1")])) == 0, "done is done"
@@ -1359,3 +1380,13 @@ def test_a_delete_that_keeps_losing_the_race_gives_up_with_the_error():
         backend.apply([], [("o", "1")])
 
     assert len(tries) == DELETE_ATTEMPTS
+
+
+def test_add_missing_puts_only_what_is_not_there(pods):
+    store = pods()
+    store.save_changes([], [rec("anna", "1", due=1)])
+
+    changes = store.add_missing([rec("anna", "1", due=99), rec("anna", "2", due=2)])
+
+    assert changes.puts == 1 and changes.skipped == 0
+    assert by_id(store.load_owner("anna")) == [rec("anna", "1", due=1), rec("anna", "2", due=2)]

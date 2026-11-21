@@ -23,7 +23,11 @@ Where the data lives, chosen from the same settings and environment names as
   primary key in one transaction.
 * With both set, Redis is read first and PostgreSQL keeps a copy; a Redis that
   came back empty is refilled from it.
-* With neither, `load_all` returns None and `save_changes` does nothing: the
+* With neither, and `THALOVANT_RECORDS_API_URL` set (what thalovant-api renders
+  for a tenant's runtime, which has no Redis login), thalovant-api's records
+  store: the same records over HTTPS or the cluster's HTTP, authenticated with the
+  runtime's token from its netrc (`ApiBackend`).
+* With none of these, `load_all` returns None and `save_changes` does nothing: the
   skill keeps its own settings, exactly as before.
 
 Redis keys start with `thalovant` unless the operator sets a key prefix
@@ -48,6 +52,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import netrc
 import os
 import re
 import threading
@@ -57,7 +62,7 @@ from collections.abc import Callable, Iterable
 from contextlib import suppress
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from thalovant_skillkit.storage import JsonStateStore
 
@@ -130,10 +135,16 @@ def owner_key(label: Any) -> str:
 
 @dataclass(frozen=True)
 class Changes:
-    """What a `save_changes` wrote: records put (added or changed) and deleted."""
+    """What a `save_changes` wrote: records put (added or changed) and deleted.
+
+    `skipped` counts the changes the store did not take because it does not keep that
+    owner's records (the records API keeps only the people its runtime serves): the caller
+    keeps those itself, as it would with no store.
+    """
 
     puts: int = 0
     deletes: int = 0
+    skipped: int = 0
 
 
 def valid_key_prefix(prefix: Any) -> bool:
@@ -561,6 +572,293 @@ class PostgresBackend:
         self._run(work)
 
 
+#: Where a tenant's runtime keeps its records: thalovant-api's `/v1/runtime/records`. Set by the
+#: platform, never by a skill. Used only when neither Redis nor PostgreSQL is configured.
+API_URL_ENV = "THALOVANT_RECORDS_API_URL"
+#: The stores the API keeps: Skill Studio's. Any other store (the alarm, reminder, timer and
+#: stopwatch skills') never calls it, and keeps its records where it did.
+API_SCOPES = frozenset({"studio"})
+#: The only hosts the token may be sent to over plain HTTP: the cluster's own services.
+_PLAIN_HTTP_SUFFIX = ".svc.cluster.local"
+#: Seconds to connect and to wait for an answer. A skill reads its records on a turn, so a slow
+#: or absent API must cost the turn little: the skill falls back to its settings.
+API_TIMEOUT = (0.5, 2.0)
+#: The changes, and the bytes of records, sent in one request; a bigger save goes in parts.
+API_BATCH = 100
+API_BATCH_BYTES = 512 * 1024
+#: After the API failed (no answer, a 5xx), how long calls fail at once instead of waiting
+#: again; after it refused (401, 403, 404), how long before it is asked again. A 429 waits for
+#: its Retry-After, at most the refusal's pause.
+API_RETRY_SECONDS = 30.0
+API_REFUSED_SECONDS = 300.0
+
+
+class ApiStoreError(Exception):
+    """The records API did not take a call.
+
+    `status` is the HTTP status (0: no answer), `code` the API's refusal code, if any.
+    `refused` is True for an answer that asking again will not change soon (401, 403,
+    404); `quiet` for a call not made because of an earlier failure. The message never
+    holds the token or a record.
+    """
+
+    def __init__(self, message: str, *, status: int = 0, code: str = "", refused: bool = False,
+                 quiet: bool = False):
+        super().__init__(message)
+        self.status, self.code, self.refused, self.quiet = status, code, refused, quiet
+
+
+def _netrc_token(host: str) -> str | None:
+    """The password the runtime's netrc holds for `host` (`$NETRC`, else `~/.netrc`), or None.
+
+    The path is given to `netrc` explicitly: the kubelet mounts the file with modes that its
+    default-file permission check would refuse, and the file is the platform's, not a user's.
+    """
+    path = os.environ.get("NETRC") or os.path.expanduser("~/.netrc")
+    try:
+        found = netrc.netrc(path).authenticators(host)
+    except (OSError, netrc.NetrcParseError):
+        return None
+    if not found or not found[2]:
+        return None
+    return str(found[2])
+
+
+def api_url_problem(url: str) -> str | None:
+    """Why `url` cannot be the records API, or None: http(s), a host, no credentials, no
+    query or fragment."""
+    try:
+        parts = urlsplit(url)
+    except ValueError:
+        return "it does not parse"
+    if parts.scheme not in ("http", "https"):
+        return "it is not http or https"
+    if not parts.hostname:
+        return "it names no host"
+    if parts.scheme == "http" and not parts.hostname.endswith(_PLAIN_HTTP_SUFFIX):
+        return "plain http outside the cluster"
+    if parts.username is not None or parts.password is not None:
+        return "it carries credentials"
+    if parts.query or parts.fragment:
+        return "it carries a query or a fragment"
+    return None
+
+
+class ApiBackend:
+    """thalovant-api's records store, for a runtime that has no Redis login.
+
+        GET  <url>/<scope>/<key>[?owner=<owner key>]   {"records": [{owner, id, body}]}
+        POST <url>/<scope>/<key>   {"puts": [...], "deletes": [...], "only_new": bool}
+
+    The API decides everything about who may touch what, from the token: its own
+    workspace, a skill attached to the runtime's own skill set, and the connections its
+    hubs serve. A record for anyone else is never returned, and a change for them is
+    skipped (and counted: `Changes.skipped`). The token is sent as a Bearer header only,
+    over https or to a cluster service, redirects are not followed, the environment's
+    proxies and netrc are not read by the HTTP client, and neither the token nor a record
+    is ever logged. There is no import marker: the API is used only when no other database
+    is, so there is no older document to import.
+
+    A refusal (401, 403, 404, a redirect: the store is not offered to this runtime, or not
+    any more) makes `offered` False for API_REFUSED_SECONDS: the store then counts as not
+    configured, so its caller reads and writes its settings, and the API is asked again
+    after the pause.
+    """
+
+    name = "api"
+
+    def __init__(self, url: str, token: str, scope: str, key: str, *, session: Any = None,
+                 clock: Callable[[], float] = time.monotonic):
+        if api_url_problem(url) is not None:
+            raise ValueError("not a usable records API URL")
+        self.url = f"{url.rstrip('/')}/{quote(scope, safe='')}/{quote(key, safe='')}"
+        self._token = token
+        self._session = session
+        self._clock = clock
+        self._lock = threading.Lock()
+        self._quiet_until = 0.0
+        self._quiet_reason: ApiStoreError | None = None
+
+    def __repr__(self) -> str:  # never the token
+        return f"ApiBackend({self.url!r})"
+
+    def _http(self) -> Any:
+        if self._session is None:
+            import requests
+
+            session = requests.Session()
+            # Not the environment's proxies or netrc: the token goes to this host, directly.
+            # This also ignores REQUESTS_CA_BUNDLE and CURL_CA_BUNDLE: an https URL is checked
+            # against certifi's bundle (the cluster URL is plain http to a cluster service).
+            session.trust_env = False
+            self._session = session
+        return self._session
+
+    @property
+    def offered(self) -> bool:
+        """False while the API refuses this store (within the pause after a refusal)."""
+        with self._lock:
+            refused = self._quiet_reason is not None and self._quiet_reason.refused
+            return not (refused and self._clock() < self._quiet_until)
+
+    def _pause(self, error: ApiStoreError, seconds: float) -> ApiStoreError:
+        with self._lock:
+            self._quiet_until = self._clock() + max(0.0, seconds)
+            self._quiet_reason = error
+        return error
+
+    def _call(self, method: str, *, params: dict | None = None, body: dict | None = None) -> dict:
+        with self._lock:
+            if self._clock() < self._quiet_until and self._quiet_reason is not None:
+                earlier = self._quiet_reason
+                raise ApiStoreError(str(earlier), status=earlier.status, code=earlier.code,
+                                    refused=earlier.refused, quiet=True)
+        try:
+            response = self._http().request(
+                method,
+                self.url,
+                params=params,
+                json=body,
+                headers={"Authorization": f"Bearer {self._token}", "Accept": "application/json"},
+                timeout=API_TIMEOUT,
+                allow_redirects=False,
+            )
+        except Exception as error:  # noqa: BLE001 - requests' errors, a socket's, a DNS failure
+            raise self._pause(
+                ApiStoreError(f"the records API did not answer ({type(error).__name__})"),
+                API_RETRY_SECONDS,
+            ) from None
+        status = int(getattr(response, "status_code", 0) or 0)
+        try:
+            answer = response.json()
+        except Exception:  # noqa: BLE001 - an HTML error page, an empty body
+            answer = None
+        code = ""
+        if isinstance(answer, dict) and isinstance(answer.get("code"), str):
+            code = answer["code"][:64]
+        if 200 <= status < 300 and isinstance(answer, dict):
+            with self._lock:
+                self._quiet_until, self._quiet_reason = 0.0, None
+            return answer
+        message = f"the records API answered HTTP {status}" + (f" {code}" if code else "")
+        if status in (401, 403, 404) or 300 <= status < 400:
+            # Not this runtime's store, or not a store at all: asking again will not change it soon.
+            raise self._pause(ApiStoreError(message, status=status, code=code, refused=True),
+                              API_REFUSED_SECONDS)
+        if status == 429:
+            try:
+                wait = float(getattr(response, "headers", {}).get("Retry-After", API_RETRY_SECONDS))
+            except (TypeError, ValueError):
+                wait = API_RETRY_SECONDS
+            raise self._pause(ApiStoreError(message, status=status, code=code),
+                              min(max(wait, 1.0), API_REFUSED_SECONDS))
+        if 400 <= status < 500:
+            # 409 (the workspace's quota), 413 (a record or a request too big), 422: this change
+            # is refused, not the API; the next one is sent.
+            raise ApiStoreError(message, status=status, code=code)
+        raise self._pause(ApiStoreError(message, status=status, code=code), API_RETRY_SECONDS)
+
+    @staticmethod
+    def _rows(answer: dict) -> list[tuple[str, str, str]]:
+        rows: list[tuple[str, str, str]] = []
+        for item in answer.get("records") or []:
+            if not isinstance(item, dict):
+                continue
+            ok, rid, body = item.get("owner"), item.get("id"), item.get("body")
+            if isinstance(ok, str) and isinstance(rid, str) and isinstance(body, str):
+                rows.append((ok, rid, body))
+        return rows
+
+    def load_owner(self, ok: str) -> list[tuple[str, str, str]]:
+        return [row for row in self._rows(self._call("GET", params={"owner": ok})) if row[0] == ok]
+
+    def load_all(self) -> list[tuple[str, str, str]]:
+        return self._rows(self._call("GET"))
+
+    def owners(self) -> list[str]:
+        return sorted({ok for ok, _, _ in self.load_all()})
+
+    def _post(
+        self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]], only_new: bool
+    ) -> tuple[int, int]:
+        """Send the deletes, then the puts, in parts of at most API_BATCH changes and
+        API_BATCH_BYTES of records (deletes first, so a full workspace frees room before it
+        takes more); how many records the API put, and how many changes it skipped."""
+        made = skipped = 0
+
+        def send(batch_puts: list[tuple[str, str, str]], batch_deletes: list[tuple[str, str]]):
+            nonlocal made, skipped
+            answer = self._call(
+                "POST",
+                body={
+                    "puts": [
+                        {"owner": ok, "id": rid, "body": text} for ok, rid, text in batch_puts
+                    ],
+                    "deletes": [{"owner": ok, "id": rid} for ok, rid in batch_deletes],
+                    "only_new": only_new,
+                },
+            )
+            for name in ("put", "skipped"):
+                value = answer.get(name)
+                count = value if isinstance(value, int) and not isinstance(value, bool) else 0
+                if name == "put":
+                    made += count
+                else:
+                    skipped += count
+
+        for start in range(0, len(deletes), API_BATCH):
+            send([], deletes[start : start + API_BATCH])
+        batch: list[tuple[str, str, str]] = []
+        size = 0
+        for put in puts:
+            weight = len(put[2].encode("utf-8"))
+            if batch and (len(batch) >= API_BATCH or size + weight > API_BATCH_BYTES):
+                send(batch, [])
+                batch, size = [], 0
+            batch.append(put)
+            size += weight
+        if batch:
+            send(batch, [])
+        return made, skipped
+
+    def apply(self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]]) -> int:
+        """Make the changes; how many the API skipped (owners this runtime does not serve)."""
+        return self._post(puts, deletes, only_new=False)[1]
+
+    def put_if_absent(self, items: list[tuple[str, str, str]]) -> int:
+        return self._post(items, [], only_new=True)[0]
+
+    def put_new(self, items: list[tuple[str, str, str]]) -> tuple[int, int]:
+        """`put_if_absent`, with the count of the records the API skipped."""
+        return self._post(items, [], only_new=True)
+
+    def migration_state(self) -> str:
+        return "done"
+
+    def migration_claim(self, token: str, ttl: float) -> bool:
+        return False
+
+    def migration_finish(self) -> None:
+        return None
+
+
+def _api_backend(url: str, scope: str, key: str) -> ApiBackend | None:
+    """The API backend for this runtime, or None (logged) when it cannot be one."""
+    problem = api_url_problem(url)
+    if problem is not None:
+        LOG.warning("record store %s: %s is not used (%s)", scope, API_URL_ENV, problem)
+        return None
+    host = urlsplit(url).hostname or ""
+    token = _netrc_token(host)
+    if token is None:
+        LOG.warning(
+            "record store %s: %s is set but the runtime's netrc holds no token for %s; the records "
+            "stay in the skill's settings", scope, API_URL_ENV, host,
+        )
+        return None
+    return ApiBackend(url, token, scope, key)
+
+
 def _psycopg_connect(database_url: str) -> Any:
     import psycopg
 
@@ -621,7 +919,11 @@ class RecordStore:
             or ""
         )
         self.key_prefix = str(raw).strip() or DEFAULT_KEY_PREFIX
+        # The platform's records API, for a runtime with no Redis login: used only when the
+        # settings and the environment name no other database.
+        self._api_url = os.getenv(API_URL_ENV, "").strip()
         self._acl_warned = False
+        self._api_warned = False
         self._backends: list[Any] | None = list(backends) if backends is not None else None
         self._built = backends is not None
         self._build_lock = threading.Lock()
@@ -660,6 +962,15 @@ class RecordStore:
                     found.append(
                         PostgresBackend(lambda: _psycopg_connect(url), self.scope, self.key)
                     )
+                if (
+                    not found
+                    and not config.enabled
+                    and self._api_url
+                    and self.scope in API_SCOPES
+                ):
+                    api = _api_backend(self._api_url, self.scope, self.key)
+                    if api is not None:
+                        found.append(api)
                 self._backends, self._built = found, True
         return self._backends or []
 
@@ -667,8 +978,17 @@ class RecordStore:
     def enabled(self) -> bool:
         """Whether a database is set up. Without one the skill keeps its settings."""
         if self._built:
-            return bool(self._backends)
-        return self._config.enabled
+            return bool(self._live_backends())
+        if self._config.enabled:
+            return True
+        # Only the API is left: whether it can be used (a usable URL, a token in the netrc)
+        # is known without a request, so it is decided now rather than after a first save.
+        return bool(self._api_url) and bool(self._live_backends())
+
+    def _live_backends(self) -> list[Any]:
+        """The backends that may be asked now: all but an API that refused this store and
+        whose pause has not run out (`ApiBackend.offered`)."""
+        return [b for b in self._backend_list() if getattr(b, "offered", True)]
 
     # -- when Redis or PostgreSQL says no ------------------------------------------
 
@@ -686,6 +1006,23 @@ class RecordStore:
     def _failed(self, backend: Any, what: str, error: BaseException) -> bool:
         """Log a backend's failure. A refusal by Redis's ACL or password is one WARNING with the
         hint, the first time, not on every call. Returns whether it was such a refusal."""
+        if getattr(backend, "name", "") == "api" and isinstance(error, ApiStoreError):
+            if error.quiet:
+                LOG.debug("record store %s: api %s skipped (%s)", self.scope, what, error)
+                return error.refused
+            if error.refused:
+                if not self._api_warned:
+                    self._api_warned = True
+                    LOG.warning(
+                        "record store %s: %s. The API keeps the records of the Skill Studio skills "
+                        "attached to this runtime's skill set, for the connections its hubs serve; "
+                        "until it accepts this store, the records stay in the skill's settings",
+                        self.scope,
+                        error,
+                    )
+                return True
+            LOG.warning("record store %s: api %s failed (%s)", self.scope, what, error)
+            return False
         if getattr(backend, "name", "") == "redis" and _is_acl_error(error):
             if not self._acl_warned:
                 self._acl_warned = True
@@ -724,7 +1061,7 @@ class RecordStore:
         """Every owner's records, or None when no database is set up or none answers
         (the caller keeps its settings). A Redis that answers empty while PostgreSQL
         holds records is refilled from it."""
-        backends = self._backend_list()
+        backends = self._live_backends()
         if not backends:
             return None
         answered = False
@@ -754,7 +1091,7 @@ class RecordStore:
     def load_owner(self, owner: Any) -> list[dict] | None:
         """One owner's records (for a read at each turn), or None as `load_all`."""
         ok = UNOWNED if owner is None else owner_key(owner)
-        backends = self._backend_list()
+        backends = self._live_backends()
         if not backends:
             return None
         answered = False
@@ -771,7 +1108,7 @@ class RecordStore:
 
     def owners(self) -> list[str]:
         """The keys (never the labels) of the owners who hold records."""
-        for backend in self._backend_list():
+        for backend in self._live_backends():
             try:
                 found = backend.owners()
             except Exception as error:  # noqa: BLE001
@@ -848,24 +1185,63 @@ class RecordStore:
         save fails like any other, and the caller sends the change again.
         """
         puts, deletes = self.changes(before, after)
-        backends = self._backend_list()
-        if not backends or not (puts or deletes):
+        built = self._backend_list()
+        backends = self._live_backends()
+        if not built or not (puts or deletes):
             return Changes()
+        if not backends:
+            # Configured, but the records API refuses this store for now: never a silent no-op.
+            raise RecordStoreError("the record store is not offered to this runtime now", acl=True)
         failures: list[str] = []
         refused = False
+        skipped = 0
         for backend in backends:
             try:
                 if self._owes_marker(backend):
                     backend.migration_finish()
                     self._settle_marker(backend)
-                backend.apply(puts, deletes)
+                result = backend.apply(puts, deletes)
+                if isinstance(result, int) and not isinstance(result, bool):
+                    skipped = max(skipped, result)
             except Exception as error:  # noqa: BLE001 - reported below, the other backend is still tried
                 acl = self._failed(backend, "save", error)
                 refused = refused or acl
                 failures.append(f"{backend.name}: {type(error).__name__}: {error}")
         if failures:
             raise RecordStoreError("; ".join(failures), acl=refused)
-        return Changes(len(puts), len(deletes))
+        return Changes(len(puts), len(deletes), skipped)
+
+    def add_missing(self, records: Iterable[dict]) -> Changes:
+        """Put each record only where its owner has none with that id: the way to bring values
+        kept elsewhere (a skill's settings) into the store without overwriting what another pod
+        wrote since. Returns the records added (`puts`) and the ones the store did not take
+        because it does not keep their owner (`skipped`). Raises `RecordStoreError` when no
+        backend could take them; does nothing without a store."""
+        rows = [(ok, rid, body) for (ok, rid), (_, body) in self._index(records).items()]
+        built = self._backend_list()
+        backends = self._live_backends()
+        if not built or not rows:
+            return Changes()
+        if not backends:
+            raise RecordStoreError("the record store is not offered to this runtime now", acl=True)
+        added = skipped = 0
+        failures: list[str] = []
+        refused = False
+        for index, backend in enumerate(backends):
+            try:
+                put_new = getattr(backend, "put_new", None)
+                if callable(put_new):
+                    made, missed = put_new(rows)
+                else:
+                    made, missed = backend.put_if_absent(rows), 0
+                if index == 0:
+                    added, skipped = made, missed
+            except Exception as error:  # noqa: BLE001 - reported below
+                refused = self._failed(backend, "add", error) or refused
+                failures.append(f"{backend.name}: {type(error).__name__}: {error}")
+        if len(failures) == len(backends):
+            raise RecordStoreError("; ".join(failures), acl=refused)
+        return Changes(puts=added, skipped=skipped)
 
     # -- from the whole document ---------------------------------------------------
 
