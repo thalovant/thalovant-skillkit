@@ -1380,3 +1380,13 @@ def test_a_delete_that_keeps_losing_the_race_gives_up_with_the_error():
         backend.apply([], [("o", "1")])
 
     assert len(tries) == DELETE_ATTEMPTS
+
+
+def test_add_missing_puts_only_what_is_not_there(pods):
+    store = pods()
+    store.save_changes([], [rec("anna", "1", due=1)])
+
+    changes = store.add_missing([rec("anna", "1", due=99), rec("anna", "2", due=2)])
+
+    assert changes.puts == 1 and changes.skipped == 0
+    assert by_id(store.load_owner("anna")) == [rec("anna", "1", due=1), rec("anna", "2", due=2)]

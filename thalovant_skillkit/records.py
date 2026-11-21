@@ -135,10 +135,16 @@ def owner_key(label: Any) -> str:
 
 @dataclass(frozen=True)
 class Changes:
-    """What a `save_changes` wrote: records put (added or changed) and deleted."""
+    """What a `save_changes` wrote: records put (added or changed) and deleted.
+
+    `skipped` counts the changes the store did not take because it does not keep that
+    owner's records (the records API keeps only the people its runtime serves): the caller
+    keeps those itself, as it would with no store.
+    """
 
     puts: int = 0
     deletes: int = 0
+    skipped: int = 0
 
 
 def valid_key_prefix(prefix: Any) -> bool:
@@ -569,6 +575,11 @@ class PostgresBackend:
 #: Where a tenant's runtime keeps its records: thalovant-api's `/v1/runtime/records`. Set by the
 #: platform, never by a skill. Used only when neither Redis nor PostgreSQL is configured.
 API_URL_ENV = "THALOVANT_RECORDS_API_URL"
+#: The stores the API keeps: Skill Studio's. Any other store (the alarm, reminder, timer and
+#: stopwatch skills') never calls it, and keeps its records where it did.
+API_SCOPES = frozenset({"studio"})
+#: The only hosts the token may be sent to over plain HTTP: the cluster's own services.
+_PLAIN_HTTP_SUFFIX = ".svc.cluster.local"
 #: Seconds to connect and to wait for an answer. A skill reads its records on a turn, so a slow
 #: or absent API must cost the turn little: the skill falls back to its settings.
 API_TIMEOUT = (0.5, 2.0)
@@ -624,6 +635,8 @@ def api_url_problem(url: str) -> str | None:
         return "it is not http or https"
     if not parts.hostname:
         return "it names no host"
+    if parts.scheme == "http" and not parts.hostname.endswith(_PLAIN_HTTP_SUFFIX):
+        return "plain http outside the cluster"
     if parts.username is not None or parts.password is not None:
         return "it carries credentials"
     if parts.query or parts.fragment:
@@ -640,9 +653,16 @@ class ApiBackend:
     The API decides everything about who may touch what, from the token: its own
     workspace, a skill attached to the runtime's own skill set, and the connections its
     hubs serve. A record for anyone else is never returned, and a change for them is
-    skipped. The token is sent as a Bearer header only, redirects are not followed, and
-    neither it nor a record is ever logged. There is no import marker: the API is used
-    only when no other database is, so there is no older document to import.
+    skipped (and counted: `Changes.skipped`). The token is sent as a Bearer header only,
+    over https or to a cluster service, redirects are not followed, the environment's
+    proxies and netrc are not read by the HTTP client, and neither the token nor a record
+    is ever logged. There is no import marker: the API is used only when no other database
+    is, so there is no older document to import.
+
+    A refusal (401, 403, 404, a redirect: the store is not offered to this runtime, or not
+    any more) makes `offered` False for API_REFUSED_SECONDS: the store then counts as not
+    configured, so its caller reads and writes its settings, and the API is asked again
+    after the pause.
     """
 
     name = "api"
@@ -666,8 +686,18 @@ class ApiBackend:
         if self._session is None:
             import requests
 
-            self._session = requests.Session()
+            session = requests.Session()
+            # Not the environment's proxies or netrc: the token goes to this host, directly.
+            session.trust_env = False
+            self._session = session
         return self._session
+
+    @property
+    def offered(self) -> bool:
+        """False while the API refuses this store (within the pause after a refusal)."""
+        with self._lock:
+            refused = self._quiet_reason is not None and self._quiet_reason.refused
+            return not (refused and self._clock() < self._quiet_until)
 
     def _pause(self, error: ApiStoreError, seconds: float) -> ApiStoreError:
         with self._lock:
@@ -746,44 +776,58 @@ class ApiBackend:
     def owners(self) -> list[str]:
         return sorted({ok for ok, _, _ in self.load_all()})
 
-    def _post(self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]],
-              only_new: bool) -> int:
-        """Send the changes in parts of at most API_BATCH changes and API_BATCH_BYTES of
-        records; how many records the API put."""
-        made = 0
-        batch_puts: list[tuple[str, str, str]] = []
-        batch_deletes: list[tuple[str, str]] = []
+    def _post(
+        self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]], only_new: bool
+    ) -> tuple[int, int]:
+        """Send the deletes, then the puts, in parts of at most API_BATCH changes and
+        API_BATCH_BYTES of records (deletes first, so a full workspace frees room before it
+        takes more); how many records the API put, and how many changes it skipped."""
+        made = skipped = 0
+
+        def send(batch_puts: list[tuple[str, str, str]], batch_deletes: list[tuple[str, str]]):
+            nonlocal made, skipped
+            answer = self._call(
+                "POST",
+                body={
+                    "puts": [
+                        {"owner": ok, "id": rid, "body": text} for ok, rid, text in batch_puts
+                    ],
+                    "deletes": [{"owner": ok, "id": rid} for ok, rid in batch_deletes],
+                    "only_new": only_new,
+                },
+            )
+            for name in ("put", "skipped"):
+                value = answer.get(name)
+                count = value if isinstance(value, int) and not isinstance(value, bool) else 0
+                if name == "put":
+                    made += count
+                else:
+                    skipped += count
+
+        for start in range(0, len(deletes), API_BATCH):
+            send([], deletes[start : start + API_BATCH])
+        batch: list[tuple[str, str, str]] = []
         size = 0
-
-        def send() -> int:
-            answer = self._call("POST", body={
-                "puts": [{"owner": ok, "id": rid, "body": text} for ok, rid, text in batch_puts],
-                "deletes": [{"owner": ok, "id": rid} for ok, rid in batch_deletes],
-                "only_new": only_new,
-            })
-            put = answer.get("put")
-            return put if isinstance(put, int) and not isinstance(put, bool) else 0
-
         for put in puts:
             weight = len(put[2].encode("utf-8"))
-            if batch_puts and (len(batch_puts) >= API_BATCH or size + weight > API_BATCH_BYTES):
-                made += send()
-                batch_puts, size = [], 0
-            batch_puts.append(put)
+            if batch and (len(batch) >= API_BATCH or size + weight > API_BATCH_BYTES):
+                send(batch, [])
+                batch, size = [], 0
+            batch.append(put)
             size += weight
-        for delete in deletes:
-            if len(batch_puts) + len(batch_deletes) >= API_BATCH:
-                made += send()
-                batch_puts, batch_deletes = [], []
-            batch_deletes.append(delete)
-        if batch_puts or batch_deletes:
-            made += send()
-        return made
+        if batch:
+            send(batch, [])
+        return made, skipped
 
-    def apply(self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]]) -> None:
-        self._post(puts, deletes, only_new=False)
+    def apply(self, puts: list[tuple[str, str, str]], deletes: list[tuple[str, str]]) -> int:
+        """Make the changes; how many the API skipped (owners this runtime does not serve)."""
+        return self._post(puts, deletes, only_new=False)[1]
 
     def put_if_absent(self, items: list[tuple[str, str, str]]) -> int:
+        return self._post(items, [], only_new=True)[0]
+
+    def put_new(self, items: list[tuple[str, str, str]]) -> tuple[int, int]:
+        """`put_if_absent`, with the count of the records the API skipped."""
         return self._post(items, [], only_new=True)
 
     def migration_state(self) -> str:
@@ -916,7 +960,12 @@ class RecordStore:
                     found.append(
                         PostgresBackend(lambda: _psycopg_connect(url), self.scope, self.key)
                     )
-                if not found and not config.enabled and self._api_url:
+                if (
+                    not found
+                    and not config.enabled
+                    and self._api_url
+                    and self.scope in API_SCOPES
+                ):
                     api = _api_backend(self._api_url, self.scope, self.key)
                     if api is not None:
                         found.append(api)
@@ -927,12 +976,17 @@ class RecordStore:
     def enabled(self) -> bool:
         """Whether a database is set up. Without one the skill keeps its settings."""
         if self._built:
-            return bool(self._backends)
+            return bool(self._live_backends())
         if self._config.enabled:
             return True
         # Only the API is left: whether it can be used (a usable URL, a token in the netrc)
         # is known without a request, so it is decided now rather than after a first save.
-        return bool(self._api_url) and bool(self._backend_list())
+        return bool(self._api_url) and bool(self._live_backends())
+
+    def _live_backends(self) -> list[Any]:
+        """The backends that may be asked now: all but an API that refused this store and
+        whose pause has not run out (`ApiBackend.offered`)."""
+        return [b for b in self._backend_list() if getattr(b, "offered", True)]
 
     # -- when Redis or PostgreSQL says no ------------------------------------------
 
@@ -1005,7 +1059,7 @@ class RecordStore:
         """Every owner's records, or None when no database is set up or none answers
         (the caller keeps its settings). A Redis that answers empty while PostgreSQL
         holds records is refilled from it."""
-        backends = self._backend_list()
+        backends = self._live_backends()
         if not backends:
             return None
         answered = False
@@ -1035,7 +1089,7 @@ class RecordStore:
     def load_owner(self, owner: Any) -> list[dict] | None:
         """One owner's records (for a read at each turn), or None as `load_all`."""
         ok = UNOWNED if owner is None else owner_key(owner)
-        backends = self._backend_list()
+        backends = self._live_backends()
         if not backends:
             return None
         answered = False
@@ -1052,7 +1106,7 @@ class RecordStore:
 
     def owners(self) -> list[str]:
         """The keys (never the labels) of the owners who hold records."""
-        for backend in self._backend_list():
+        for backend in self._live_backends():
             try:
                 found = backend.owners()
             except Exception as error:  # noqa: BLE001
@@ -1129,24 +1183,63 @@ class RecordStore:
         save fails like any other, and the caller sends the change again.
         """
         puts, deletes = self.changes(before, after)
-        backends = self._backend_list()
-        if not backends or not (puts or deletes):
+        built = self._backend_list()
+        backends = self._live_backends()
+        if not built or not (puts or deletes):
             return Changes()
+        if not backends:
+            # Configured, but the records API refuses this store for now: never a silent no-op.
+            raise RecordStoreError("the record store is not offered to this runtime now", acl=True)
         failures: list[str] = []
         refused = False
+        skipped = 0
         for backend in backends:
             try:
                 if self._owes_marker(backend):
                     backend.migration_finish()
                     self._settle_marker(backend)
-                backend.apply(puts, deletes)
+                result = backend.apply(puts, deletes)
+                if isinstance(result, int) and not isinstance(result, bool):
+                    skipped = max(skipped, result)
             except Exception as error:  # noqa: BLE001 - reported below, the other backend is still tried
                 acl = self._failed(backend, "save", error)
                 refused = refused or acl
                 failures.append(f"{backend.name}: {type(error).__name__}: {error}")
         if failures:
             raise RecordStoreError("; ".join(failures), acl=refused)
-        return Changes(len(puts), len(deletes))
+        return Changes(len(puts), len(deletes), skipped)
+
+    def add_missing(self, records: Iterable[dict]) -> Changes:
+        """Put each record only where its owner has none with that id: the way to bring values
+        kept elsewhere (a skill's settings) into the store without overwriting what another pod
+        wrote since. Returns the records added (`puts`) and the ones the store did not take
+        because it does not keep their owner (`skipped`). Raises `RecordStoreError` when no
+        backend could take them; does nothing without a store."""
+        rows = [(ok, rid, body) for (ok, rid), (_, body) in self._index(records).items()]
+        built = self._backend_list()
+        backends = self._live_backends()
+        if not built or not rows:
+            return Changes()
+        if not backends:
+            raise RecordStoreError("the record store is not offered to this runtime now", acl=True)
+        added = skipped = 0
+        failures: list[str] = []
+        refused = False
+        for index, backend in enumerate(backends):
+            try:
+                put_new = getattr(backend, "put_new", None)
+                if callable(put_new):
+                    made, missed = put_new(rows)
+                else:
+                    made, missed = backend.put_if_absent(rows), 0
+                if index == 0:
+                    added, skipped = made, missed
+            except Exception as error:  # noqa: BLE001 - reported below
+                refused = self._failed(backend, "add", error) or refused
+                failures.append(f"{backend.name}: {type(error).__name__}: {error}")
+        if len(failures) == len(backends):
+            raise RecordStoreError("; ".join(failures), acl=refused)
+        return Changes(puts=added, skipped=skipped)
 
     # -- from the whole document ---------------------------------------------------
 

@@ -333,3 +333,113 @@ def test_a_save_of_big_records_is_split_by_bytes(runtime):
     for post in posts:
         assert sum(len(p["body"].encode()) for p in post["json"]["puts"]) <= records.API_BATCH_BYTES
     assert "x" * 60_000 in records_sent(api)
+
+
+# -- review of #77: refusals, skipped changes, studio stores only, imports --------------------
+
+
+def test_only_studio_stores_use_the_api(runtime):
+    alarm = RecordStore("alarm", {}, env_prefix="THALOVANT_ALARM", default_key="alarms")
+
+    assert not alarm.enabled
+    assert alarm.load_all() is None
+
+
+def test_a_change_the_api_skipped_is_reported_to_the_caller(runtime):
+    api = FakeRecordsApi(served={owner_key("client-1")})
+    store = studio_store(api)
+
+    changes = store.save_changes([], [{"id": "a", "owner": "default", "value": 1}])
+
+    assert changes.puts == 1 and changes.skipped == 1
+    assert store.save_changes([], [{"id": "b", "owner": "client-1"}]).skipped == 0
+
+
+def test_a_refused_store_counts_as_not_offered_until_the_pause_ends(runtime):
+    api = FakeRecordsApi()
+    clock = Clock()
+    store = studio_store(api, clock=clock)
+    api.answer = Response(403, {"code": "skill_not_installed"})
+
+    assert store.load_owner("client-1") is None
+    assert not store.enabled, "reads and writes now go to the skill's settings"
+    assert store.load_all() is None and len(api.requests) == 1
+    with pytest.raises(RecordStoreError) as raised:
+        store.save_changes([], [{"id": "a"}])  # never a silent no-op
+    assert raised.value.acl
+    clock.now += API_REFUSED_SECONDS + 1
+    api.answer = None
+    assert store.enabled
+    assert store.load_owner("client-1") == []
+
+
+@pytest.mark.parametrize("status", [401, 404])
+def test_every_refusal_is_not_offered(runtime, status):
+    api = FakeRecordsApi()
+    api.answer = Response(status, {"detail": "no"})
+    store = studio_store(api)
+
+    assert store.load_all() is None
+    assert not store.enabled
+
+
+def test_a_quota_or_an_outage_is_not_a_refusal(runtime):
+    api = FakeRecordsApi()
+    store = studio_store(api)
+    api.answer = Response(409, {"code": "records_quota_exceeded"})
+
+    with pytest.raises(RecordStoreError):
+        store.save_changes([], [{"id": "a"}])
+    assert store.enabled
+
+
+def test_deletes_go_before_puts(runtime):
+    api = FakeRecordsApi()
+    store = studio_store(api)
+    before = [{"id": str(i)} for i in range(5)]
+    store.save_changes([], before)
+    api.requests.clear()
+
+    store.save_changes(before, [{"id": "new"}])
+
+    posts = [r["json"] for r in api.requests]
+    assert [bool(p["deletes"]) for p in posts] == [True, False]
+    assert posts[1]["puts"][0]["id"] == "new"
+
+
+def test_add_missing_never_overwrites_and_says_what_it_skipped(runtime):
+    api = FakeRecordsApi(served={owner_key("client-1")})
+    store = studio_store(api)
+    store.save_changes([], [{"id": "colour", "owner": "client-1", "value": "teal"}])
+
+    changes = store.add_missing(
+        [
+            {"id": "colour", "owner": "client-1", "value": "old"},
+            {"id": "plant", "owner": "client-1", "value": "fern"},
+            {"id": "x", "owner": "default", "value": 1},
+        ]
+    )
+
+    assert (changes.puts, changes.skipped) == (1, 1)
+    values = {r["id"]: r["value"] for r in store.load_owner("client-1")}
+    assert values == {"colour": "teal", "plant": "fern"}
+
+
+def test_the_http_client_reads_no_proxy_or_netrc_from_the_environment(runtime):
+    store = studio_store()
+    [backend] = store._backend_list()
+
+    assert backend._http().trust_env is False
+
+
+@pytest.mark.parametrize(
+    ("url", "usable"),
+    [
+        ("http://thalovant-api.thalovant.svc.cluster.local/v1/runtime/records", True),
+        ("https://api.thalovant.com/v1/runtime/records", True),
+        ("http://api.thalovant.com/v1/runtime/records", False),
+        ("http://thalovant-api.svc.cluster.local.evil.example/v1/runtime/records", False),
+    ],
+)
+def test_plain_http_only_to_a_cluster_service(url, usable):
+    assert (api_url_problem(url) is None) is usable

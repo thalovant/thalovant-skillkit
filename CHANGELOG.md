@@ -7,6 +7,11 @@
 - Short timeouts (0.5 s to connect, 2 s to answer). After the API did not answer or answered 5xx, calls fail at once for 30 s rather than make every turn wait; after a refusal (401, 403, 404, a redirect) the store is asked again after 300 s, and a 429 waits for its `Retry-After`. A refused change (409 quota, 413, 422) is that change's alone: the next save is sent. A save goes in parts of at most 100 changes and 512 KiB of records.
 - The token goes only into the `Authorization` header; redirects are never followed; neither the token nor a record is ever logged (only the HTTP status and the API's refusal code). A URL that is not http(s), names no host, or carries credentials, a query or a fragment is not used.
 - The API keeps no import marker, so `migrate_legacy` imports nothing through it: it is only used where no other database is, so there is no older document to import.
+- Only Skill Studio stores (scope `studio`) use the API; the alarm, reminder, timer and stopwatch skills never call it on a tenant runtime and keep their records where they did.
+- A refusal (401, 403, 404, a redirect) means the store is not offered to this runtime: `enabled` is False for the 300 s pause, so the caller reads and writes its settings, and `save_changes` raises `RecordStoreError(acl=True)` rather than doing nothing. A quota, a rate limit or an outage is not a refusal.
+- **New: `Changes.skipped`**: the changes the store did not take because it keeps no records for that owner (the API keeps only the people its runtime serves). The caller keeps those itself. Defaults to 0 for every other backend.
+- **New: `RecordStore.add_missing(records)`**: put each record only where its owner has none with that id (every backend; through the API with `only_new`), returning the records added and skipped: how a skill brings values kept in its settings into the store without overwriting another pod's newer ones.
+- Deletes are sent before puts, so a full workspace frees room first. The token goes over https, or plain http only to a `.svc.cluster.local` host, and the HTTP client reads no proxy or netrc from the environment (`trust_env` off).
 
 ## 0.38.2
 

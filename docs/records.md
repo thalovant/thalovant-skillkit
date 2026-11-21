@@ -266,7 +266,11 @@ no PostgreSQL. Nothing is set up by the skill author or the workspace owner.
 | Limits | Per workspace, set by the platform: 10,000 records and 8 MiB by default, 64 KiB a record (the kit's own `MAX_BODY_BYTES`), 100 changes a request (the kit sends a bigger save in parts), 600 requests a minute a runtime. A refused change (409 `records_quota_exceeded`, 413, 422) raises `RecordStoreError`; the next save is sent. |
 | When the API is slow or down | 0.5 s to connect, 2 s to answer. A read that fails answers None (keep the settings); after a failure, calls fail at once for 30 s; after a refusal (401, 403, 404), for 300 s; a 429 waits for its `Retry-After`. |
 | Secrets | The token is only ever in the `Authorization` header; redirects are not followed; the log says the HTTP status and the API's refusal code, never the token or a record. |
-| Import | None: the API is used only where no other database is, so there is no older document to import. |
+| Import | None: the API is used only where no other database is, so there is no older document to import. `add_missing(records)` brings values a skill kept elsewhere (its settings) in without overwriting. |
+| Which stores | Only Skill Studio's (scope `studio`). Every other store, the alarm, reminder, timer and stopwatch skills' among them, never calls the API. |
+| Refused | 401, 403 or 404 (or a redirect): the store is not offered, `enabled` is False for 300 s and the skill uses its settings; `save_changes` raises rather than doing nothing. |
+| Skipped | A change for an owner the runtime does not serve (its own device `default`, a preview visitor) is skipped by the API and counted in `Changes.skipped`: keep it yourself. |
+| Transport | https, or plain http only to a `*.svc.cluster.local` host; no proxy or netrc from the environment; deletes are sent before puts. |
 
 The API's side of the contract is `docs/runtime-records.md` in thalovant-api.
 
