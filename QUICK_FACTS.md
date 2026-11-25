@@ -15,7 +15,7 @@ Read from the package source and metadata for the 0.39.0 records API store (2026
 | Extras | `testing` (ovoscope, ovos-bus-client, pytest, pytest-timeout); `skill` and `fleet` are empty names kept for old pins |
 | Handback topic | `handback._utterance_topic`: loaded core entry topic; standalone processes retain the legacy contract; one replay with restored request routing and original request correlation |
 | Records backends | `records.RecordStore`: Redis, then PostgreSQL, then thalovant-api (`THALOVANT_RECORDS_API_URL`, token from the netrc), else the skill's settings |
-| Main modules | `skill.py` (base class), `safety.py` (URL guard, cleaner), `device.py` (the device gate), `handback.py` (`pass_on`), `fallback.py`, `fleet.py`, `moments.py`, `records.py`, `storage.py`, `testing.py`, `testing_ovos.py` |
+| Main modules | `skill.py` (base class), `safety.py` (URL guard, cleaner), `device.py` (the device gate), `handback.py` (`pass_on`), `fallback.py`, `fleet.py`, `moments.py`, `records.py`, `owner.py` (whose items: the hub-stamped label), `sync.py` (`thalovant.sync` to a connection's other screens), `storage.py`, `testing.py`, `testing_ovos.py` |
 | Vendored in | ovos-runtime-image `v1.25.0` as a `pin` wheel (`runtime-wheels/wheels.manifest`) |
 | Tests | `test/` (69 files); run `python -m pytest -q` |
 | Documentation | `docs/reference.md`, `docs/records.md`, `docs/performance.md`, `docs/testing-audio.md`; public: https://docs.thalovant.com/developers/writing-a-skill |
