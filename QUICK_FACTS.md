@@ -1,11 +1,11 @@
 # Quick facts: thalovant-skillkit
 
-Read from the package source and metadata for the 0.39.0 records API store (2026-11-21).
+Read from the package source and metadata for 0.40.0, owner and sync (2026-11-25).
 
 | Fact | Value |
 | :--- | :--- |
 | Package | `thalovant-skillkit` |
-| Version | 0.39.0 (`thalovant_skillkit/version.py`, `pyproject.toml`) |
+| Version | 0.40.0 (`thalovant_skillkit/version.py`, `pyproject.toml`) |
 | Python | 3.11 or newer (classifiers 3.11 to 3.14) |
 | Licence | Apache-2.0 |
 | Build backend | `setuptools>=68` |
