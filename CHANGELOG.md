@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.40.0
+
+- **New: `thalovant_skillkit.owner`**, whose items a message reaches: `owner_of` reads only what hivemind-core stamps (`context["peer"]`, and the session id for the public preview bridge), never what a device says (`site_id`, a claimed name). Also `LOCAL`, `hub_client`, `limit_group`, `owns`, `asked_by`, `recorded_owner`, `migrate`, `SCHEME`. It is the one copy of the `owner.py` the alarm, reminder, timer, stopwatch and lists skills each carried (identical, docstrings aside); those skills import it from here from their next release.
+- **New: `thalovant_skillkit.sync`**, telling a connection's other open screens what changed (`thalovant.sync`), and nobody else. `Peers` remembers, per owner, the hub-stamped labels of sessions that asked (`"thalovant_sync": true` in their own context): never the local device, never the preview bridge, at most 8 per owner, 24 h. `send(bus, peers, owner, exclude=..., kind=..., meta=..., source=...)` emits one message per other session, naming only that session in `destination`, so the hub delivers it as any reply (HiveMind unchanged). Also `labels_in`, `shareable`, `TYPE`, `OPT_IN`.
+- Both are new modules, so a hub that still has an older kit loaded imports them from disk once the new kit is installed: no guard is needed (unlike new names in an already-loaded module).
+
 ## 0.39.0
 
 - **New: `RecordStore` keeps its records through thalovant-api on a tenant's runtime** (`records.ApiBackend`). A tenant's runtime runs code the tenant chose, so the platform gives it no login to the hub Redis every hub shares; it renders `THALOVANT_RECORDS_API_URL` instead, and the store sends its records to `GET`/`POST <url>/<scope>/<key>` with the runtime's own token, read from its netrc (`$NETRC`, else `~/.netrc`) for that URL's host. Used only when the settings and the environment name no Redis and no PostgreSQL: Redis, then PostgreSQL, then the API, then the skill's settings. Same interface and semantics (`enabled`, `load_owner`, `load_all`, `save_changes`, `owners`): a read that fails answers None so the skill keeps its settings, a save that fails raises `RecordStoreError`.

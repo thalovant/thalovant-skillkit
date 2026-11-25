@@ -229,7 +229,10 @@ def test_a_locale_may_carry_its_own_clock_rules():
     """Korean puts the marker first. CLDR's default would not."""
     value = datetime(2026, 8, 27, 22, 18)
 
-    assert time_text(value, "ko-KR", False, written=True) == "10:18 PM"
+    # CLDR's default puts the marker after the time. Its text changed with
+    # CLDR 47 (Babel 2.19: "10:18 오후", before "10:18 PM"); the order is the point.
+    default = time_text(value, "ko-KR", False, written=True)
+    assert default.startswith("10:18 ") and default != "오후 10:18", default
     assert time_text(value, "ko-KR", False, written=True, rules=KOREAN_RULES) == "오후 10:18"
 
 

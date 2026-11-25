@@ -1,11 +1,11 @@
 # Quick facts: thalovant-skillkit
 
-Read from the package source and metadata for the 0.39.0 records API store (2026-11-21).
+Read from the package source and metadata for 0.40.0, owner and sync (2026-11-25).
 
 | Fact | Value |
 | :--- | :--- |
 | Package | `thalovant-skillkit` |
-| Version | 0.39.0 (`thalovant_skillkit/version.py`, `pyproject.toml`) |
+| Version | 0.40.0 (`thalovant_skillkit/version.py`, `pyproject.toml`) |
 | Python | 3.11 or newer (classifiers 3.11 to 3.14) |
 | Licence | Apache-2.0 |
 | Build backend | `setuptools>=68` |
@@ -15,7 +15,7 @@ Read from the package source and metadata for the 0.39.0 records API store (2026
 | Extras | `testing` (ovoscope, ovos-bus-client, pytest, pytest-timeout); `skill` and `fleet` are empty names kept for old pins |
 | Handback topic | `handback._utterance_topic`: loaded core entry topic; standalone processes retain the legacy contract; one replay with restored request routing and original request correlation |
 | Records backends | `records.RecordStore`: Redis, then PostgreSQL, then thalovant-api (`THALOVANT_RECORDS_API_URL`, token from the netrc), else the skill's settings |
-| Main modules | `skill.py` (base class), `safety.py` (URL guard, cleaner), `device.py` (the device gate), `handback.py` (`pass_on`), `fallback.py`, `fleet.py`, `moments.py`, `records.py`, `storage.py`, `testing.py`, `testing_ovos.py` |
+| Main modules | `skill.py` (base class), `safety.py` (URL guard, cleaner), `device.py` (the device gate), `handback.py` (`pass_on`), `fallback.py`, `fleet.py`, `moments.py`, `records.py`, `owner.py` (whose items: the hub-stamped label), `sync.py` (`thalovant.sync` to a connection's other screens), `storage.py`, `testing.py`, `testing_ovos.py` |
 | Vendored in | ovos-runtime-image `v1.25.0` as a `pin` wheel (`runtime-wheels/wheels.manifest`) |
 | Tests | `test/` (69 files); run `python -m pytest -q` |
 | Documentation | `docs/reference.md`, `docs/records.md`, `docs/performance.md`, `docs/testing-audio.md`; public: https://docs.thalovant.com/developers/writing-a-skill |

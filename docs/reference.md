@@ -714,7 +714,7 @@ callbacks or produce replies for `wait_for_response`. `spoken()` and
 `spoken_ssml()` read back each sentence and its markup. Use it for small unit
 tests, and the following optional helpers for framework integration.
 
-Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.39.0"`;
+Install with `python -m pip install --pre "thalovant-skillkit[testing]==0.40.0"`;
 this selects the OVOScope prerelease test stack. The old `[skill]` and `[fleet]`
 extras are empty compatibility
 names: their dependencies are already included in the base install.
@@ -1243,6 +1243,28 @@ Skills must validate records, enforce speaker ownership and retain their existin
 local recovery path. This helper adds no in-memory copy or TTL that could hide a
 new state write. It is not a transactional database or a replacement for a
 service-owned persistence contract.
+
+### Whose items, and the other screens: `owner` and `sync`
+
+`thalovant_skillkit.owner` names whose alarms, reminders, timers or lists a
+message reaches, from the label hivemind-core stamps (`context["peer"]`:
+`<announced name>::<hub db number>::client-<uuid>::<session>`) and nothing a
+device writes. `owner_of(context)` returns `client-<uuid>`, `LOCAL` for a
+message that never crossed HiveMind, `<bridge>|<session id>` for a public
+preview visitor, or None when nobody can be named. `asked_by(context, message)`
+takes the label from the bus message, never from a skill API caller's data;
+`migrate(items)` decides once more the owner of items stored under an older
+rule.
+
+`thalovant_skillkit.sync` tells the owner's other open screens what a reply
+changed. The hub sends a reply only to the session that asked, so a skill
+remembers the sessions that asked to hear (`Peers.seen(message.context)`; the
+session sets `"thalovant_sync": true` in its own context) and, after a change
+or a ring, calls `sync.send(bus, peers, owner, exclude=[the asking session's
+label, *sync.labels_in(context)], kind=..., meta=..., source=skill_id)`. One
+`thalovant.sync` message goes to each other session alone; `meta` is what the
+reply carried (`schedule`, or a list `display`), never the words. Never the
+local device or the preview bridge; at most 8 sessions per owner, 24 h.
 
 ### Per-owner records
 
