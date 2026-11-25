@@ -54,9 +54,9 @@ know the type ignores it.
 from __future__ import annotations
 
 from collections import OrderedDict
+from collections.abc import Callable, Iterable
 from threading import Lock
 from time import monotonic
-from typing import Callable, Iterable
 
 from thalovant_skillkit import owner as owners
 

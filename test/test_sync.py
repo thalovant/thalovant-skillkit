@@ -1,13 +1,18 @@
 """A connection's other open screens hear of a change; nobody else ever does."""
-from thalovant_skillkit import sync
 from test_owner import BRIDGE, ME, THEM, label
+
+from thalovant_skillkit import sync
 
 
 def screen(client_uuid: str, declared: str, opted_in: bool = True) -> dict:
-    context = {"peer": label(client_uuid, declared=declared), "session": {"session_id": f"ns:{declared}"}}
+    context = {"peer": label(client_uuid, declared=declared),
+               "session": {"session_id": f"ns:{declared}"}}
     if opted_in:
         context[sync.OPT_IN] = True
     return context
+
+
+ENTRY = {"kind": "alarm", "id": "a1", "state": "scheduled"}
 
 
 class Clock:
@@ -56,7 +61,8 @@ def test_the_local_device_and_the_preview_bridge_are_never_shared():
     peers.seen({sync.OPT_IN: True})
     peer = f"ThalovantPublicPreviewBridge::7::{BRIDGE}::thalovant-public-preview-bridge"
     for conversation in ("a", "b"):
-        peers.seen({"peer": peer, sync.OPT_IN: True, "session": {"session_id": f"ns:conversation:{conversation}"}})
+        session = {"session_id": f"ns:conversation:{conversation}"}
+        peers.seen({"peer": peer, sync.OPT_IN: True, "session": session})
     assert peers.others("default") == []
     assert peers.others(f"{BRIDGE}|ns:conversation:a") == []
     assert not sync.shareable(None)
@@ -80,20 +86,21 @@ def test_send_tells_each_other_session_alone_and_only_the_meta():
     peers.seen(screen(THEM, "their-board"))
 
     sent = sync.send(bus, peers, f"client-{ME}", exclude=[label(ME, declared="laptop"), None],
-                     kind="alarm", meta={"schedule": [{"kind": "alarm", "id": "a1", "state": "scheduled"}]},
+                     kind="alarm", meta={"schedule": [ENTRY]},
                      source="thalovant-skill-alarm.thalovant")
 
     assert sent == 2
     assert [message.context["destination"] for message in bus.emitted] == [
         [label(ME, declared="home")], [label(ME, declared="kitchen")]]
     assert {message.msg_type for message in bus.emitted} == {sync.TYPE}
-    assert bus.emitted[0].data == {"kind": "alarm", "meta": {"schedule": [{"kind": "alarm", "id": "a1", "state": "scheduled"}]}}
+    assert bus.emitted[0].data == {"kind": "alarm", "meta": {"schedule": [ENTRY]}}
 
 
 def test_send_does_nothing_without_a_bus_news_or_a_shareable_owner():
     peers, bus = sync.Peers(), Bus()
     peers.seen(screen(ME, "home"))
-    assert sync.send(None, peers, f"client-{ME}", kind="alarm", meta={"schedule": []}, source="s") == 0
+    owner = f"client-{ME}"
+    assert sync.send(None, peers, owner, kind="alarm", meta={"schedule": []}, source="s") == 0
     assert sync.send(bus, peers, f"client-{ME}", kind="alarm", meta={}, source="s") == 0
     assert sync.send(bus, peers, "default", kind="alarm", meta={"schedule": [1]}, source="s") == 0
     assert bus.emitted == []

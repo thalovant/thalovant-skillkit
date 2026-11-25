@@ -19,7 +19,8 @@ def label(client_uuid: str, number: int = 1573, declared: str = "phone-session")
 def bridge(conversation: str) -> dict:
     peer = f"ThalovantPublicPreviewBridge::7::{BRIDGE}::thalovant-public-preview-bridge"
     return {"peer": peer, "source": peer,
-            "session": {"session_id": f"0123456789abcdef:thalovant-public-preview-bridge:conversation:{conversation}"}}
+            "session": {"session_id": (
+                f"0123456789abcdef:thalovant-public-preview-bridge:conversation:{conversation}")}}
 
 
 @pytest.mark.parametrize("peer, owner", [
@@ -41,7 +42,8 @@ def bridge(conversation: str) -> dict:
     (None, None),
 ])
 def test_the_owner_is_the_hubs_name_for_the_client(peer, owner):
-    assert owners.owner_of({"peer": peer, "site_id": "galaxy-s24", "client_id": f"client-{ME}"}) == owner
+    context = {"peer": peer, "site_id": "galaxy-s24", "client_id": f"client-{ME}"}
+    assert owners.owner_of(context) == owner
 
 
 def test_a_message_that_never_crossed_hivemind_is_the_local_devices():
@@ -71,7 +73,8 @@ def test_asked_by_takes_the_label_from_the_bus_message_only():
     class Message:
         context = {"peer": label(ME), "session": {"session_id": "ns:me"}}
 
-    said = {"peer": label(THEM), "session": {"session_id": "ns:them", "lang": "en-US"}, "site_id": "x"}
+    said = {"peer": label(THEM), "site_id": "x",
+            "session": {"session_id": "ns:them", "lang": "en-US"}}
     trusted = owners.asked_by(said, Message())
     assert trusted["peer"] == label(ME)
     assert trusted["session"] == {"session_id": "ns:me", "lang": "en-US"}
@@ -86,7 +89,8 @@ def test_stored_items_are_decided_again_once_from_their_routing():
     items = [mine, planted, local, unlabelled]
 
     assert owners.migrate(items) is True
-    assert [item["owner"] for item in items] == [f"client-{ME}", f"client-{THEM}", owners.LOCAL, None]
+    expected = [f"client-{ME}", f"client-{THEM}", owners.LOCAL, None]
+    assert [item["owner"] for item in items] == expected
     mine["context"] = {"destination": label(THEM, 1999)}
     assert owners.migrate(items) is False
     assert mine["owner"] == f"client-{ME}"
